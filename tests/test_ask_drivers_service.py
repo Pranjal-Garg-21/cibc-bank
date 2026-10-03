@@ -88,3 +88,19 @@ def test_small_change_note_and_no_shares_on_a_flat_metric():
     assert a.path == "drivers"
     assert any("overall change is small" in x for x in a.notes)
     assert all(r[a.columns.index("share_of_change")] is None for r in a.rows)
+
+
+def test_drivers_answer_records_every_query_that_ran(con):
+    a = ask("Why did outbound call volume drop on 23-24 September 2026?", LEAD, as_of_date=AS_OF, con=con)
+    assert a.sql.count("-- query ") == 6                      # 3 dimensions x 2 periods
+    assert a.sql.count("-- parameters:") == 6 and "semantic_contacts" in a.sql
+    assert "2026-09-23" in a.sql and "2026-09-21" in a.sql    # both periods are visible to a reviewer
+
+
+def test_metric_answer_records_the_executed_statement_and_parameters(con):
+    from trustissues.ask.benchmark import run
+    q = {"question_id": "Q1", "as_of_date": "2026-09-28",
+         "question_text": "What was the right-party contact rate on outbound calls in September 2026, by local hour of day?"}
+    row = run([q], con=con)[0]
+    assert "semantic_contacts" in row["sql_or_sources"] and "-- parameters:" in row["sql_or_sources"]
+    assert "start: 2026-09-01" in row["sql_or_sources"] and "LIMIT" in row["sql_or_sources"]  # the statement that actually ran

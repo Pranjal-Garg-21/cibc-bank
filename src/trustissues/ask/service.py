@@ -133,9 +133,9 @@ def _metric(question, user, as_of, r, con, database, card) -> AnswerCard:
             call.notes.append("Showing only the strategy cells named in the question.")
     res = type(res)(res.columns, rows, res.elapsed_ms)
     if not res.rows:
-        return card("No rows matched.", "metric", metric_id=r.metric_id, sql=q.sql, certified=True,
+        return card("No rows matched.", "metric", metric_id=r.metric_id, sql=checked.sql, parameters=q.parameters, certified=True,
                     columns=res.columns, notes=call.notes)
-    return card(_csv(res.columns, res.rows), "metric", metric_id=r.metric_id, sql=q.sql, parameters=q.parameters, certified=True,
+    return card(_csv(res.columns, res.rows), "metric", metric_id=r.metric_id, sql=checked.sql, parameters=q.parameters, certified=True,
                 columns=res.columns, rows=res.rows, notes=call.notes, sources=["gold.semantic_*"])
 
 
@@ -179,4 +179,5 @@ def _drivers(question, user, as_of, r, con, database, card) -> AnswerCard:
     head = (f"summary: {r.metric_id.replace('_', ' ')} moved from {num(rep.total_before)} to {num(rep.total_after)} "
             f"({num(rep.change, True)}).")
     return card(head + "\n" + _csv(cols, rows), "drivers", metric_id=r.metric_id, certified=r.metric_id != "contact_volume",
-                columns=cols, rows=rows, sources=["gold.semantic_*"], notes=notes + rep.notes)
+                columns=cols, rows=rows, sources=["gold.semantic_*"], notes=notes + rep.notes,
+                sql="\n\n".join(f"-- query {i + 1} of {len(rep.queries)}\n{q}" for i, q in enumerate(rep.queries)))

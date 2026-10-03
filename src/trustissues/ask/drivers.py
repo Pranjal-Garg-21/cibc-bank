@@ -50,6 +50,7 @@ class DriverReport:
     total_after: float
     segments: list[Segment]
     notes: list[str] = field(default_factory=list)
+    queries: list[str] = field(default_factory=list)  # every statement executed, with its bound parameters
 
     @property
     def change(self) -> float:
@@ -141,8 +142,16 @@ def candidate_dimensions(metric_id: str) -> list[str]:
     return [d for d in allowed if approved_dimension(d)]
 
 
-def _run(sql, params, policy, con, database):
-    return execute(validate(sql, policy), params, con=con, database=database)
+def format_params(params: dict) -> str:
+    """Readable, ISO-dated parameter list for the "show the working" record."""
+    return "{" + ", ".join(f"{k}: {v.isoformat() if hasattr(v, 'isoformat') else repr(v)}" for k, v in params.items()) + "}"
+
+
+def _run(sql, params, policy, con, database, log=None):
+    checked = validate(sql, policy)
+    if log is not None:
+        log.append(f"{checked.sql}\n-- parameters: {format_params(params)}")
+    return execute(checked, params, con=con, database=database)
 
 
 def _with_period(parameters: dict, period: Period) -> dict:
@@ -160,12 +169,13 @@ def explain_metric(metric_id: str, parameters: dict, current: Period, previous: 
         raise DriversUnsupported("No approved split dimension exists for this metric.")
     per_dim: dict[str, list[Segment]] = {}
     totals = None
+    log: list[str] = []
     for dim in dims:
         sides = []
         for period in (previous, current):
             q = render_metric(metric_id, parameters=_with_period(parameters, period), dimensions=(dim,),
                               variant=variant, cap_at=cap_at if dim == "prior_broken_ptp_count" else None)
-            res = _run(q.sql, q.parameters, policy, con, database)
+            res = _run(q.sql, q.parameters, policy, con, database, log)
             cols = list(res.columns)
             if "metric_value" not in cols or "denominator" not in cols:
                 raise DriversUnsupported("This metric has no per-segment denominator, so a change cannot be split by rate and mix.")
@@ -189,17 +199,18 @@ def explain_metric(metric_id: str, parameters: dict, current: Period, previous: 
             per_dim[dim] = [dataclasses.replace(x, share_of_change=None) for x in segs]
     best = max(per_dim, key=lambda d: concentration(per_dim[d]))
     notes.append(f"Most concentrated split: {best} (largest segment holds {concentration(per_dim[best]):.0%} of the movement).")
-    return DriverReport(metric_id, "same unit as the metric", totals[0], totals[1], rank_segments(per_dim), notes)
+    return DriverReport(metric_id, "same unit as the metric", totals[0], totals[1], rank_segments(per_dim), notes, log)
 
 
 def _explain_volume(current: Period, previous: Period, policy, con, database) -> DriverReport:
     days_now, days_before = (current.end - current.start).days, (previous.end - previous.start).days
     per_dim: dict[str, list[Segment]] = {}
     totals = None
+    log: list[str] = []
     for dim, expr in VOLUME_DIMENSIONS.items():
         sides = []
         for period in (previous, current):
-            res = _run(VOLUME_SQL.format(expr=expr), {"start": period.start, "end": period.end}, policy, con, database)
+            res = _run(VOLUME_SQL.format(expr=expr), {"start": period.start, "end": period.end}, policy, con, database, log)
             scale = 1.0 if days_now == days_before else 1.0 / max((period.end - period.start).days, 1)
             sides.append({str(r[0]): r[1] * scale for r in res.rows if r[0] is not None})
         r0, r1, segs = decompose_counts(sides[0], sides[1], dim)
@@ -214,7 +225,7 @@ def _explain_volume(current: Period, previous: Period, policy, con, database) ->
         notes.insert(1, broad)
     if days_now != days_before:
         notes.append("Periods differ in length, so volumes are per-day averages.")
-    return DriverReport("contact_volume", "calls", totals[0], totals[1], rank_segments(per_dim), notes)
+    return DriverReport("contact_volume", "calls", totals[0], totals[1], rank_segments(per_dim), notes, log)
 
 
 def broad_based(per_dim: dict[str, list[Segment]], overall: float | None, min_share: float = 0.01) -> str | None:

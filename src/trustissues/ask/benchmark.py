@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from .drivers import format_params
 from .service import ask
 from .types import UserContext
 
@@ -35,7 +36,7 @@ def run(questions: list[dict], *, user: UserContext = BENCHMARK_USER, **ask_kwar
         if card.notes and card.path in ("metric", "sql"):
             answer += "\n" + "\n".join(f"note: {n}" for n in card.notes)
         rows.append({"question_id": q["question_id"], "answer": answer,
-                     "sql_or_sources": (card.sql + (f"\n-- parameters: {card.parameters}" if card.parameters else ""))
+                     "sql_or_sources": (card.sql + (f"\n-- parameters: {format_params(card.parameters)}" if card.parameters else ""))
                            if card.sql else "; ".join(card.sources),
                      "refused": "true" if card.refused else "false"})
     return rows
