@@ -1,0 +1,15 @@
+# Data (large, not committed)
+maple_data/
+warehouse/
+*.duckdb
+*.duckdb.wal
+
+# Secrets and env
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
