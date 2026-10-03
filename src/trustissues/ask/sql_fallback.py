@@ -131,18 +131,15 @@ LABEL_COLUMNS = frozenset({
     "direction", "province", "agent_site", "ptp_status", "account_status", "assignment_method", "test_cell"})
 
 
-def _distinct(con, database, table: str, column: str) -> set:
-    own = con is None
-    if own:
-        con = duckdb.connect(str(database), read_only=True)
-    try:
-        return {r[0] for r in con.execute(f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL").fetchall()}
-    finally:
-        if own:
-            con.close()
+def _distinct(policy: QueryPolicy, con, database, table: str, column: str) -> set:
+    """The label values this user's policy lets them see: the lookup is an ordinary validated query, so it carries the
+    same row filters, as-of limit and column rules as the question itself. A table or column the role may not read
+    raises ValidationError and the check is skipped, so nothing outside the role's view reaches a prompt."""
+    checked = validate(f"SELECT {column} AS v, COUNT(*) AS n FROM {table} WHERE {column} IS NOT NULL GROUP BY {column}", policy)
+    return {r[0] for r in execute(checked, None, con=con, database=database).rows}
 
 
-def unknown_label(sql: str, con=None, database=None) -> str | None:
+def unknown_label(sql: str, policy: QueryPolicy, con=None, database=None) -> str | None:
     """A repair message when the query filters a label column on a value the column never holds."""
     try:
         tree = sqlglot.parse_one(sql, read="duckdb")
@@ -158,7 +155,7 @@ def unknown_label(sql: str, con=None, database=None) -> str | None:
             owners = [t for t in tables if name in SCHEMAS[t]]
             if not owners:
                 continue
-            valid = set().union(*(_distinct(con, database, t, name) for t in owners))
+            valid = set().union(*(_distinct(policy, con, database, t, name) for t in owners))
             if valid and value not in valid:
                 shown = ", ".join(sorted(map(str, valid))[:12])
                 return f"The value '{value}' never occurs in {name}. Its values are: {shown}. Use one of them, or say the question cannot be answered"
@@ -198,7 +195,7 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
         if sql is None:
             return FallbackResult(last_sql, None, reason or "the model could not express this question over the approved tables", attempts)
         try:
-            problem = implied_filter_problem(question, sql) or unknown_label(sql, con, database)
+            problem = implied_filter_problem(question, sql) or unknown_label(sql, policy, con, database)
             if problem:
                 raise ValueError(problem)
             checked = validate(sql, policy)

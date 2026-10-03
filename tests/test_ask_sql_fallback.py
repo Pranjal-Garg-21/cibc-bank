@@ -160,15 +160,15 @@ from trustissues.ask.sql_fallback import unknown_label  # noqa: E402
 
 def test_unknown_label_value_is_caught_and_valid_values_pass(con):
     bad = "SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket = 'default'"
-    msg = unknown_label(bad, con=con)
+    msg = unknown_label(bad, query_policy(LEAD), con=con)
     assert msg and "'default'" in msg and "1-30" in msg
-    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket IN ('1-30', '31-60')", con=con) is None
-    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket IN ('1-30', 'nope')", con=con)
+    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket IN ('1-30', '31-60')", query_policy(LEAD), con=con) is None
+    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket IN ('1-30', 'nope')", query_policy(LEAD), con=con)
 
 
 def test_non_label_columns_and_unparseable_sql_are_never_blocked(con):
-    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE case_id = 'C-not-there'", con=con) is None
-    assert unknown_label("SELECT FROM WHERE", con=con) is None
+    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE case_id = 'C-not-there'", query_policy(LEAD), con=con) is None
+    assert unknown_label("SELECT FROM WHERE", query_policy(LEAD), con=con) is None
 
 
 def test_fallback_repairs_after_a_nonexistent_label(con):
@@ -177,3 +177,21 @@ def test_fallback_repairs_after_a_nonexistent_label(con):
     out = run_fallback(Q, llm=llm, policy=query_policy(LEAD), as_of=AS_OF, con=con)
     assert out.result is not None and out.attempts == 2
     assert "never occurs in reported_bucket" in llm.calls[1]["user"]
+
+
+def test_label_lookup_respects_the_users_row_filters_and_never_leaks_hidden_values(con):
+    import dataclasses
+    base = query_policy(LEAD)
+    scoped = dataclasses.replace(base, required_filters={
+        **base.required_filters, "gold.semantic_cases": ("reported_bucket <> '31-60'",)})
+    msg = unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket = 'default'", scoped, con=con)
+    assert msg and "1-30" in msg and "31-60" not in msg  # the hidden bucket is not named in the prompt text
+    hidden = unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket = '31-60'", scoped, con=con)
+    assert hidden and "31-60" in hidden.split("Its values are")[0] and "31-60" not in hidden.split("Its values are")[1]
+
+
+def test_label_lookup_is_skipped_when_the_role_may_not_read_the_column(con):
+    import dataclasses
+    base = query_policy(LEAD)
+    no_cases = dataclasses.replace(base, tables=frozenset(t for t in base.tables if t != "gold.semantic_cases"))
+    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket = 'default'", no_cases, con=con) is None
