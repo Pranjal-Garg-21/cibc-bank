@@ -1,6 +1,6 @@
 # TrustIssues web UI
 
-A banking-style operations console (dark navy theme, built with shadcn/ui) for the collections system: **Ask**, **My queue**, **Decision card**,
+A web console for the collections system, styled with CIBC's brand colours and built with shadcn/ui: **Ask**, **My queue**, **Decision card**,
 **Team & approvals**, **Identity review** and **Data status**. Design: [`docs/ui_design.md`](../docs/ui_design.md).
 
 ```
@@ -16,12 +16,17 @@ tests_ui/         API, security and integration tests
 ```
 pip install -r ui/requirements.txt          # fastapi, uvicorn (the backend's own deps are already installed)
 cd ui/web && npm ci && npm run build && cd ../..
+python ui/accounts.py add AG-1304            # create a sign-in account (prompts for a password)
 python ui/serve.py --demo                    # http://127.0.0.1:8000
 ```
 
-`--demo` turns on the demo staff picker (no real authentication; a `DEMO` tag is always shown). Without it nobody
-can sign in, which is the safe default. Other switches: `--dev` (accepts the Vite dev server and serves `/api/docs`),
-`--ask-llm` (lets Ask use the language model and policy search), `--port`.
+Staff sign in with their staff ID and password. Only an administrator can create accounts, and only for active
+staff: `python ui/accounts.py add <staff id>` (add `--generate` to create a random password, printed once),
+`remove <staff id>`, `list`. Passwords are stored as scrypt hashes in `warehouse/ui_accounts.json`, never in git.
+The sign-in page shows nothing about any member of staff.
+
+`--demo` shows the DEMO ENVIRONMENT tag. Other switches: `--dev` (accepts the Vite dev server and serves
+`/api/docs`), `--ask-llm` (lets Ask use the language model and policy search), `--port`, `--accounts-file`.
 
 Frontend development with hot reload: run `python ui/serve.py --demo --dev`, then `cd ui/web && npm run dev` and
 open http://localhost:5173.
@@ -52,7 +57,7 @@ failing.
 
 ## Security in short (design §9)
 
-Server-side sessions in an `HttpOnly; SameSite=Strict` cookie; 15-minute idle and 8-hour absolute timeouts; CSRF
+Staff ID + password sign-in (scrypt hashes, account lockout, no staff directory); server-side sessions in an `HttpOnly; SameSite=Strict` cookie; 15-minute idle and 8-hour absolute timeouts; CSRF
 token and same-origin check on every write; deny-by-default role checks on the server, re-checked against
 `curated.agents` on every request; strict Content Security Policy with no inline scripts and no third-party hosts;
 `Cache-Control: no-store` on all API responses; PII masked on the server by role, with phones shown only as their

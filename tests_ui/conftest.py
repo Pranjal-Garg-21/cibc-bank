@@ -1,6 +1,7 @@
 """Fixtures for the UI API tests: a tiny warehouse file in a temp folder (never the real one) and a TestClient."""
 from __future__ import annotations
 
+import secrets
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -17,9 +18,17 @@ if str(UI_DIR) not in sys.path:
 import duckdb  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+import tiui.accounts  # noqa: E402
+from tiui.accounts import AccountStore  # noqa: E402
 from tiui.main import create_app  # noqa: E402
 from tiui.settings import Settings  # noqa: E402
 
+# Tests only: a cheaper scrypt cost so the suite stays fast. Real accounts use tiui.accounts.SCRYPT unchanged.
+tiui.accounts.SCRYPT = {"n": 2 ** 10, "r": 8, "p": 1}
+
+# Generated per test run: never a real or reused credential.
+TEST_PASSWORD = "t3st-" + secrets.token_urlsafe(12)
+ACCOUNTS = ("A1", "A2", "L1", "Q1", "X1")  # X1 is a terminated member of staff
 PAIR_1 = "a" * 32
 PAIR_2 = "b" * 32
 PAIR_3 = "d" * 32
@@ -68,7 +77,11 @@ def ui_settings(tmp_path) -> Settings:
     reports = tmp_path / "reports"
     reports.mkdir()
     (reports / "data_quality_report.md").write_text("# Data quality\n\nAll good.\n", encoding="utf-8")
-    return Settings(demo_login=True, warehouse=wh, ui_audit=tmp_path / "warehouse" / "ui_audit.duckdb",
+    accounts = tmp_path / "warehouse" / "ui_accounts.json"
+    store = AccountStore(accounts)
+    for sid in ACCOUNTS:
+        store.set_password(sid, TEST_PASSWORD)
+    return Settings(demo=True, accounts_file=accounts, warehouse=wh, ui_audit=tmp_path / "warehouse" / "ui_audit.duckdb",
                     decisions_csv=tmp_path / "review" / "identity_decisions.csv", reports_dir=reports,
                     dist_dir=tmp_path / "no_dist")
 
@@ -88,7 +101,7 @@ def make_client(ui_settings):
 
 def sign_in(c: TestClient, agent_id: str) -> str:
     """Sign in and return the CSRF token."""
-    r = c.post("/api/session/login", json={"agent_id": agent_id})
+    r = c.post("/api/session/login", json={"staff_id": agent_id, "password": TEST_PASSWORD})
     assert r.status_code == 200, r.text
     me = c.get("/api/session/me")
     assert me.status_code == 200, me.text

@@ -83,14 +83,14 @@ export const APPROVAL_LABEL: Record<string, string> = {
 
 export const ANSWER_PATH: Record<string, { label: string; tone: Tone; help: string }> = {
   metric: { label: 'Certified metric', tone: 'ok', help: 'Answered from a reviewed metric definition.' },
-  drivers: { label: 'Certified metric · drivers', tone: 'ok', help: 'Breakdown of a reviewed metric.' },
+  drivers: { label: 'Certified metric, breakdown', tone: 'ok', help: 'Breakdown of a reviewed metric.' },
   sql: {
     label: 'Generated query',
     tone: 'warn',
     help: 'A query written for this question and checked by the validator, not a reviewed metric.',
   },
-  rag_corpus: { label: 'Policy answer · AI', tone: 'info', help: 'Written by a language model from policy documents.' },
-  rag_customer: { label: 'Customer answer · AI', tone: 'info', help: 'Written by a language model from case records.' },
+  rag_corpus: { label: 'Policy answer (generated)', tone: 'info', help: 'Written by a language model from policy documents.' },
+  rag_customer: { label: 'Case answer (generated)', tone: 'info', help: 'Written by a language model from case records.' },
   refused: { label: 'Refused', tone: 'neutral', help: 'This question is outside what the assistant may answer.' },
   cannot_answer: { label: 'Not answered', tone: 'neutral', help: 'The assistant could not answer reliably.' },
 }

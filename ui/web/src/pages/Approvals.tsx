@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Stamp } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { Digest, Reasons, ReviewSummary } from '@/api/types'
 import { useMe } from '@/auth'
-import { DataTable, ErrorState, Loading, NotConnected, PageHeader, Section, Stat, StatusBadge } from '@/components/app'
+import { DataTable, ErrorState, Figures, Loading, NotConnected, Notice, PageHeader, Section } from '@/components/app'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +17,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { int, isoDate, pct } from '@/lib/format'
-import { APPROVAL_LABEL, STATE_LABEL, STATE_TONE, label } from '@/lib/labels'
+import { APPROVAL_LABEL, STATE_LABEL, label } from '@/lib/labels'
 
 export function Approvals() {
   const me = useMe()
@@ -40,21 +39,13 @@ export function Approvals() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Collections operations"
-        title="Team & approvals"
-        description="Where today's recommendations stand across the team, and the approvals waiting on you."
-      />
+      <PageHeader title="Team & approvals" description="Where today's recommendations stand across the team, and the approvals waiting on you." />
       {!me.features.queue && <NotConnected feature="Approvals" owner="P3" />}
       {digest.isLoading && <Loading />}
       {digest.error && <ErrorState error={digest.error} onRetry={() => digest.refetch()} />}
       {d && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-            {Object.entries(STATE_LABEL).map(([k, v]) => (
-              <Stat key={k} label={v} value={int(d.states[k] ?? 0)} tone={STATE_TONE[k] === 'danger' && d.states[k] ? 'danger' : undefined} />
-            ))}
-          </div>
+        <div className="space-y-5">
+          <Figures items={Object.entries(STATE_LABEL).map(([k, v]) => ({ label: v, value: int(d.states[k] ?? 0), tone: k === 'blocked' && d.states[k] ? 'danger' : undefined }))} />
 
           <Section
             title="Daily digital batch"
@@ -62,13 +53,13 @@ export function Approvals() {
             actions={
               isLead && (
                 <Button disabled={!d.batch_pending || batch.isPending} onClick={() => setConfirm(true)}>
-                  <Stamp /> Approve batch ({int(d.batch_pending)})
+                  Approve batch ({int(d.batch_pending)})
                 </Button>
               )
             }
           >
-            <p className="text-sm text-muted-foreground">
-              {int(d.batch_pending)} of {int(d.batch_total)} digital reminders are waiting for sign-off. Digital reminders have no agent; the
+            <p className="text-sm">
+              {int(d.batch_pending)} of {int(d.batch_total)} digital reminders are waiting for sign-off. Digital reminders have no agent, so the
               team lead's approval is the only sign-off.{!isLead && ' Only a team lead can approve the batch.'}
             </p>
             {batch.error && (
@@ -76,20 +67,24 @@ export function Approvals() {
                 <ErrorState error={batch.error} />
               </div>
             )}
-            {batch.isSuccess && <p className="mt-3 text-sm text-ok">Batch approved and recorded under {me.agent_id}.</p>}
+            {batch.isSuccess && (
+              <div className="mt-3">
+                <Notice tone="ok">Batch approved and recorded under {me.agent_id}.</Notice>
+              </div>
+            )}
           </Section>
 
-          <Section title={`Approvals waiting (${int(d.pending.rows.length)})`} description="Open a case to approve or reject it.">
+          <Section title={`Waiting for approval (${int(d.pending.rows.length)})`} description="Open a case to approve or reject it" flush>
             <DataTable
               data={d.pending}
               rowKey="recommendation_id"
               empty="Nothing is waiting for approval."
-              caption="Approvals waiting"
+              caption="Waiting for approval"
               onRowClick={(r) => nav(`/cases/${encodeURIComponent(String(r.recommendation_id))}`)}
               columns={[
-                { key: 'recommendation_id', label: 'Recommendation', render: (r) => <span className="font-mono text-xs">{String(r.recommendation_id)}</span> },
-                { key: 'approval_reason', label: 'Approval needed for', render: (r) => <StatusBadge tone="info">{label(APPROVAL_LABEL, r.approval_reason as string)}</StatusBadge> },
-                { key: 'summary', label: 'Summary', wrap: true, render: (r) => <span className="line-clamp-2 text-muted-foreground">{String(r.summary ?? '')}</span> },
+                { key: 'recommendation_id', label: 'Recommendation' },
+                { key: 'approval_reason', label: 'Approval needed for', render: (r) => label(APPROVAL_LABEL, r.approval_reason as string) },
+                { key: 'summary', label: 'Summary', wrap: true, render: (r) => <span className="line-clamp-2">{String(r.summary ?? '')}</span> },
                 { key: 'risk_score', label: 'Risk', align: 'right', render: (r) => pct(r.risk_score, 0) },
               ]}
             />
@@ -100,12 +95,12 @@ export function Approvals() {
       )}
 
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Approve the digital batch?</AlertDialogTitle>
+            <AlertDialogTitle className="font-normal">Approve the digital batch?</AlertDialogTitle>
             <AlertDialogDescription>
-              This approves {int(d?.batch_pending ?? 0)} digital reminders for {isoDate(d?.as_of_date)}. Each approval is recorded under your
-              staff ID ({me.agent_id}). To hold a case back, open it and reject it first.
+              This approves {int(d?.batch_pending ?? 0)} digital reminders for {isoDate(d?.as_of_date)}. Each approval is recorded under your staff ID
+              ({me.agent_id}). To hold a case back, open it and reject it first.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -127,24 +122,24 @@ function WeeklyReview({ summary, error }: { summary?: ReviewSummary; error: unkn
   if (!summary) return null
   return (
     <Section title="Override review" description={`${isoDate(summary.from)} to ${isoDate(summary.to)}`}>
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Stat label="Recommendations" value={int(summary.recommendations)} />
-        <Stat label="Agent decisions" value={int(summary.agent_decisions)} />
-        <Stat label="Override rate" value={pct(summary.override_rate)} />
+      <div className="mb-4">
+        <Figures
+          items={[
+            { label: 'Recommendations', value: int(summary.recommendations) },
+            { label: 'Agent decisions', value: int(summary.agent_decisions) },
+            { label: 'Override rate', value: pct(summary.override_rate) },
+          ]}
+        />
       </div>
       <DataTable
         data={Object.entries(summary.overrides_by_reason).map(([code, n]) => ({
           reason: text(code),
-          safeguard: reasons.data?.safeguard_reasons.includes(code) ?? false,
+          duty_of_care: reasons.data?.safeguard_reasons.includes(code) ? 'Yes' : '',
           overrides: n,
         }))}
         empty="No overrides in this period."
         caption="Overrides by reason"
-        columns={[
-          { key: 'reason', label: 'Reason' },
-          { key: 'safeguard', label: 'Safeguard', render: (r) => (r.safeguard ? <StatusBadge tone="warn">Duty of care</StatusBadge> : '—') },
-          { key: 'overrides', label: 'Overrides', align: 'right' },
-        ]}
+        columns={[{ key: 'reason', label: 'Reason' }, { key: 'duty_of_care', label: 'Duty of care' }, { key: 'overrides', label: 'Overrides', align: 'right' }]}
       />
     </Section>
   )

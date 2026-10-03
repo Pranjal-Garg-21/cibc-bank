@@ -23,8 +23,7 @@ export type Me = {
   can: { ask: boolean; my_queue: boolean; approvals: boolean; identity_review: boolean; status: boolean }
 }
 
-export type Options = { demo_login: boolean; as_of_date: string; idle_minutes: number }
-export type StaffRow = { agent_id: string; name: string | null; role: string; team_id: string | null; site: string | null }
+export type Options = { sign_in_configured: boolean; demo: boolean; as_of_date: string; idle_minutes: number }
 
 export type AnswerCard = {
   question: string

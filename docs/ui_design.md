@@ -26,7 +26,7 @@ pipeline step or the benchmark.
 
 **Non-goals (v1)**
 
-- Real SSO. The demo signs in through a staff picker, but behind a proper server-side session, so swapping in
+- Real SSO. v1 signs in with staff ID + password against locally created accounts, behind a proper server-side session, so swapping in
   the bank's SSO later changes only the login route (§9.1).
 - Word-by-word streaming of answers (needs backend changes, see §3.4).
 - Moving writes to SQLite (a backend decision for P2/P3, see §3.2). The UI is built so it can adopt it later by
@@ -168,12 +168,11 @@ comes from a **server-side session** (§9.1), never from a header or field the b
 `deps.current_user` resolves it through `agent_view.staff(con, id)` on every request, so a deactivated member of
 staff loses access immediately.
 
-Session endpoints, in addition to the table below: `POST /api/session/login` (demo: pick a staff id; production:
+Session endpoints, in addition to the table below: `POST /api/session/login` (staff ID + password; production:
 SSO callback), `POST /api/session/logout`, `GET /api/session/csrf`.
 
 | Method & path | Calls | Notes |
 |---|---|---|
-| `GET /api/session/staff` | `nba.agent_view.staff_list(con, AS_OF)` | demo login picker only; available only when `UI_DEMO_LOGIN=1` |
 | `GET /api/session/me` | `nba.agent_view.staff(con, id)` | role, team, certified flag |
 | `POST /api/ask` `{question}` | `ask.service.ask(question, UserContext(...), as_of_date=AS_OF, con=con, llm=..., rag=...)` | returns `AnswerCard` as JSON; role mapped per §7 |
 | `GET /api/queue/mine` | `nba.agent_view.agent_queue(con, me, AS_OF)` | agent view |
@@ -274,51 +273,41 @@ The mapping lives in `ui/tiui/deps.py` only. Confirm with P2 (Q3).
 
 ---
 
-## 8. Visual design system (formal dark theme)
+## 8. Visual design system (CIBC brand colours, light)
 
 ### 8.1 Principles
 
-- Dark is the **default and only on-screen theme** in v1. It reads as a serious operations tool, and it suits
-  long shifts on a queue. A light **print** stylesheet (`@media print`) covers printed decision cards and reports.
-- Formal means restrained: no pure black or pure white, no gradients, no glow, no emoji, almost no shadow.
-  Depth comes from slightly lighter surfaces, not drop shadows.
-- Colour carries meaning only. Everything structural is grey; colour appears in the accent (actions, links,
-  focus) and in status badges, and status is always paired with a text label.
+- Look like the bank's own web pages, not a generic dashboard: white panels on a light grey page, thin 1px rules,
+  4px corners, a dark-grey horizontal menu, a red rule across the top, regular-weight headings, ledger tables.
+- No decorative icons, gradients, glows, uppercase "eyebrow" labels or icon-and-number cards.
+- Colour carries meaning: red for primary actions and links; status labels always carry text.
 
-### 8.2 Tokens and components
+### 8.2 Colours and type (from cibc.com, read from the live site's computed styles on 2026-10-04)
 
-Built with **shadcn/ui** (Radix primitives, components copied into `ui/web/src/components/ui`, so there is no
-runtime UI library to upgrade). The theme is a banking operations palette defined once in
-`ui/web/src/styles/index.css` and read by every shadcn component:
-
-| Token | Value | Use |
+| Token | Value | Use on cibc.com / here |
 |---|---|---|
-| `--background` | `#0a111e` | page (deep navy) |
-| `--card` / `--popover` | `#0f1828` / `#131e31` | panels, dialogs, menus |
-| `--sidebar` | `#08101c` | navigation rail |
-| `--border` / `--input` | `#1f2c42` / `#2a3a55` | dividers, table lines, inputs |
-| `--foreground` / `--muted-foreground` | `#e6ebf2` / `#97a4b8` | text |
-| `--primary` | `#2c6bd6` | institutional blue: primary actions (white text) |
-| `--gold` | `#c9a45a` | brand mark and section eyebrows only |
-| `--ok` / `--warn` / `--danger` / `--info` | `#4fb889` / `#dcaa48` / `#e0645b` / `#79a6e6` | status badges, always with a text label |
+| `--brand` | `#C41F3E` | primary buttons, links, the top rule, the active menu item |
+| `--brand-dark` | `#8B1D41` | hover on buttons and links, focus outline |
+| `--danger` | `#AF0B1C` | failures |
+| `--foreground` | `#333333` | body text |
+| `--charcoal` | `#383B3E` | menu bar and footer |
+| `--panel` | `#F2F3F2` | page background, panel title bars, table headers |
+| `--input` / `--border` | `#BBBCBC` / `#D8D8D8` | input borders, rules |
 
-Bank-specific layout: a navigation rail grouped into *Collections operations* and *Data governance*; a header
-with the business date, a secure-session indicator and the `DEMO ENVIRONMENT` tag; an **operator bar** that always
-shows the signed-in person's name, staff ID, role, team and site; and a **staff profile** panel (staff record,
-reporting line, languages, vulnerable-customer certification, access granted, session details).
+Status label backgrounds use the site's tints (`#F5E3E8`, `#DEE9F7`). The site's typeface (Whitney) is licensed,
+so the UI uses the site's own fallback, Arial / Helvetica; no web fonts are downloaded. Buttons follow the site:
+solid red with a 2px border and 4px corners, outlined red for secondary actions. This is a hackathon build for
+CIBC: it uses the colours only, not CIBC's name or logo, and it is not presented as an official CIBC product.
 
-The component library's scroll lock adds one `<style>` element; the server gives each page load a fresh CSP nonce
-for it (`get-nonce`), so the policy still has no `'unsafe-inline'`.
+Components are shadcn/ui (Radix), copied into `ui/web/src/components/ui` and restyled with these tokens.
 
-### 8.3 Type and layout
+### 8.3 Layout
 
-- **Type:** IBM Plex Sans for UI, IBM Plex Mono for SQL and ids; tabular figures for every number in a table.
-  Fonts are **self-hosted** from the npm package `@fontsource/ibm-plex-sans` (no Google Fonts request, so the
-  Content Security Policy can stay `self` only, §9.3).
-- **Density:** 32–36 px table rows, 14 px base text, 12 px for table meta, 20/16 px headings. Light text on a dark
-  background looks bolder, so body weight is 400 and headings 500–600, not 700.
-- **Layout:** fixed 240 px side nav, content max width 1440 px, 24 px gutters, 8 px spacing grid.
-- **Motion:** 120–150 ms fades only, none at all under `prefers-reduced-motion`.
+- Header: product wordmark, `DEMO ENVIRONMENT` tag when on, business date, and the signed-in person's name,
+  staff ID and role (menu: *My profile and access*, *Sign out*). Below it the charcoal menu bar.
+- *My profile and access* shows only the signed-in person's own record: staff ID, role, team, reporting line,
+  site, employment type, languages, vulnerable-customer certification, access and session.
+- Footer (charcoal): internal-use notice and the session timeout.
 
 ### 8.4 Formats
 
@@ -358,16 +347,17 @@ else in this section is built in v1.
 
 ### 9.1 Authentication and sessions
 
-| Aspect | v1 (demo) | Production path |
+| Aspect | v1 | Production path |
 |---|---|---|
-| Who you are | Login screen with a staff picker, shown only when `UI_DEMO_LOGIN=1`; the `DEMO` tag is always visible while it is on | The bank's SSO (OIDC); the login route is the only thing that changes |
-| Session | Server-side session store (in memory); browser holds only an opaque random id (`secrets.token_urlsafe(32)`) | Same, store moved to Redis or a database |
-| Cookie | `HttpOnly; SameSite=Strict; Path=/`, plus `Secure` whenever served over HTTPS | Same, always `Secure` |
-| Timeouts | 15 min idle, 8 h absolute; new session id on login; logout deletes the server record | Same |
-| Tokens in the browser | None. No JWTs, nothing in `localStorage` / `sessionStorage` | Same |
+| Who you are | Staff ID + password. Accounts are created by an administrator on the server (`python ui/accounts.py add <staff id>`), only for active staff | The bank's SSO (OIDC) with MFA; only the login route changes |
+| Before sign-in | Nothing about any member of staff is available: no directory, no search, no hints | Same |
+| Passwords | scrypt hashes (n=2^14, r=8, p=1, 16-byte salt) in `warehouse/ui_accounts.json`, outside git; 12–128 characters, not letters-only or digits-only | Held by the identity provider |
+| Failed sign-in | One message for every failure ("The staff ID or password is incorrect"), equal work whether or not the ID exists; account locks for 15 minutes after 5 failures; 5 attempts per minute per address | Identity provider's policy |
+| Session | Server-side store; browser holds only an opaque random id in an `HttpOnly; SameSite=Strict` cookie (`Secure` over HTTPS); new id on every sign-in | Same, shared store |
+| Timeouts | 15 min idle, 8 h absolute; logout deletes the server record | Same |
 
-The API **never trusts a user id sent by the browser**. The demo's acting-as header from the first draft is
-removed.
+The API never trusts a user id sent by the browser: every request re-reads the signed-in person from the session
+and re-checks them against `curated.agents`.
 
 ### 9.2 Authorisation
 
@@ -476,8 +466,7 @@ cd ui/web && npm ci && npm run build      # Node 20+, only on the machine that b
 python ui/serve.py --demo                  # API + built SPA on 127.0.0.1:8000
 ```
 
-Settings (environment variables, read once by `ui/tiui/settings.py`): `UI_DEMO_LOGIN` (demo staff picker,
-default off), `UI_DEV` (OpenAPI docs and dev logging, default off), `UI_SESSION_IDLE_MIN` (15),
+Settings (environment variables, read once by `ui/tiui/settings.py`): `UI_DEMO` (shows the DEMO ENVIRONMENT tag), `UI_DEV` (OpenAPI docs and dev logging, default off), `UI_SESSION_IDLE_MIN` (15),
 `UI_SESSION_MAX_HOURS` (8). Safe defaults: with nothing set, there is no way to sign in.
 
 - During development: `npm run dev` (Vite on 5173) with a proxy from `/api` to 8000.

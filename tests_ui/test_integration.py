@@ -31,7 +31,12 @@ def real(tmp_path):
     ids = dict(con.execute("""SELECT role, min(agent_id) FROM curated.agents WHERE status = 'active'
                               AND role IN ('agent', 'team_lead', 'qa_analyst') GROUP BY 1""").fetchall())
     con.close()
-    s = Settings(demo_login=True, warehouse=wh, ui_audit=tmp_path / "ui_audit.duckdb",
+    from conftest import TEST_PASSWORD
+    from tiui.accounts import AccountStore
+    accounts = tmp_path / "ui_accounts.json"
+    for sid in ids.values():
+        AccountStore(accounts).set_password(sid, TEST_PASSWORD)
+    s = Settings(demo=True, accounts_file=accounts, warehouse=wh, ui_audit=tmp_path / "ui_audit.duckdb",
                  decisions_csv=tmp_path / "identity_decisions.csv", dist_dir=tmp_path / "none")
     with TestClient(create_app(s)) as c:
         yield c, ids

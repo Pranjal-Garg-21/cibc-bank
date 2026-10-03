@@ -1,10 +1,14 @@
-"""Sign-in, sign-out and who you are (§9.1). Demo sign-in is a staff picker, available only with UI_DEMO_LOGIN=1."""
+"""Sign-in, sign-out and who you are (§9.1).
+
+Staff sign in with their staff ID and password (accounts made by an administrator with ui/accounts.py). Nothing
+about any member of staff is available before sign-in, and a failed sign-in never says whether the staff ID exists.
+"""
 from __future__ import annotations
 
 import importlib.util
 import sys
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
 from ..deps import AS_OF, current_user, lookup_staff, require_session, warehouse
@@ -13,7 +17,8 @@ from ..security import SESSION_COOKIE
 
 router = APIRouter(prefix="/api/session", tags=["session"])
 
-AGENT_ID = r"^[A-Za-z0-9_\-]{1,40}$"
+STAFF_ID = r"^[A-Za-z0-9_\-]{1,40}$"
+FAILED = "The staff ID or password is incorrect."
 
 
 def features() -> dict[str, bool]:
@@ -32,49 +37,35 @@ def features() -> dict[str, bool]:
 
 @router.get("/options")
 def options(request: Request):
+    """What the sign-in page needs: nothing about staff, only whether sign-in is set up."""
     s = request.app.state.settings
-    return {"demo_login": s.demo_login, "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes}
-
-
-@router.get("/staff")
-def staff(request: Request, q: str = Query("", max_length=40)):
-    """Demo login picker: active staff matching q (id, name, role or team), at most 50."""
-    s = request.app.state.settings
-    if not s.demo_login:
-        raise ApiError(404, "not_found", "Not found.")
-    like = f"%{q.strip().lower().replace('_', ' ')}%"
-    with warehouse(s) as con:
-        rows = con.execute("""
-            SELECT agent_id, agent_display_name, role, team_id, site FROM curated.agents
-            WHERE status = 'active' AND (lower(agent_id) LIKE ? OR lower(agent_display_name) LIKE ?
-                                         OR lower(replace(role, '_', ' ')) LIKE ? OR lower(team_id) LIKE ?
-                                         OR lower(site) LIKE ?)
-            ORDER BY CASE role WHEN 'team_lead' THEN 0 WHEN 'hardship_specialist' THEN 1 WHEN 'qa_analyst' THEN 2
-                     ELSE 3 END, agent_id
-            LIMIT 50""", [like] * 5).fetchall()
-    return {"staff": [{"agent_id": r[0], "name": r[1], "role": r[2], "team_id": r[3], "site": r[4]} for r in rows]}
+    return {"sign_in_configured": request.app.state.accounts.configured(), "demo": s.demo,
+            "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes}
 
 
 class Login(BaseModel):
-    agent_id: str = Field(pattern=AGENT_ID)
+    staff_id: str = Field(pattern=STAFF_ID)
+    password: str = Field(min_length=1, max_length=128)
 
 
 @router.post("/login")
 def login(body: Login, request: Request, response: Response):
     app = request.app.state
-    if not app.settings.demo_login:
-        raise ApiError(404, "not_found", "Not found.")
     ip = request.client.host if request.client else "?"
-    wait = app.limiter.hit("login", ip)
+    staff_id = body.staff_id.strip().upper()
+    wait = app.limiter.hit("login", ip) or app.accounts.locked_for(staff_id)
     if wait:
-        raise ApiError(429, "rate_limited", f"Too many sign-in attempts. Try again in {wait} s.",
+        app.access_log.record(action="sign_in", outcome="locked", object_id=staff_id, request_id=request.state.request_id)
+        raise ApiError(429, "rate_limited", f"Too many attempts. Try again in {max(1, wait // 60)} min.",
                        {"Retry-After": str(wait)})
-    with warehouse(app.settings) as con:
-        user = lookup_staff(con, body.agent_id)
-    if user is None or user.status != "active":
-        app.access_log.record(action="sign_in", outcome="refused", object_id=body.agent_id,
-                              request_id=request.state.request_id)
-        raise ApiError(401, "sign_in_failed", "That member of staff cannot sign in.")
+    ok = app.accounts.verify(staff_id, body.password)
+    user = None
+    if ok:
+        with warehouse(app.settings) as con:
+            user = lookup_staff(con, staff_id)
+    if not ok or user is None or user.status != "active":
+        app.access_log.record(action="sign_in", outcome="refused", object_id=staff_id, request_id=request.state.request_id)
+        raise ApiError(401, "sign_in_failed", FAILED)
     app.sessions.delete(request.cookies.get(SESSION_COOKIE))  # a new session id on every sign-in
     sess = app.sessions.create(user.agent_id, user.role)
     response.set_cookie(SESSION_COOKIE, sess.sid, httponly=True, samesite="strict", secure=app.settings.https,
@@ -95,19 +86,18 @@ def logout(request: Request, response: Response):
 
 @router.get("/me")
 def me(request: Request):
+    """The signed-in person's own record. Never anyone else's."""
     s = request.app.state.settings
     with warehouse(s) as con:
         user = current_user(request, con)
     sess = require_session(request)
-    f = features()
     return {
         "agent_id": user.agent_id, "name": user.display_name, "role": user.role, "team_id": user.team_id,
         "certified": user.certified, "ask_role": user.ask_role, "csrf_token": sess.csrf,
         "site": user.site, "team_lead_id": user.team_lead_id, "languages": user.languages,
         "employment_type": user.employment_type, "signed_in_at": sess.signed_in_at,
-        "max_hours": s.max_hours,
-        "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes, "demo": s.demo_login,
-        "features": f,
+        "max_hours": s.max_hours, "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes, "demo": s.demo,
+        "features": features(),
         "can": {
             "ask": True,
             "my_queue": not user.is_supervisor,

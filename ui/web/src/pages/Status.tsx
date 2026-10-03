@@ -1,10 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, CalendarDays, FileText, ShieldCheck, Upload, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { Status } from '@/api/types'
-import { DataTable, ErrorState, Loading, PageHeader, Section, Stat, StatusBadge } from '@/components/app'
-import { Button } from '@/components/ui/button'
+import { DataTable, ErrorState, Figures, Loading, PageHeader, Section, StatusBadge } from '@/components/app'
 import { dateTime, int, isoDate } from '@/lib/format'
 
 export function StatusPage() {
@@ -13,74 +11,73 @@ export function StatusPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Data governance"
-        title="Data quality & status"
-        description="The last publish of the customer 360 (gold) layer, the data-contract rules that gate it, and the quality reports."
+        title="Data quality"
+        description="The latest publish of the customer 360 data, the data-contract rules that gate it, and the quality reports."
       />
       {q.isLoading && <Loading />}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {s && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Business date" value={isoDate(s.as_of_date)} icon={<CalendarDays className="size-4" />} />
-            <Stat
-              label="Last publish"
-              value={s.publish ? (s.publish.published ? 'Published' : 'Blocked') : '—'}
-              tone={s.publish ? (s.publish.published ? 'ok' : 'danger') : undefined}
-              hint={s.publish ? dateTime(s.publish.attempt_ts) : undefined}
-              icon={<Upload className="size-4" />}
-            />
-            <Stat
-              label="Contract rules passed"
-              value={`${s.rules.filter((r) => r.passed).length} / ${s.rules.length}`}
-              hint={s.rules.some((r) => !r.passed && r.blocking) ? 'A blocking rule failed' : 'No blocking failures'}
-              icon={<ShieldCheck className="size-4" />}
-            />
-            <Stat label="Customers (golden records)" value={int(s.row_counts.c360_customer)} icon={<Users className="size-4" />} />
-          </div>
-          <Section title="Data-contract rules" description="Blocking rules stop the publish; warnings are reported">
+        <div className="space-y-5">
+          <Figures
+            items={[
+              { label: 'Business date', value: isoDate(s.as_of_date) },
+              {
+                label: 'Last publish',
+                value: s.publish ? (s.publish.published ? 'Published' : 'Blocked') : '—',
+                tone: s.publish ? (s.publish.published ? 'ok' : 'danger') : undefined,
+                note: s.publish ? dateTime(s.publish.attempt_ts) : undefined,
+              },
+              {
+                label: 'Contract rules passed',
+                value: `${s.rules.filter((r) => r.passed).length} of ${s.rules.length}`,
+                note: s.rules.some((r) => !r.passed && r.blocking) ? 'A blocking rule failed' : 'No blocking failures',
+              },
+              { label: 'Customers (golden records)', value: int(s.row_counts.c360_customer) },
+            ]}
+          />
+          <Section title="Data-contract rules" description="Blocking rules stop the publish; warnings are reported" flush>
             <DataTable
               data={s.rules as unknown as Record<string, unknown>[]}
               rowKey="rule_id"
               caption="Data-contract rules"
               columns={[
-                { key: 'rule_id', label: 'Rule', render: (r) => <span className="font-mono text-xs">{String(r.rule_id)}</span> },
+                { key: 'rule_id', label: 'Rule' },
                 { key: 'title', label: 'What it checks', wrap: true },
                 { key: 'blocking', label: 'Type', render: (r) => (r.blocking ? 'Blocks publish' : 'Warning') },
-                { key: 'violations', label: 'Violations', align: 'right' },
+                { key: 'violations', label: 'Exceptions', align: 'right' },
                 { key: 'total', label: 'Rows checked', align: 'right' },
                 {
                   key: 'passed',
                   label: 'Result',
-                  render: (r) =>
-                    r.passed ? <StatusBadge tone="ok">Pass</StatusBadge> : <StatusBadge tone={r.blocking ? 'danger' : 'warn'}>{r.blocking ? 'Fail' : 'Warn'}</StatusBadge>,
+                  render: (r) => (r.passed ? <StatusBadge tone="ok">Pass</StatusBadge> : <StatusBadge tone={r.blocking ? 'danger' : 'warn'}>{r.blocking ? 'Fail' : 'Warning'}</StatusBadge>),
                 },
               ]}
             />
           </Section>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Section title="Customer 360 tables">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <Section title="Customer 360 tables" flush>
               <DataTable
                 data={Object.entries(s.row_counts).map(([table, rows]) => ({ table, rows }))}
                 caption="Gold tables"
                 columns={[
-                  { key: 'table', label: 'Table', render: (r) => <span className="font-mono text-xs">gold.{String(r.table)}</span> },
+                  { key: 'table', label: 'Table', render: (r) => <span className="font-mono text-[13px]">gold.{String(r.table)}</span> },
                   { key: 'rows', label: 'Rows', align: 'right' },
                 ]}
               />
             </Section>
-            <Section title="Reports">
-              <ul className="divide-y divide-border">
-                {s.reports.map((r) => (
-                  <li key={r.name} className="flex items-center justify-between gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
-                    <Link to={`/status/reports/${r.name}`} className="flex items-center gap-2 text-info hover:underline">
-                      <FileText className="size-4" />
-                      {r.title}
-                    </Link>
-                    <span className="text-xs text-faint">{dateTime(r.modified)}</span>
-                  </li>
-                ))}
-              </ul>
+            <Section title="Reports" flush>
+              <table className="w-full text-sm">
+                <tbody>
+                  {s.reports.map((r) => (
+                    <tr key={r.name} className="border-b border-[#e6e6e6] last:border-b-0">
+                      <td className="px-3 py-2">
+                        <Link to={`/status/reports/${r.name}`}>{r.title}</Link>
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs text-muted-foreground">Updated {dateTime(r.modified)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </Section>
           </div>
         </div>
@@ -97,17 +94,15 @@ export function ReportPage() {
   })
   return (
     <>
-      <Button asChild variant="ghost" size="sm" className="mb-3 -ml-2 text-muted-foreground">
-        <Link to="/status">
-          <ArrowLeft /> Back to data status
-        </Link>
-      </Button>
+      <p className="mb-3 text-sm">
+        <Link to="/status">‹ Back to data quality</Link>
+      </p>
       {q.isLoading && <Loading />}
       {q.error && <ErrorState error={q.error} />}
       {q.data && (
-        <Section title={<span className="font-mono">{q.data.name}</span>}>
+        <Section title={q.data.name}>
           {/* Shown as text, not rendered HTML. */}
-          <pre className="overflow-x-auto font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-muted-foreground">{q.data.markdown}</pre>
+          <pre className="overflow-x-auto font-mono text-[13px] leading-relaxed whitespace-pre-wrap">{q.data.markdown}</pre>
         </Section>
       )}
     </>

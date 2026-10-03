@@ -1,10 +1,11 @@
 """Start the UI server (API + built React app) on this machine only. Works the same on Windows, macOS and Linux.
 
-    python ui/serve.py            # sign-in disabled (safe default)
-    python ui/serve.py --demo     # demo staff picker, shows the DEMO tag
-    python ui/serve.py --demo --dev   # also accept the Vite dev server (npm run dev) and serve /api/docs
+    python ui/serve.py                 # staff sign in with the accounts created by ui/accounts.py
+    python ui/serve.py --demo          # same, with the DEMO ENVIRONMENT tag shown
+    python ui/serve.py --demo --dev    # also accept the Vite dev server (npm run dev) and serve /api/docs
 
 Build the app first: cd ui/web && npm ci && npm run build
+Create a sign-in account: python ui/accounts.py add <staff id>
 """
 from __future__ import annotations
 
@@ -16,19 +17,26 @@ from pathlib import Path
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--demo", action="store_true", help="enable the demo staff picker (UI_DEMO_LOGIN=1)")
+    ap.add_argument("--demo", action="store_true", help="show the DEMO ENVIRONMENT tag (UI_DEMO=1)")
     ap.add_argument("--dev", action="store_true", help="development mode (UI_DEV=1)")
     ap.add_argument("--ask-llm", action="store_true", help="let Ask use the language model (UI_ASK_LLM=1)")
     ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--accounts-file", help="sign-in accounts file (default: warehouse/ui_accounts.json)")
     a = ap.parse_args()
     if a.demo:
-        os.environ["UI_DEMO_LOGIN"] = "1"
+        os.environ["UI_DEMO"] = "1"
     if a.dev:
         os.environ["UI_DEV"] = "1"
     if a.ask_llm:
         os.environ["UI_ASK_LLM"] = "1"
+    if a.accounts_file:
+        os.environ["UI_ACCOUNTS_FILE"] = str(Path(a.accounts_file).resolve())
     ui_dir = Path(__file__).resolve().parent
     sys.path.insert(0, str(ui_dir))
+    from tiui.accounts import AccountStore
+    from tiui.settings import from_env
+    if not AccountStore(from_env().accounts_file).configured():
+        print("Note: no sign-in accounts yet. Create one with: python ui/accounts.py add <staff id>")
     if not (ui_dir / "web" / "dist" / "index.html").is_file():
         print("Note: ui/web/dist is missing, so only the API is served. Build it with: cd ui/web && npm run build")
     import uvicorn

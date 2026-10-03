@@ -13,11 +13,11 @@ import pytest
 from conftest import PAIR_1, PAIR_2, PAIR_3, sign_in
 
 
-def test_options_and_staff_picker(client):
-    assert client.get("/api/session/options").json()["demo_login"] is True
-    staff = client.get("/api/session/staff", params={"q": "one"}).json()["staff"]
-    assert {s["agent_id"] for s in staff} == {"A1", "L1", "Q1"}
-    assert all(s["agent_id"] != "X1" for s in client.get("/api/session/staff").json()["staff"])
+def test_sign_in_page_reveals_no_staff(client):
+    opts = client.get("/api/session/options").json()
+    assert set(opts) == {"sign_in_configured", "demo", "as_of_date", "idle_minutes"}
+    assert opts["sign_in_configured"] is True
+    assert client.get("/api/session/staff").status_code == 404  # there is no staff directory
 
 
 def test_me_lists_permissions(client):

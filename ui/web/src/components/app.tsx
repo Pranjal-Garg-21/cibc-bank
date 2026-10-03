@@ -1,12 +1,9 @@
-// App-level building blocks on top of the shadcn components in ./ui.
-import { AlertTriangle, Ban, CircleSlash, Clock, Plug, SearchX, ServerCrash } from 'lucide-react'
+// Shared page parts, built on the shadcn components in ./ui and styled like the bank's own sites:
+// white panels with a grey title bar, ledger tables, small rectangular status labels.
 import type { ReactNode } from 'react'
 import { ApiError } from '@/api/client'
 import type { Table as TableData } from '@/api/types'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cell, humanize, isNumeric } from '@/lib/format'
@@ -14,78 +11,80 @@ import type { Tone } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 
 const TONE: Record<Tone, string> = {
-  neutral: 'border-faint/40 bg-faint/10 text-muted-foreground',
-  ok: 'border-ok/40 bg-ok/10 text-ok',
-  warn: 'border-warn/40 bg-warn/10 text-warn',
-  danger: 'border-danger/40 bg-danger/10 text-danger',
-  info: 'border-info/40 bg-info/10 text-info',
-  accent: 'border-primary/50 bg-primary/15 text-info',
+  neutral: 'bg-[#efefef] text-[#4a4c4e]',
+  ok: 'bg-[#e4f1e8] text-ok',
+  warn: 'bg-[#fbefd9] text-warn',
+  danger: 'bg-[#f5e3e8] text-danger',
+  info: 'bg-[#dee9f7] text-info',
+  accent: 'bg-[#f5e3e8] text-brand-dark',
 }
 
-/** A status label. Colour always comes with text (never colour alone). */
+/** A status label. Colour always comes with text. */
 export function StatusBadge({ tone = 'neutral', children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
-    <Badge variant="outline" title={title} className={cn('rounded-md font-medium', TONE[tone])}>
+    <span title={title} className={cn('inline-block rounded-sm px-1.5 py-px text-xs font-bold whitespace-nowrap', TONE[tone])}>
       {children}
-    </Badge>
+    </span>
   )
 }
 
-export function PageHeader({ title, description, actions, eyebrow }: { title: string; description?: ReactNode; actions?: ReactNode; eyebrow?: string }) {
+export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
       <div>
-        {eyebrow && <p className="mb-1 text-xs font-medium tracking-[0.08em] text-gold uppercase">{eyebrow}</p>}
-        <h1 className="text-2xl text-foreground">{title}</h1>
-        {description && <div className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</div>}
+        <h1 className="text-[28px] leading-tight text-foreground">{title}</h1>
+        {description && <div className="mt-1 max-w-3xl text-[14px] text-muted-foreground">{description}</div>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
   )
 }
 
-export function Section({ title, description, actions, children, className }: { title?: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+/** A panel: white box, 1px rule, grey title bar. */
+export function Section({ title, description, actions, children, className, flush }: { title?: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
   return (
-    <Card className={cn('gap-0 py-0', className)}>
+    <section className={cn('border border-border bg-white', className)}>
       {(title || actions) && (
-        <CardHeader className="border-b border-border py-3.5">
-          <CardTitle className="text-sm">{title}</CardTitle>
-          {description && <CardDescription>{description}</CardDescription>}
-          {actions && <CardAction>{actions}</CardAction>}
-        </CardHeader>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-panel px-4 py-2.5">
+          <div>
+            <h2 className="text-[15px] font-bold text-foreground">{title}</h2>
+            {description && <p className="text-xs text-muted-foreground">{description}</p>}
+          </div>
+          {actions}
+        </header>
       )}
-      <CardContent className="py-4">{children}</CardContent>
-    </Card>
+      <div className={flush ? '' : 'p-4'}>{children}</div>
+    </section>
   )
 }
 
-export function Stat({ label, value, hint, tone, icon }: { label: string; value: ReactNode; hint?: ReactNode; tone?: Tone; icon?: ReactNode }) {
+/** A row of key figures: one bordered strip, divided into cells. */
+export function Figures({ items }: { items: { label: string; value: ReactNode; note?: ReactNode; tone?: Tone }[] }) {
   return (
-    <Card className="gap-1 py-4">
-      <CardContent className="px-4">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">{label}</p>
-          {icon && <span className="text-faint">{icon}</span>}
+    <dl className="grid grid-cols-1 border border-border bg-white sm:grid-cols-2 lg:grid-flow-col lg:grid-cols-none lg:auto-cols-fr">
+      {items.map((f, i) => (
+        <div key={f.label} className={cn('px-4 py-3', i > 0 && 'border-t border-border sm:border-t-0 lg:border-l')}>
+          <dt className="text-[13px] text-muted-foreground">{f.label}</dt>
+          <dd
+            className={cn(
+              'mt-0.5 text-[24px] leading-tight tabular-nums',
+              f.tone === 'danger' ? 'text-danger' : f.tone === 'warn' ? 'text-warn' : f.tone === 'ok' ? 'text-ok' : 'text-foreground',
+            )}
+          >
+            {f.value}
+          </dd>
+          {f.note && <dd className="text-xs text-faint">{f.note}</dd>}
         </div>
-        <p
-          className={cn(
-            'mt-1.5 text-2xl font-semibold tabular-nums',
-            tone === 'warn' ? 'text-warn' : tone === 'danger' ? 'text-danger' : tone === 'ok' ? 'text-ok' : 'text-foreground',
-          )}
-        >
-          {value}
-        </p>
-        {hint && <p className="mt-0.5 text-xs text-faint">{hint}</p>}
-      </CardContent>
-    </Card>
+      ))}
+    </dl>
   )
 }
 
 export function KeyValues({ items, columns = 1 }: { items: [string, ReactNode][]; columns?: 1 | 2 }) {
   return (
-    <dl className={cn('grid gap-x-8 gap-y-3 text-sm', columns === 2 ? 'sm:grid-cols-2' : '')}>
+    <dl className={cn('grid gap-x-10 text-sm', columns === 2 && 'sm:grid-cols-2')}>
       {items.map(([k, v]) => (
-        <div key={k} className="grid grid-cols-[minmax(9rem,auto)_1fr] gap-4 border-b border-border/60 pb-2 last:border-b-0">
+        <div key={k} className="grid grid-cols-[minmax(10rem,auto)_1fr] gap-4 border-b border-[#e6e6e6] py-2">
           <dt className="text-muted-foreground">{k}</dt>
           <dd className="text-foreground">{v}</dd>
         </div>
@@ -94,70 +93,70 @@ export function KeyValues({ items, columns = 1 }: { items: [string, ReactNode][]
   )
 }
 
-export function Loading({ rows = 5 }: { rows?: number }) {
+export function Loading({ rows = 4 }: { rows?: number }) {
   return (
-    <div role="status" aria-live="polite" aria-label="Loading" className="space-y-2">
+    <div role="status" aria-live="polite" className="space-y-2">
+      <span className="sr-only">Loading</span>
       {Array.from({ length: rows }, (_, i) => (
-        <Skeleton key={i} className="h-9 w-full" />
+        <Skeleton key={i} className="h-8 w-full rounded-none bg-[#e9eaea]" />
       ))}
     </div>
   )
 }
 
-export function Empty({ title, children, icon }: { title: string; children?: ReactNode; icon?: ReactNode }) {
+export function Empty({ children }: { children: ReactNode }) {
+  return <p className="border border-dashed border-input bg-white px-4 py-8 text-center text-sm text-muted-foreground">{children}</p>
+}
+
+/** A message box in the style of the bank's site notices: coloured left rule, plain text. */
+export function Notice({ tone = 'info', title, children }: { tone?: 'info' | 'warn' | 'danger' | 'ok'; title?: ReactNode; children?: ReactNode }) {
+  const rule = { info: 'border-l-info', warn: 'border-l-warn', danger: 'border-l-danger', ok: 'border-l-ok' }[tone]
   return (
-    <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
-      <span className="mb-3 text-faint">{icon ?? <CircleSlash className="size-6" />}</span>
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      {children && <p className="mt-1 max-w-md text-sm text-muted-foreground">{children}</p>}
+    <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('border border-l-4 border-border bg-white px-4 py-3 text-sm', rule)}>
+      {title && <p className="font-bold text-foreground">{title}</p>}
+      {children && <div className="mt-0.5 text-muted-foreground">{children}</div>}
     </div>
   )
 }
 
-/** One place that turns API errors into calm, specific messages. */
+/** API errors as calm, specific messages. */
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const e = error instanceof ApiError ? error : null
-  const [title, Icon, warn] =
+  const [title, tone] =
     e?.code === 'not_connected'
-      ? ['Not connected yet', Plug, true]
+      ? ['Not connected yet', 'warn' as const]
       : e?.code === 'warehouse_busy'
-        ? ['Data is being refreshed', Clock, true]
+        ? ['Data is being refreshed', 'warn' as const]
         : e?.status === 403
-          ? ['Not available for your role', Ban, false]
+          ? ['Not available for your role', 'danger' as const]
           : e?.status === 404
-            ? ['Not found', SearchX, false]
+            ? ['Not found', 'danger' as const]
             : e?.status === 429
-              ? ['Please slow down', Clock, true]
-              : ['Something went wrong', ServerCrash, false]
+              ? ['Please wait a moment', 'warn' as const]
+              : ['Something went wrong', 'danger' as const]
   return (
-    <Alert variant={warn ? 'default' : 'destructive'} className={cn('px-4 py-3', warn && 'border-warn/40 text-warn')}>
-      <Icon />
-      <AlertTitle>{title}</AlertTitle>
-      <AlertDescription className="text-muted-foreground">
-        <p>{e?.message ?? 'Unexpected error.'}</p>
+    <Notice tone={tone} title={title}>
+      <p>{e?.message ?? 'Unexpected error.'}</p>
+      {(onRetry || e?.requestId) && (
         <div className="mt-2 flex items-center gap-4">
           {onRetry && e?.code !== 'not_connected' && e?.status !== 403 && (
             <Button size="sm" variant="outline" onClick={onRetry}>
               Try again
             </Button>
           )}
-          {e?.requestId && <span className="font-mono text-xs text-faint">Reference {e.requestId}</span>}
+          {e?.requestId && <span className="text-xs text-faint">Reference: {e.requestId}</span>}
         </div>
-      </AlertDescription>
-    </Alert>
+      )}
+    </Notice>
   )
 }
 
-/** Shown where a teammate's backend module is not merged into this build yet (the API answers 501). */
+/** Where a teammate's backend module is not merged into this build yet (the API answers 501). */
 export function NotConnected({ feature, owner }: { feature: string; owner: string }) {
   return (
-    <Alert className="border-warn/40 px-4 py-3">
-      <AlertTriangle className="text-warn" />
-      <AlertTitle className="text-warn">{feature} is not connected in this build yet</AlertTitle>
-      <AlertDescription className="text-muted-foreground">
-        The screen is ready and starts working when {owner}'s backend is merged. Nothing else needs to change.
-      </AlertDescription>
-    </Alert>
+    <Notice tone="warn" title={`${feature} is not available in this build yet`}>
+      This screen is ready. It starts working once {owner}'s part of the system is merged; nothing else needs to change.
+    </Notice>
   )
 }
 
@@ -170,7 +169,7 @@ type Col = {
   render?: (row: Record<string, unknown>) => ReactNode
 }
 
-/** A dense ledger-style table. `data` is either {columns, rows} from the API or a list of objects. */
+/** A ledger-style table. `data` is either {columns, rows} from the API or a list of objects. */
 export function DataTable({
   data,
   columns,
@@ -179,7 +178,6 @@ export function DataTable({
   empty = 'Nothing to show.',
   caption,
   maxRows,
-  selectedKey,
 }: {
   data: TableData | Record<string, unknown>[]
   columns?: Col[]
@@ -188,54 +186,43 @@ export function DataTable({
   empty?: string
   caption?: string
   maxRows?: number
-  selectedKey?: string | null
 }) {
   const objects: Record<string, unknown>[] = Array.isArray(data)
     ? data
     : data.rows.map((r) => Object.fromEntries(data.columns.map((c, i) => [c, r[i]])))
   const cols: Col[] = columns ?? (Array.isArray(data) ? Object.keys(objects[0] ?? {}) : data.columns).map((k) => ({ key: k }))
   const shown = maxRows ? objects.slice(0, maxRows) : objects
-  if (!objects.length) return <Empty title={empty} />
+  if (!objects.length) return <Empty>{empty}</Empty>
   const right = (c: Col) => c.align === 'right' || (c.align == null && isNumeric(objects[0]?.[c.key]))
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
+    <div className="overflow-x-auto border border-border bg-white">
       <Table>
         {caption && <TableCaption className="sr-only">{caption}</TableCaption>}
-        <TableHeader className="bg-secondary/60">
-          <TableRow className="hover:bg-transparent">
+        <TableHeader className="bg-panel">
+          <TableRow className="border-b-input hover:bg-transparent">
             {cols.map((c) => (
-              <TableHead
-                key={c.key}
-                className={cn('h-9 px-3 text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase', right(c) && 'text-right')}
-              >
+              <TableHead key={c.key} className={cn('h-9 px-3 text-[13px] font-bold text-foreground', right(c) && 'text-right')}>
                 {c.label ?? humanize(c.key)}
               </TableHead>
             ))}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {shown.map((row, i) => {
-            const key = rowKey ? String(row[rowKey]) : String(i)
-            return (
-              <TableRow
-                key={key}
-                data-state={selectedKey === key ? 'selected' : undefined}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-                onKeyDown={onRowClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onRowClick(row) : undefined}
-                tabIndex={onRowClick ? 0 : undefined}
-                className={cn(onRowClick && 'cursor-pointer focus-visible:bg-accent focus-visible:outline-none', 'data-[state=selected]:bg-primary/15')}
-              >
-                {cols.map((c) => (
-                  <TableCell
-                    key={c.key}
-                    className={cn('h-10 px-3', c.wrap ? 'min-w-64 py-2 whitespace-normal' : '', right(c) && 'text-right tabular-nums', c.className)}
-                  >
-                    {c.render ? c.render(row) : cell(row[c.key], c.key)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            )
-          })}
+          {shown.map((row, i) => (
+            <TableRow
+              key={rowKey ? String(row[rowKey]) : i}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              onKeyDown={onRowClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onRowClick(row) : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              className={cn('border-b-[#e6e6e6] hover:bg-[#f7f7f7]', onRowClick && 'cursor-pointer focus-visible:bg-[#f5e3e8]')}
+            >
+              {cols.map((c) => (
+                <TableCell key={c.key} className={cn('h-9 px-3 text-[13.5px]', c.wrap && 'min-w-64 py-2 whitespace-normal', right(c) && 'text-right tabular-nums', c.className)}>
+                  {c.render ? c.render(row) : cell(row[c.key], c.key)}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
         </TableBody>
       </Table>
       {maxRows && objects.length > maxRows && (

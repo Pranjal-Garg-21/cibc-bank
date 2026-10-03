@@ -2,17 +2,17 @@
 @import 'tw-animate-css';
 @import './shadcn.css';
 
-@custom-variant dark (&:is(.dark *));
-
 /*
- * Banking operations theme (docs/ui_design.md §8): deep navy surfaces, one institutional blue for actions,
- * a restrained gold for the brand mark only. Status colour is always paired with a text label.
- * shadcn components read the variables in .dark below; the app is dark-only on screen, light when printed.
+ * Colours taken from cibc.com (read from the live site's computed styles, 2026-10-04):
+ *   red #C41F3E (primary buttons, links)   burgundy #8B1D41 (hover)   deep red #AF0B1C
+ *   text #333333   dark grey #383B3E (navigation, footer)   light panel #F2F3F2   rule #BBBCBC / #D8D8D8
+ * The site's typeface (Whitney) is licensed; like the site itself we fall back to Arial / Helvetica.
+ * Light theme on screen and in print. shadcn components read the variables below.
  */
 @theme inline {
-  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
-  --font-heading: 'IBM Plex Sans', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-heading: Arial, Helvetica, sans-serif;
+  --font-mono: Consolas, 'Courier New', monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -32,93 +32,86 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 
-  /* status and brand */
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-charcoal: var(--charcoal);
+  --color-panel: var(--panel);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
   --color-info: var(--info);
-  --color-gold: var(--gold);
   --color-faint: var(--faint);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
 }
 
-:root,
-.dark {
-  --radius: 0.5rem;
+:root {
+  --radius: 4px;
 
-  --background: #0a111e; /* page */
-  --foreground: #e6ebf2;
-  --card: #0f1828; /* panels */
-  --card-foreground: #e6ebf2;
-  --popover: #131e31;
-  --popover-foreground: #e6ebf2;
-  --primary: #2c6bd6; /* institutional blue: primary actions */
+  --background: #ffffff;
+  --foreground: #333333;
+  --card: #ffffff;
+  --card-foreground: #333333;
+  --popover: #ffffff;
+  --popover-foreground: #333333;
+  --primary: #c41f3e;
   --primary-foreground: #ffffff;
-  --secondary: #182438;
-  --secondary-foreground: #e6ebf2;
-  --muted: #142033;
-  --muted-foreground: #97a4b8;
-  --accent: #1a2840; /* hover */
-  --accent-foreground: #e6ebf2;
-  --destructive: #e0645b;
-  --border: #1f2c42;
-  --input: #2a3a55;
-  --ring: #6f9be6;
+  --secondary: #f2f3f2;
+  --secondary-foreground: #333333;
+  --muted: #f2f3f2;
+  --muted-foreground: #5c5e60;
+  --accent: #f7f7f7;
+  --accent-foreground: #333333;
+  --destructive: #af0b1c;
+  --border: #d8d8d8;
+  --input: #bbbcbc;
+  --ring: #8b1d41;
 
-  --sidebar: #08101c;
-  --sidebar-foreground: #c8d2e0;
-  --sidebar-primary: #2c6bd6;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #13203a;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #18243a;
-  --sidebar-ring: #6f9be6;
-
-  --ok: #4fb889;
-  --warn: #dcaa48;
-  --danger: #e0645b;
-  --info: #79a6e6;
-  --gold: #c9a45a;
-  --faint: #6f7d92;
+  --brand: #c41f3e;
+  --brand-dark: #8b1d41;
+  --charcoal: #383b3e;
+  --panel: #f2f3f2;
+  --ok: #2f6b45;
+  --warn: #8a5100;
+  --danger: #af0b1c;
+  --info: #2a5a96;
+  --faint: #767676;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   html {
-    color-scheme: dark;
-    background: var(--background);
+    color-scheme: light;
+    background: var(--panel);
   }
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-panel text-foreground font-sans antialiased;
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.45;
   }
   h1,
   h2,
   h3 {
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-weight: 400; /* cibc.com headings are regular weight */
+  }
+  a {
+    color: var(--brand);
+  }
+  a:hover {
+    color: var(--brand-dark);
+  }
+  :focus-visible {
+    outline: 2px solid var(--brand-dark);
+    outline-offset: 2px;
   }
   table {
     font-variant-numeric: tabular-nums;
-  }
-  ::selection {
-    background: #2c6bd666;
   }
 }
 
@@ -131,25 +124,15 @@
   }
 }
 
-/* Printed decision cards and reports: light, with the confidentiality footer. */
 @media print {
   html,
   body {
     background: #fff !important;
-    color: #000 !important;
   }
-  [data-slot='sidebar'],
-  header,
   .no-print {
     display: none !important;
   }
   .print-footer {
     display: block !important;
-  }
-  * {
-    border-color: #999 !important;
-    color: #000 !important;
-    background: transparent !important;
-    box-shadow: none !important;
   }
 }

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import duckdb
 
-from conftest import PAIR_1, sign_in
+from conftest import PAIR_1, TEST_PASSWORD, sign_in
 
 from tiui.security import RateLimiter, SessionStore, csv_safe, mask_phone, mask_rows
 
@@ -21,7 +21,7 @@ def test_everything_needs_a_session(client):
 
 def test_every_route_is_guarded(client):
     """Deny by default: every API route except the listed public ones refuses an anonymous caller."""
-    public = {"/api/health", "/api/session/options", "/api/session/staff", "/api/session/login"}
+    public = {"/api/health", "/api/session/options", "/api/session/login"}
     for route in client.app.routes:
         path = getattr(route, "path", "")
         if not path.startswith("/api/") or path in public or path.startswith("/api/docs"):
@@ -32,35 +32,65 @@ def test_every_route_is_guarded(client):
             assert r.status_code in (401, 501), (method, path, r.status_code)
 
 
-def test_demo_login_off_by_default(make_client):
-    c = make_client(demo_login=False)
-    assert c.post("/api/session/login", json={"agent_id": "A1"}).status_code == 404
-    assert c.get("/api/session/staff").status_code == 404
+def login(c, staff_id, password=TEST_PASSWORD):
+    return c.post("/api/session/login", json={"staff_id": staff_id, "password": password})
 
 
-def test_inactive_or_unknown_staff_cannot_sign_in(client):
-    assert client.post("/api/session/login", json={"agent_id": "X1"}).status_code == 401
-    assert client.post("/api/session/login", json={"agent_id": "NOPE"}).status_code == 401
-    assert client.post("/api/session/login", json={"agent_id": "A1' OR 1=1 --"}).status_code == 422
+def test_no_accounts_means_no_sign_in(make_client, tmp_path):
+    c = make_client(accounts_file=tmp_path / "none.json")
+    assert c.get("/api/session/options").json()["sign_in_configured"] is False
+    assert login(c, "A1").status_code == 401
+
+
+def test_wrong_password_and_unknown_id_look_the_same(client):
+    wrong, unknown = login(client, "A1", "not-the-password-1"), login(client, "NOPE", "not-the-password-1")
+    assert wrong.status_code == unknown.status_code == 401
+    assert wrong.json()["message"] == unknown.json()["message"]  # never says which part was wrong
+
+
+def test_inactive_staff_cannot_sign_in_even_with_password(client):
+    assert login(client, "X1").status_code == 401
+    assert login(client, "A1' OR 1=1 --").status_code == 422
+
+
+def test_account_locks_after_repeated_failures(make_client):
+    c = make_client()
+    c.app.state.limiter.limits["login"] = []  # isolate the per-account lock from the per-IP limit
+    for _ in range(5):
+        assert login(c, "A2", "wrong-password-123").status_code == 401
+    r = login(c, "A2")  # right password, but locked
+    assert r.status_code == 429
+
+
+def test_passwords_are_stored_hashed(ui_settings):
+    text = ui_settings.accounts_file.read_text(encoding="utf-8")
+    assert TEST_PASSWORD not in text and '"hash"' in text and '"salt"' in text
+
+
+def test_password_rules():
+    from tiui.accounts import check_password_rules
+    assert check_password_rules("short1") is not None
+    assert check_password_rules("onlyletterslong") is not None
+    assert check_password_rules("letters-and-123") is None
 
 
 def test_session_cookie_flags(client):
-    r = client.post("/api/session/login", json={"agent_id": "A1"})
+    r = login(client, "A1")
     cookie = r.headers["set-cookie"].lower()
     assert "httponly" in cookie and "samesite=strict" in cookie and "path=/" in cookie
 
 
 def test_secure_cookie_and_hsts_over_https(make_client):
     c = make_client(https=True)
-    r = c.post("/api/session/login", json={"agent_id": "A1"})
+    r = login(c, "A1")
     assert "secure" in r.headers["set-cookie"].lower()
     assert r.headers["strict-transport-security"].startswith("max-age=")
 
 
 def test_new_session_id_on_each_sign_in(client):
-    client.post("/api/session/login", json={"agent_id": "A1"})
+    login(client, "A1")
     first = client.cookies.get("ti_session")
-    client.post("/api/session/login", json={"agent_id": "A1"})
+    login(client, "A1")
     assert client.cookies.get("ti_session") != first
     assert client.app.state.sessions.get(first) is None
 
@@ -118,7 +148,7 @@ def test_errors_do_not_leak_internals(client):
 
 
 def test_login_rate_limited(client):
-    codes = [client.post("/api/session/login", json={"agent_id": "NOPE"}).status_code for _ in range(7)]
+    codes = [login(client, "NOPE", "wrong-password-123").status_code for _ in range(7)]
     assert codes[-1] == 429
 
 
