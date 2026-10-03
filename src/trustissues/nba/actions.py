@@ -15,6 +15,8 @@ from trustissues.common import config
 from trustissues.common.db import connect
 
 
+# Names follow the team's decision-card scheme (common/fixtures.py, contracts/interfaces/stubs.sql):
+# actions agent_call / sms_reminder / ... / wait; channels phone / sms / email / mail (+ push).
 @dataclass(frozen=True)
 class Action:
     name: str
@@ -31,9 +33,9 @@ CATALOGUE: dict[str, Action] = {a.name: a for a in [
     Action("wait", None, 0, None),
     Action("push_reminder", "push", 1, "push"),
     Action("email_reminder", "email", 1, "email_reminder"),
-    Action("sms_payment_link", "sms", 2, "payment_link"),
-    Action("letter", "letter", 2, "letter"),
-    Action("outbound_call", "call", 3, "outbound_call"),
+    Action("sms_reminder", "sms", 2, "payment_link"),
+    Action("letter", "mail", 2, "letter"),
+    Action("agent_call", "phone", 3, "outbound_call"),
 ]}
 
 
@@ -49,6 +51,7 @@ def choose(allowed: list[str], values: dict[str, float]) -> str:
 
 
 ACTION_VALUES_FILE = "action_values.parquet"
+CAPACITY_CHANNEL = {"call": "phone", "letter": "mail"}  # channel_capacity names -> team channel names
 MIN_CONTACTS = 500  # below this, a treatment x bucket payment rate is too noisy to act on
 
 
@@ -78,10 +81,11 @@ def load_payment_rates(path=None) -> dict[str, dict[str, float]]:
 
 
 def load_unit_costs(con) -> dict[str, float]:
-    """channel -> average unit cost in CAD (channel_capacity.unit_cost_cad)."""
+    """channel -> average unit cost in CAD (channel_capacity.unit_cost_cad), in the team's channel names."""
     from trustissues.features import sources
 
-    return dict(sources.channel_capacity(con).aggregate("channel, avg(unit_cost_cad)").fetchall())
+    rows = sources.channel_capacity(con).aggregate("channel, avg(unit_cost_cad)").fetchall()
+    return {CAPACITY_CHANNEL.get(ch, ch): cost for ch, cost in rows}
 
 
 def value_actions(allowed: list[str], bucket: str | None, risk: float, amount: float,
@@ -105,6 +109,8 @@ def value_actions(allowed: list[str], bucket: str | None, risk: float, amount: f
             continue
         values[a] = risk * (r[a] - base) * amount - costs.get(spec.channel, 0.0)
     return values
+
+
 BUCKETS = """CASE WHEN {d} IS NULL THEN NULL WHEN {d} <= 0 THEN 'current' WHEN {d} <= 30 THEN '1-30'
                   WHEN {d} <= 60 THEN '31-60' WHEN {d} <= 90 THEN '61-90' WHEN {d} <= 120 THEN '91-120'
                   WHEN {d} <= 150 THEN '121-150' WHEN {d} <= 180 THEN '151-180' ELSE '180+' END"""

@@ -33,7 +33,7 @@ COLUMNS = ["recommendation_id", "golden_customer_id", "case_id", "agent_id", "as
            "risk_score", "expected_value", "requires_approval", "approval_reason", "decision_card", "model_version",
            "feature_snapshot_id", "created_ts"]
 DIGITAL = ("sms", "email", "push")
-AGENT_ACTIONS = ("outbound_call", "wait")  # stay in the assigned agent's queue; the rest go to batches
+AGENT_ACTIONS = ("agent_call", "wait")  # stay in the assigned agent's queue; the rest go to batches
 
 
 @dataclass

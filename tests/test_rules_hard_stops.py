@@ -53,19 +53,19 @@ def test_wait_is_never_blocked():
 def test_consent_is_default_deny_and_per_channel():
     r = rules.allowed_actions(rules.CaseFlags(consent={"email": True}))
     assert r.allowed == ["wait", "email_reminder"]
-    assert r.blocked["outbound_call"] == "no_channel_consent"
+    assert r.blocked["agent_call"] == "consent"
 
 
 def test_contact_cap_and_do_not_call():
     assert rules.allowed_actions(_flags(contacts_last_7d=3, contact_cap_7d=3)).allowed == ["wait"]
     r = rules.allowed_actions(_flags(do_not_call=True))
-    assert r.blocked == {"outbound_call": "do_not_call"}
+    assert r.blocked == {"agent_call": "do_not_call"}
 
 
 def test_contact_hours_only_bind_real_time_channels():
     r = rules.allowed_actions(_flags(planned_local_time=time(22, 0), permitted_call_hours=(time(8), time(21)),
                                      preferred_window=(time(9), time(18))))
-    assert r.blocked == {"outbound_call": "outside_permitted_hours", "sms_payment_link": "outside_permitted_hours"}
+    assert r.blocked == {"agent_call": "outside_permitted_hours", "sms_reminder": "outside_permitted_hours"}
     r = rules.allowed_actions(_flags(planned_local_time=time(19, 0), permitted_call_hours=(time(8), time(21)),
                                      preferred_window=(time(9), time(18))))
-    assert r.blocked == {"outbound_call": "outside_preferred_window", "sms_payment_link": "outside_preferred_window"}
+    assert r.blocked == {"agent_call": "outside_preferred_window", "sms_reminder": "outside_preferred_window"}

@@ -160,9 +160,9 @@ The rates are observational, so the values rank actions; they do not prove uplif
 | Action | Cases | With open promise | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
 | `wait` | 28,871 | 11,210 | 0.93 | 0.00 | 18,256 |
-| `outbound_call` | 19,816 | 5,711 | 0.89 | 54.92 | 99 |
+| `agent_call` | 19,816 | 5,711 | 0.89 | 54.92 | 99 |
 | `email_reminder` | 17,822 | 7,692 | 0.90 | 22.94 | 17,822 |
-| `sms_payment_link` | 12,983 | 3,947 | 0.85 | 18.60 | 12,983 |
+| `sms_reminder` | 12,983 | 3,947 | 0.85 | 18.60 | 12,983 |
 | `push_reminder` | 5,992 | 2,244 | 0.81 | 5.12 | 5,992 |
 | `letter` | 575 | 142 | 0.99 | 30.13 | 18 |
 
@@ -178,9 +178,9 @@ Cases where a rule removed at least one action:
 
 | Rule | Cases |
 |---|---|
-| `no_channel_consent` | 62,377 |
+| `consent` | 62,377 |
 | `do_not_call` | 23,323 |
-| `contact_cap_7d` | 4,655 |
+| `contact_limit` | 4,655 |
 | `represented_by_third_party` | 4,374 |
 | `open_dispute` | 2,511 |
 | `cease_contact` | 2,412 |
@@ -214,7 +214,7 @@ Example decision card:
   "why_beat_runner_up": "Expected net $1.89 vs $1.48 for email_reminder ($0.41 more after contact cost)",
   "blocked_actions": [
     {
-      "action": "outbound_call",
+      "action": "agent_call",
       "rule": "do_not_call"
     }
   ],

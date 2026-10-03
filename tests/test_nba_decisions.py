@@ -9,9 +9,9 @@ from trustissues.common.interfaces import DecisionCard, Reason, apply_stubs
 from trustissues.nba import actions, explain, hardship, rules
 from trustissues.nba.queue import COLUMNS, CaseInput, Context, decide_case
 
-RATES = {"31-60": {"wait": 0.14, "push_reminder": 0.15, "email_reminder": 0.22, "sms_payment_link": 0.23,
-                   "letter": 0.144, "outbound_call": 0.30}}
-COSTS = {"call": 2.4, "sms": 0.01, "email": 0.001, "push": 0.001, "letter": 1.1}
+RATES = {"31-60": {"wait": 0.14, "push_reminder": 0.15, "email_reminder": 0.22, "sms_reminder": 0.23,
+                   "letter": 0.144, "agent_call": 0.30}}
+COSTS = {"phone": 2.4, "sms": 0.01, "email": 0.001, "push": 0.001, "mail": 1.1}
 ALL_CONSENT = {c: True for c in rules.CHANNELS}
 CTX = Context(as_of=date(2026, 9, 28), rates=RATES, costs=COSTS, high_balance=5000.0, model_version="ptp_break_v0",
               snapshot_id="FS-test")
@@ -27,7 +27,7 @@ def _case(**kw):
 def test_value_is_risk_times_lift_times_amount_minus_cost():
     v = actions.value_actions(list(actions.CATALOGUE), "31-60", 0.8, 500.0, RATES, COSTS)
     assert v["wait"] == 0.0
-    assert abs(v["outbound_call"] - (0.8 * (0.30 - 0.14) * 500 - 2.4)) < 1e-9
+    assert abs(v["agent_call"] - (0.8 * (0.30 - 0.14) * 500 - 2.4)) < 1e-9
 
 
 def test_no_risk_means_no_contact():
@@ -52,7 +52,7 @@ def test_payment_rates_fill_wait_with_the_weakest_treatment(tmp_path):
         v(treatment_code, test_cell, dpd_bucket, contacts, cases, promise_rate, paid_30d_rate, avg_paid_30d,
           avg_contact_cost_cad)) TO '{path.as_posix()}' (FORMAT PARQUET)""")
     rates = actions.load_payment_rates(path)
-    assert rates["31-60"] == {"outbound_call": 0.30, "letter": 0.14, "wait": 0.14}  # push: too few contacts
+    assert rates["31-60"] == {"agent_call": 0.30, "letter": 0.14, "wait": 0.14}  # push: too few contacts
     assert rates["1-30"] == {"wait": 0.17}
 
 
@@ -61,10 +61,10 @@ def test_card_fits_the_gold_stub_and_the_decision_card_shape():
     con = duckdb.connect()
     apply_stubs(con)
     con.execute(f"INSERT INTO gold.nba_decisions VALUES ({', '.join('?' * len(COLUMNS))})", [row[c] for c in COLUMNS])
-    assert con.execute("SELECT action FROM gold.nba_decisions").fetchone()[0] == "outbound_call"
+    assert con.execute("SELECT action FROM gold.nba_decisions").fetchone()[0] == "agent_call"
     card = json.loads(row["decision_card"])
     assert set(card) == {f.name for f in fields(DecisionCard)}
-    assert card["runner_up_action"] == "sms_payment_link"
+    assert card["runner_up_action"] == "sms_reminder"
     assert card["summary"].startswith("High risk of breaking (0.80): Promised 40% of the overdue amount.")
 
 
@@ -83,13 +83,13 @@ def test_hardship_is_gentler_needs_approval_and_leaves_an_uncertified_agent():
     assert hard["requires_approval"] and hard["approval_reason"] == "hardship"
     assert hard["agent_id"] is None  # assigned agent is not certified: route to one who is
     certified = decide_case(_case(signal=hardship.HardshipSignal("possible"), agent_certified=True,
-                                  flags=rules.CaseFlags(consent={"call": True})), CTX)
+                                  flags=rules.CaseFlags(consent={"phone": True})), CTX)
     assert certified["action"] == "wait" and certified["agent_id"] == "AG-1"
 
 
 def test_approval_reasons():
     digital = decide_case(_case(flags=rules.CaseFlags(consent={"sms": True})), CTX)
-    assert digital["action"] == "sms_payment_link" and digital["approval_reason"] == "digital_batch"
+    assert digital["action"] == "sms_reminder" and digital["approval_reason"] == "digital_batch"
     assert digital["agent_id"] is None
     big = decide_case(_case(amount=20000.0), CTX)
     assert big["approval_reason"] == "high_balance"

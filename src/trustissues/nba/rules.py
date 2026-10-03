@@ -14,8 +14,8 @@ from datetime import time
 
 from trustissues.nba.actions import CATALOGUE
 
-CHANNELS = ("call", "sms", "email", "push", "letter")
-REAL_TIME = ("call", "sms")  # channels bound by contact hours
+CHANNELS = ("phone", "sms", "email", "push", "mail")  # as in customer_safeguards consent_* (+ push)
+REAL_TIME = ("phone", "sms")  # channels bound by contact hours
 
 
 @dataclass(frozen=True)
@@ -51,9 +51,9 @@ RULES = [
     ("insolvency", lambda f, a: f.insolvency),
     ("open_dispute", lambda f, a: f.open_dispute),
     ("represented_by_third_party", lambda f, a: f.represented),
-    ("no_channel_consent", lambda f, a: not f.consent.get(a.channel, False)),
-    ("do_not_call", lambda f, a: f.do_not_call and a.channel == "call"),
-    ("contact_cap_7d", lambda f, a: f.contacts_last_7d >= f.contact_cap_7d),
+    ("consent", lambda f, a: not f.consent.get(a.channel, False)),
+    ("do_not_call", lambda f, a: f.do_not_call and a.channel == "phone"),
+    ("contact_limit", lambda f, a: f.contacts_last_7d >= f.contact_cap_7d),
     ("outside_permitted_hours", lambda f, a: a.channel in REAL_TIME and _outside(f.planned_local_time,
                                                                                  f.permitted_call_hours)),
     ("outside_preferred_window", lambda f, a: a.channel in REAL_TIME and _outside(f.planned_local_time,
@@ -115,7 +115,7 @@ def load_case_flags(con, case_ids: list[str] | None = None, planned_local_time: 
         out[case_id] = CaseFlags(
             cease_contact=cease, deceased=dead, insolvency=insolv, open_dispute=dispute, represented=rep,
             do_not_call=dnc,
-            consent={"call": c_call, "sms": c_sms, "email": c_email, "push": c_push, "letter": c_letter},
+            consent={"phone": c_call, "sms": c_sms, "email": c_email, "push": c_push, "mail": c_letter},
             contacts_last_7d=n7, contact_cap_7d=cap,
             permitted_call_hours=_window(pstart, pend), preferred_window=_window(wstart, wend),
             planned_local_time=planned_local_time,

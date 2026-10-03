@@ -184,6 +184,7 @@ hardship adjustment → card → approval.
   cases with an uncertified agent get `agent_id` NULL (to be routed to a certified agent).
 - **Placeholders until gold**: `golden_customer_id` holds `crm_customer_id`; `evidence` is empty until P4's
   `gold.text_features`; hardship level is `possible` from the case flag only.
-- **Open with the team**: action names (fixture uses `agent_call`/`phone`, P3 uses `outbound_call`/`call`);
-  `reason_code` list for overrides; capacity (≈19.8k calls recommended for ~790 active agents) is the stretch
+- **Names** follow the team's sample card: actions `agent_call`, `sms_reminder`, `email_reminder`, `push_reminder`,
+  `letter`, `wait`; channels `phone`, `sms`, `email`, `mail`, `push`; rules include `consent` and `contact_limit`.
+- **Open with the team**: `reason_code` list for overrides; capacity (≈19.8k calls recommended for ~790 active agents) is the stretch
   `allocate.py`.

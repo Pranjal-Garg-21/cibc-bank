@@ -16,9 +16,9 @@ ACTION_TEXT = {
     "wait": "Wait: no contact today",
     "push_reminder": "Send an app push reminder",
     "email_reminder": "Send an email reminder",
-    "sms_payment_link": "Send an SMS payment link",
+    "sms_reminder": "Send an SMS reminder with a payment link",
     "letter": "Send a letter",
-    "outbound_call": "Call the customer",
+    "agent_call": "Call the customer",
 }
 
 
