@@ -1,0 +1,22 @@
+# Display masking by role (governance/masking.py). Levels come from config/sensitivity.yaml.
+# Actions: show | partial (keep a recognisable fragment) | mask (fixed placeholder) | drop (column removed).
+# Anything unclassified is masked: fail closed.
+roles:
+  agent:     {direct_pii: partial, quasi_identifier: partial, protected: drop, none: show, unclassified: mask}
+  team_lead: {direct_pii: mask,    quasi_identifier: mask,    protected: drop, none: show, unclassified: mask}
+  analyst:   {direct_pii: drop,    quasi_identifier: mask,    protected: drop, none: show, unclassified: mask}
+
+# Columns not in sensitivity.yaml (gold views, UI frames) are classified by name, first match wins.
+name_rules:
+  direct_pii:
+    - '(^|_)(full_?name|first_?name|last_?name|name)(_|$)'
+    - '(^|_)(phone|mobile|email|e_?mail|address|street|sin|national_?id|ssn|dob|date_of_birth|birth_?date)(_|$)'
+    - '(^|_)(card_?number|account_?number|iban|cardholder)(_|$)'
+  quasi_identifier:
+    - '(^|_)(postal|fsa|zip|geo_?lat|geo_?lon|latitude|longitude)(_|$)'
+  protected:
+    - '(^|_)(gender|marital|citizenship|newcomer|ethnic\w*|religio\w*|race|age|age_?band)(_|$)'
+
+# Unclassified columns with these shapes are safe aggregates, keys or system fields and are shown.
+safe_name_patterns:
+  - '(^|_)(id|ids|key|date|ts|flag|count|amount|rate|pct|score|status|action|channel|queue|bucket|product|dpd|balance|version|reason|code|type|decision|model|cost|total|share|numerator|denominator|metric_value|period|disputes|calls|accounts|promises|cases|n|province|site|region|hour|label|cell|strategy|segment|month|week|year|day|avg|mean|open|prior|broken|kept|hardship|attempts|contacts|disputes|bucket|current|cure)(_|$)'
