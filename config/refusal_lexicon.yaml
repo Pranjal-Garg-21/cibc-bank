@@ -1,0 +1,32 @@
+# Ask refusal gate. Patterns are regexes matched case-insensitively against the question.
+# Word boundaries matter: "average" and "ageing buckets" must NOT trigger the age rule.
+protected_attributes:
+  reason: "Protected personal attributes are not used to rank, select or describe customers."
+  patterns:
+    - '\bgender\b'
+    - '\bmarital( status)?\b'
+    - '\bcitizen(ship)?\b'
+    - '\bnewcomers?\b'
+    - '\bimmigra\w+'
+    - '\b(race|racial|ethnic\w*|religio\w*|sexual orientation)\b'
+    - '\bage\b(?!\w)'
+    - '\bage (band|group|bracket)s?\b'
+    - '\bdate of birth\b|\bdob\b|\bbirth ?date\b'
+proxy_geography:
+  reason: "Postal areas act as a proxy for protected attributes and cannot drive treatment decisions."
+  patterns:
+    - '\bfsas?\b'
+    - '\bpostal (areas?|codes?)\b'
+    - '\bforward sortation\b'
+    - '\bneighbou?rhoods?\b'
+pii_export:
+  reason: "Customer identities and contact details are not disclosed in bulk."
+  patterns:
+    - '\b(names?|phones?|phone numbers?|emails?|e-mail addresses?|home addresses?|addresses|sin|social insurance)\b.{0,60}\b(customers?|clients?|borrowers?)\b'
+    - '\b(customers?|clients?|borrowers?)\b.{0,60}\b(names?|phone numbers?|emails?|home addresses?|addresses|sin|social insurance)\b'
+out_of_scope:
+  reason: "This question is outside collections analytics and policy."
+  patterns:
+    - '\bweather\b|\bforecast\b|\btemperature\b'
+    - '\b(stock price|sports? score|recipe|horoscope|lottery)\b'
+    - '\bwho (won|is the president)\b'

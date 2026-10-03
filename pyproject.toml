@@ -17,3 +17,6 @@ ti-dictionary = "trustissues.factory.ingest.dictionary:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"trustissues.ask.data" = ["metric_sql/*.sql"]
