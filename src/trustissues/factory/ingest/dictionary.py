@@ -20,7 +20,7 @@ from trustissues.common.db import connect
 # Columns that are not protected attributes themselves but can stand in for them.
 PROXY_PATTERNS = [r"(^|_)age($|_)", r"accent", r"interpreter", r"dob_year", r"birth_year"]
 # 'age' as a whole word only: ageing buckets, age_of_account style names are matched manually
-PROXY_EXCLUDE = [r"ageing", r"aging", r"account_age", r"age_of", r"avg_age", r"usage", r"manage", r"language"]
+PROXY_EXCLUDE = [r"ageing", r"aging", r"account_age", r"age_of", r"avg_age", r"trade_age", r"usage", r"manage", r"language", r"^dq_"]
 
 SENS_MAP = {
     "Direct PII": "direct_pii",
@@ -72,6 +72,14 @@ def load_curate_cfg() -> dict:
         return yaml.safe_load(f) or {}
 
 
+def load_dq_cfg() -> dict:
+    path = config.CONFIG_DIR / "dq_checks.yaml"
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
 def curated_columns(con) -> dict[str, list[str]]:
     """Columns of curated.* tables (empty before the curated build has run)."""
     out: dict[str, list[str]] = defaultdict(list)
@@ -83,7 +91,7 @@ def curated_columns(con) -> dict[str, list[str]]:
     return out
 
 
-def derive_labels(tables: dict, curated: dict, curate_cfg: dict) -> None:
+def derive_labels(tables: dict, curated: dict, curate_cfg: dict, dq_cfg: dict | None = None) -> None:
     """Derived curated columns inherit the label of the column they come from, so a standardised
     DOB is as sensitive as the raw DOB. Adds <table>.<derived column> entries to `tables` in place."""
     ident = curate_cfg.get("identity_fields") or {}
@@ -107,6 +115,13 @@ def derive_labels(tables: dict, curated: dict, curate_cfg: dict) -> None:
                 if c.startswith("std_") and c.startswith(prefix):
                     cols[c] = cols.get(base, "unclassified")
                     break
+    for d in (dq_cfg or {}).get("derived_columns", []):  # channel_resolved, cif10, salutation_std
+        t = d["table"].split(".", 1)[1]
+        tables.setdefault(t, {})[d["column"]] = tables.get(t, {}).get(d["from"], "unclassified")
+    for t, cs in curated.items():  # dq_* flags describe data quality, not a person
+        for c in cs:
+            if c.startswith("dq_"):
+                tables.setdefault(t, {})[c] = "none"
     for t, cs in curated.items():  # <col>__raw keeps the original text of a failed cast
         for c in cs:
             if c.endswith("__raw"):
@@ -136,7 +151,7 @@ def build_sensitivity(con) -> dict:
         t, c = key.split(".", 1)
         if t in tables and c in tables[t]:
             tables[t][c] = o["label"]
-    derive_labels(tables, curated_columns(con), load_curate_cfg())
+    derive_labels(tables, curated_columns(con), load_curate_cfg(), load_dq_cfg())
 
     protected = sorted({f"{t}.{c}" for t, cs in tables.items() for c, s in cs.items() if s == "protected"})
     proxies = sorted({f"{t}.{c}" for t, cs in tables.items() for c, s in cs.items() if s == "none" and is_proxy(c)})

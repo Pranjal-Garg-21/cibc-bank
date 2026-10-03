@@ -111,3 +111,47 @@ def test_non_iso_dates_recovered_only_when_unambiguous(con):
     raw_kept = dict(con.execute("SELECT id, d__raw FROM curated.snap WHERE d__raw IS NOT NULL").fetchall())
     assert raw_kept == {"e": "05/06/2024", "f": "31/02/2024", "g": "not a date"}
     assert r["cols_with_recovered_formats"] == 1
+
+
+def _people_table(con, name, rows, extra_cols=""):
+    con.execute(f"CREATE TABLE raw.{name} (id VARCHAR, dob_raw VARCHAR{extra_cols}, _ingested_at TIMESTAMP, "
+                "_source_file VARCHAR, _batch_id VARCHAR, _row_hash VARCHAR)")
+    for i, r in enumerate(rows):
+        marks = ",".join("?" * len(r))
+        con.execute(f"INSERT INTO raw.{name} VALUES ({marks}, now(), 'f', 'B1', ?)", [*r, f"h{name}{i}"])
+
+
+def test_one_sided_column_resolves_ambiguous_dates_and_records_the_evidence(con):
+    # a card-like column: day-first, so the first part is sometimes above 12 and the second never is
+    rows = [(f"c{i}", f"{13 + i % 15:02d}-0{1 + i % 9}-1990") for i in range(1200)] + [("amb", "07-12-1992")]
+    _people_table(con, "cards", rows)
+    cfg = {"identity_fields": {"cards": {"dob": "dob_raw"}}}
+    B.curate_table(con, "cards", {"cards": {"columns": [{"name": "id", "type": "string"}, {"name": "dob_raw", "type": "string"}]}}, cfg)
+    amb = con.execute("SELECT std_dob, std_dob_alt, std_dob_ambiguous, std_dob_was_ambiguous, std_dob_basis FROM curated.cards WHERE id='amb'").fetchone()
+    assert amb == ("1992-12-07", None, False, True, "convention")        # day-first, decided by the column
+    ev = con.execute("SELECT first_over_12, second_over_12, decision FROM curated._date_conventions WHERE table_name='cards'").fetchone()
+    assert ev == (1200, 0, "day_first")                                  # the evidence is on the record
+
+
+def test_mixed_column_is_not_guessed(con):
+    rows = [(f"a{i}", f"{13 + i % 15:02d}/0{1 + i % 9}/1990") for i in range(600)] + \
+           [(f"b{i}", f"0{1 + i % 9}/{13 + i % 15:02d}/1990") for i in range(500)] + [("amb", "07/12/1992")]
+    _people_table(con, "mixed", rows)
+    cfg = {"identity_fields": {"mixed": {"dob": "dob_raw"}}}
+    B.curate_table(con, "mixed", {"mixed": {"columns": [{"name": "id", "type": "string"}, {"name": "dob_raw", "type": "string"}]}}, cfg)
+    amb = con.execute("SELECT std_dob_ambiguous, std_dob_alt IS NOT NULL, std_dob_basis FROM curated.mixed WHERE id='amb'").fetchone()
+    assert amb == (True, True, "ambiguous")                              # both readings kept
+    assert con.execute("SELECT decision FROM curated._date_conventions WHERE table_name='mixed'").fetchone()[0].startswith("mixed")
+
+
+def test_source_clean_date_settles_an_ambiguous_raw_date(con):
+    rows = [("x", "07/12/1992", "1992-12-07"), ("y", "07/12/1992", "1992-07-12"), ("z", "13/01/1990", "1990-01-13"), ("n", "07/12/1992", None)]
+    _people_table(con, "crm", rows, extra_cols=", date_of_birth VARCHAR")
+    cfg = {"identity_fields": {"crm": {"dob": "dob_raw", "dob_clean": "date_of_birth"}}}
+    schema = {"crm": {"columns": [{"name": "id", "type": "string"}, {"name": "dob_raw", "type": "string"}, {"name": "date_of_birth", "type": "date"}]}}
+    B.curate_table(con, "crm", schema, cfg)
+    got = {i: r for i, *r in con.execute("SELECT id, std_dob, std_dob_ambiguous, std_dob_was_ambiguous, std_dob_basis FROM curated.crm").fetchall()}
+    assert got["x"] == ["1992-12-07", False, True, "source_clean_column"]  # same raw text, different truth: the clean column decides
+    assert got["y"] == ["1992-07-12", False, True, "source_clean_column"]
+    assert got["z"][0] == "1990-01-13"
+    assert got["n"][0] is not None and got["n"][1:] == [True, True, "ambiguous"]  # no clean value: stays ambiguous, both readings kept
