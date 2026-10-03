@@ -131,10 +131,10 @@ Still unclassified: the six Parquet `year` partition columns (derived from folde
 
 ## 8. Not done / open
 
-- **Enum validation against `code_lookups`** (plan section 3.2) is not implemented.
-- **`text_controls.py`** (which notes and transcripts are eligible for downstream LLM use) is not implemented.
-- **`mapping_assistant.py`** (suggest mappings for brand-new tables) is not implemented.
+- **Enum validation against `code_lookups`**: done since this was written. 15 code columns are checked by the data quality report (section F, checks V0-V16); see [`documentation.md`](documentation.md).
+- **`text_controls.py`**: done since this was written; see [`consumer_views.md`](consumer_views.md). A second version exists on P4's branch; [`../merge.md`](../merge.md) §1 says how to merge them.
+- **`mapping_assistant.py`**: written and tested offline (a fake model), **not yet run against the API**.
 - **`verify_warehouse.py` for curated** compares the builder's own log to the tables, so it proves consistency, not that the cleaning is right. Section 4 is the evidence on correctness.
 - **Cards: 8.6%** of parsed last names are not a known CRM surname (likely hyphenated or compound names). Not investigated.
-- **`transcript_json`** is loaded raw but not parsed into turns.
+- **`transcript_json`** is loaded raw; `text_controls.py` parses its turns into text for the timeline.
 - Speed-up of the build is **not started**.

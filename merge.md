@@ -57,6 +57,7 @@ Both are known to be changed on the P4 branch as well as on `main`.
 - [ ] Once `common/llm.py` is on `main`, change `second_opinion._ask()` to call it, and drop the `identity.llm_model` / `llm_effort` settings in favour of the shared `llm:` section.
 - [ ] **Team decision:** identity pairs contain unmasked names, dates of birth, phone numbers and postal codes, because those are what the matcher compares. Agree which LLM provider may receive them before running it (3,343 pairs waiting).
 - [ ] Keep the safe default: if the call fails or no key is configured, pairs go to the human review queue and records stay separate.
+- [ ] Same for `src/trustissues/factory/curate/mapping_assistant.py`: it calls OpenRouter (Nemotron 3 Super) itself through `_post()` with its own `mapping_assistant:` section in `config/settings.yaml`. Replace `_post()` with `common/llm.py` and move `base_url`, `api_key_env`, `model`, `extra_body` into the shared `llm:` section (P4's section already uses the same provider, model and `OPENROUTER_API_KEY`). Keep its cost guard, cache and `--call` safety switch, or confirm `llm.py` provides the same.
 
 ---
 

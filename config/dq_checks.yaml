@@ -639,6 +639,70 @@ checks:
     sql: "select count(*) filter (where golden_customer_id is null), count(*) from gold.promises_enriched"
     how: "Its case could not be tied to a person (I7) and its CRM ID does not exist. Kept in `gold.promises_enriched` with a NULL `golden_customer_id`; training and features should leave it out."
 
+  # ------------------------------------------------------------------ H. unusual days (anomaly detection)
+  # Read curated._anomaly_episodes, written by `python -m trustissues.factory.quality.anomaly` (config/anomaly.yaml).
+  # Full list: reports/anomaly_report.md.
+  - id: A1
+    area: anomaly
+    title: "Unusual day or run of days that nothing in the operations log or the calendar explains"
+    tables: [contact_history, collections_cases, promises_to_pay, agent_notes, offers, transactions, external]
+    severity: medium
+    status: documented
+    sql: "select (select count(*) from curated._anomaly_episodes where status = 'unexplained'), (select count(*) from curated._anomaly_episodes)"
+    evidence: "select string_agg(series || ' ' || slice || ' ' || metric || ' ' || start || (case when days > 1 then ' to ' || \"end\" else '' end) || ' (' || case when metric = 'row_count' then printf('%+.0f%%', change * 100) else printf('%+.0f pts', change * 100) end || ')', '; ') from (select * from curated._anomaly_episodes where status = 'unexplained' order by abs(worst_z) * days desc limit 6)"
+    how: "Total is all episodes found. These are leads, not proven defects: the operations log does not list every issue (the release says finding them is part of the task), and some will be business changes the log does not record (a campaign, a new channel). Each needs a person to look before anything is changed. Counted per episode: consecutive flagged days of one metric moving the same way."
+  - id: A2
+    area: anomaly
+    title: "Unusual days explained by a logged operations event"
+    tables: [contact_history, collections_cases, external]
+    severity: info
+    status: context
+    sql: "select (select count(*) from curated._anomaly_episodes where status = 'explained'), (select count(*) from curated._anomaly_episodes)"
+    evidence: "select string_agg(distinct split_part(explained_by, ' (', 1), ', ') from curated._anomaly_episodes where status = 'explained'"
+    how: "Detected automatically and matched to the operations log: the event lists the table and its dates overlap the episode (one day of lag allowed). Long events (layoffs, a policy) explain volume changes only. Section A checks each logged event directly."
+  - id: A3
+    area: anomaly
+    title: "Unusual days explained by the calendar (statutory holidays, monthly billing and benefit cycles)"
+    tables: [contact_history, collections_cases, transactions]
+    severity: info
+    status: context
+    sql: "select (select count(*) from curated._anomaly_episodes where status in ('calendar', 'recurring')), (select count(*) from curated._anomaly_episodes)"
+    how: "A holiday empties the outbound queues; card cases open on statement-cycle days and benefits arrive on fixed days every month. An episode on a statutory holiday, or repeating at the same point of the month in three or more other months, is labelled and not alerted."
+
+# Code columns checked against the bank's reference lists (curated.code_lookups). dq_report expands each entry into a
+# check "values missing from the list or inactive" (area F), plus one summary check of codes used before their
+# list's effective_from. `date` is the record's own date. Columns with no reference list at all are listed in
+# `code_columns_without_list`.
+code_checks:
+  - {id: V1, table: curated.card_accounts, column: block_code, code_type: block_code, date: block_date}
+  - {id: V2, table: curated.card_accounts, column: product_code, code_type: product_code, date: open_date}
+  - {id: V3, table: curated.collections_cases, column: strategy_code, code_type: strategy_code, date: case_open_date}
+  - {id: V4, table: curated.collections_cases, column: contact_rule_set, code_type: contact_rule_set, date: case_open_date}
+  - id: V5
+    table: curated.case_assignment_history
+    column: routing_rule_id
+    code_type: routing_rule
+    date: assigned_ts
+    how: "The four unknown codes are a third version of listed rules (`RR-EARLY-03`, `RR-MID-03`, `RR-LATE-03`, `RR-REC-03`, next to the listed `-01` and `-02`): most likely new rules nobody added to the list. Nothing to repair, the routing still happened. Code that explains an assignment by its rule cannot describe these until the list's owner adds them."
+  - {id: V6, table: curated.contact_history, column: outcome_code, code_type: outcome_code, date: contact_ts_utc}
+  - {id: V7, table: curated.contact_history, column: sub_outcome_code, code_type: outcome_code, date: contact_ts_utc}
+  - {id: V8, table: curated.contact_history, column: strategy_code, code_type: strategy_code, date: contact_ts_utc}
+  - {id: V9, table: curated.contact_history, column: script_id, code_type: script, date: contact_ts_utc}
+  - {id: V10, table: curated.contact_history, column: sms_template_id, code_type: sms_template, date: contact_ts_utc}
+  - {id: V11, table: curated.contact_history, column: email_template_id, code_type: email_template, date: contact_ts_utc}
+  - {id: V12, table: curated.external, column: score_reason_code_1, code_type: bureau_reason, date: pull_date}
+  - {id: V13, table: curated.external, column: score_reason_code_2, code_type: bureau_reason, date: pull_date}
+  - {id: V14, table: curated.external, column: score_reason_code_3, code_type: bureau_reason, date: pull_date}
+  - {id: V15, table: curated.external, column: score_reason_code_4, code_type: bureau_reason, date: pull_date}
+
+code_columns_without_list:   # code-like columns whose values have no published reference list
+  - curated.loan_accounts.product_code
+  - curated.deposit_accounts.product_code
+  - curated.contact_history.letter_template_id
+  - curated.contact_history.push_template_id
+  - curated.agent_notes.template_id
+  - curated.collections_cases.queue
+
 clean_checks:   # checks that found nothing; listed so the coverage is visible
   - {id: C23, title: "Postal code still invalid after cleaning (customers, cards, loans, deposits)", sql: "select (select count(*) filter (where postal_code_raw is not null and trim(postal_code_raw) <> '' and std_postal is null) from curated.customers) + (select count(*) filter (where cardholder_postal_raw is not null and trim(cardholder_postal_raw) <> '' and std_postal is null) from curated.card_accounts) + (select count(*) filter (where borrower_postal_raw is not null and trim(borrower_postal_raw) <> '' and std_postal is null) from curated.loan_accounts) + (select count(*) filter (where holder_postal_raw is not null and trim(holder_postal_raw) <> '' and std_postal is null) from curated.deposit_accounts), (select count(*) from curated.customers) + (select count(*) from curated.card_accounts) + (select count(*) from curated.loan_accounts) + (select count(*) from curated.deposit_accounts)"}
   - {id: C21, title: "Date of birth still ambiguous after resolution (customers, cards, loans, deposits, bureau)", sql: "select (select count(*) filter (where std_dob_ambiguous) from curated.customers) + (select count(*) filter (where std_dob_ambiguous) from curated.card_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.loan_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.deposit_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.external), (select count(*) from curated.customers) + (select count(*) from curated.card_accounts) + (select count(*) from curated.loan_accounts) + (select count(*) from curated.deposit_accounts) + (select count(*) from curated.external)"}

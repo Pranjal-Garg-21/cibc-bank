@@ -17,7 +17,7 @@ from trustissues.factory.gold import build_c360, publish, views
 from trustissues.factory.identity import build as identity_build
 from trustissues.factory.identity import evaluate as identity_evaluate
 from trustissues.factory.ingest import dictionary, load_raw
-from trustissues.factory.quality import dq_report
+from trustissues.factory.quality import anomaly, dq_report
 
 
 def _ingest() -> None:
@@ -31,6 +31,7 @@ STAGES = [
     ("ingest", _ingest),                   # source files -> raw.*
     ("dictionary", dictionary.main),       # data dictionary -> raw._dictionary, sensitivity labels (raw columns)
     ("curate", build_curated.run),         # raw.* -> curated.*
+    ("anomaly", anomaly.main),             # unusual days vs the ops log -> curated._anomaly_*, reports/anomaly_report.md
     ("quality", dq_report.run),            # dq flags, derived columns, reports/data_quality_report.md
     ("labels", dictionary.main),           # re-run so derived std_* columns inherit sensitivity labels
     ("text_controls", text_controls.main), # eligible, masked notes and transcripts

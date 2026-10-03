@@ -19,7 +19,7 @@ Applied in this order to every date of birth. The first rung that gives an answe
 | 1 | **Only one reading is possible.** A part above 12 cannot be a month (`13-01-1990` can only be day-first); year-first formats (`1990-01-13`, `19900113`) and month names (`Jan 13 1990`) have one reading | Certain | `exact` | All sources |
 | 2 | **The source's own cleaned column**, if one exists and has been checked against rung 1 | Certain, once validated | `source_clean_column` | CRM only (`customers.date_of_birth`) |
 | 3 | **The column's own convention**, inferred from the values in that column that can only be read one way | High, not certain per value | `convention` | Cards only (`DD-MM-YYYY`) |
-| 4 | **Another independent source of the same fact** (for example the CRM date of birth of the same person, once identity matching links them) | High | not built | Planned as validation, see section 6 |
+| 4 | **Another independent source of the same fact** (for example the CRM date of birth of the same person, once identity matching links them) | High | used as validation | Done for cards: confirms rung 3 (section 6) |
 | 5 | **Keep both readings and flag** (`std_dob` primary, `std_dob_alt` the other, `std_dob_ambiguous` = true). Matching tests both | Honest | `ambiguous` | Nothing in this data after rungs 2 and 3, but the rule stays for new data |
 | 6 | **No valid reading at all** (`31/02/1990`, `not a date`): the typed value is NULL and the original text is kept | Honest | none | Nothing in this data |
 
@@ -100,7 +100,7 @@ In this data after the fixes: **0 values are NULLed** by this rule. It exists fo
 
 **The remaining weakness.** A NULL looks like "the source had nothing", and downstream code that does not check will drop those rows. That is how the 10% of snapshot rows with no `month_end_date` could have gone unnoticed in the first build. The failure table caught it, but only because it was read.
 
-**Validation still to do (rung 4).** Once identity matching links a card holder to a CRM person, compare the card date of birth (read day-first) with the CRM `date_of_birth`. Agreement near 100% confirms rung 3 on real linked people; a clear gap would mean the convention inference needs revisiting. Not possible yet, because identity matching is not built.
+**Validation (rung 4), done after identity matching.** Of 237,096 cards whose date of birth was settled by the day-first convention and that identity matching linked to a CRM person, the day-first reading equals a CRM date of birth in 236,237 (99.6%); the month-first reading in 701 (0.3%). The convention is confirmed. The check is partly circular, because the date of birth is matching evidence; but the matcher also accepts day/month-swapped dates, so a wrong convention would have shown up as many month-first agreements, and it did not. Details: [`identity.md`](identity.md) §3.
 
 **Limitation.** The typed-column fallback (step 1) does not use column conventions; only the identity date-of-birth columns do. A typed date column that is one-sided but ambiguous would stay NULL. None exists in this data.
 

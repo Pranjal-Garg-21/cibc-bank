@@ -30,7 +30,9 @@ AREAS = [
     ("reference", "C. Broken references and duplicate customers"),
     ("missing", "D. Missing values"),
     ("logic", "E. Values that contradict each other"),
-    ("identity", "F. Customer identity and the golden record"),
+    ("codes", "F. Codes against the bank's reference lists"),
+    ("identity", "G. Customer identity and the golden record"),
+    ("anomaly", "H. Unusual days found by anomaly detection"),
 ]
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 STATUS_TEXT = {
@@ -149,9 +151,64 @@ def reported_by_ops(con, event: str | None) -> int | None:
     return int(r[0]) if r and r[0] is not None else None
 
 
+def expand_code_checks(cfg: dict) -> list[dict]:
+    """Turn `code_checks` and `code_columns_without_list` into ordinary checks (area `codes`)."""
+    out = []
+    entries = cfg.get("code_checks", [])
+    for e in entries:
+        t, col, ct = e["table"], e["column"], e["code_type"]
+        short = t.split(".")[-1]
+        codes = f"(SELECT code FROM curated.code_lookups WHERE code_type = '{ct}' AND coalesce(active_flag, true))"
+        out.append({
+            "id": e["id"], "area": "codes", "tables": [short], "severity": e.get("severity", "medium"),
+            "status": "documented",
+            "title": f"Codes in `{short}.{col}` missing from the `{ct}` list, or inactive",
+            "sql": f"SELECT count(*) FILTER (WHERE {col} IS NOT NULL AND {col} NOT IN {codes}), count({col}) FROM {t}",
+            "evidence": f"SELECT string_agg(v || ' ' || n, ', ' ORDER BY n DESC) FROM (SELECT {col} AS v, count(*) n FROM {t} "
+                        f"WHERE {col} IS NOT NULL AND {col} NOT IN {codes} GROUP BY 1 ORDER BY 2 DESC LIMIT 10)",
+            "how": e.get("how", "Kept as received: there is nothing certain to replace an unknown code with. The owner "
+                                "of the reference list should add the code, or the source should stop sending it."),
+        })
+    dated = [e for e in entries if e.get("date")]
+    if dated:
+        u = " UNION ALL ".join(
+            f"SELECT '{e['table'].split('.')[-1]}.{e['column']}' AS col, "
+            f"count(*) FILTER (WHERE l.effective_from IS NOT NULL AND CAST(x.{e['date']} AS DATE) < l.effective_from) AS early, "
+            f"count(x.{e['column']}) AS n FROM {e['table']} x LEFT JOIN curated.code_lookups l "
+            f"ON l.code_type = '{e['code_type']}' AND l.code = x.{e['column']}" for e in dated)
+        out.append({
+            "id": "V0", "area": "codes", "tables": sorted({e["table"].split(".")[-1] for e in dated}), "severity": "info",
+            "status": "documented",
+            "title": "Code used on a record dated before the code list's `effective_from`",
+            "sql": f"SELECT sum(early), sum(n) FROM ({u})",
+            "evidence": f"SELECT string_agg(col || ' ' || early, ', ' ORDER BY early DESC) FROM ({u}) WHERE early > 0",
+            "how": "Not a defect in the records. Every list's effective_from is recent (2019-2026) while the codes are "
+                   "used from 2016; 2016 cases even carry rule sets named `*-STD-2026`, because a case stores its "
+                   "current rule set. So effective_from is the date of the list's current version, not when a code "
+                   "started, and it cannot validate historical codes. Code history is not in the release.",
+        })
+    nolist = cfg.get("code_columns_without_list", [])
+    if nolist:
+        counts = " UNION ALL ".join(
+            f"SELECT '{c.split('.', 1)[1]}' AS col, count(DISTINCT {c.split('.')[-1]}) AS d FROM {c.rsplit('.', 1)[0]}"
+            for c in nolist)
+        out.append({
+            "id": "V16", "area": "codes", "tables": sorted({c.split(".")[1] for c in nolist}), "severity": "low",
+            "status": "documented",
+            "title": "Code column with no published reference list (count of columns)",
+            "sql": f"SELECT count(*), count(*) FROM ({counts})",
+            "evidence": f"SELECT string_agg(col || ' (' || d || ' codes)', ', ') FROM ({counts})",
+            "how": "These columns hold codes (loan and deposit product codes, letter and push templates, note "
+                   "templates, case queues) that `code_lookups` does not list, so they cannot be validated. Each "
+                   "column is internally consistent (no case or spelling variants, F17). The reference list should "
+                   "gain them.",
+        })
+    return out
+
+
 def evaluate(con, cfg: dict) -> tuple[list[Result], list[Result]]:
     issues, clean = [], []
-    for c in cfg.get("checks", []):
+    for c in cfg.get("checks", []) + expand_code_checks(cfg):
         r = Result(c["id"], c["area"], c["title"], c.get("tables", []), c["severity"], c["status"], c["how"],
                    event=c.get("event"), flag=c.get("flag"))
         try:
@@ -262,6 +319,14 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
         "reference": "Records that point at something that is not there, and people stored more than once.",
         "missing": "Values that are blank where they should not be. None were imputed.",
         "logic": "Fields that cannot all be true at once. Neither value was changed; the rows are flagged.",
+        "codes": "Columns that hold a code from a published list (`curated.code_lookups`) were checked for codes that "
+                 "are not on the list or are inactive. Columns with no list at all, and what the lists' effective dates "
+                 "can and cannot prove, are reported here too. Checks with nothing to report are in the clean list.",
+        "anomaly": "Every day of the last year, per series (contacts by channel, cases by product, payments, notes, "
+                   "bureau files...), was compared with its own normal: row counts against the same weekday of the "
+                   "previous weeks, every column's null rate likewise. Days far from normal are matched to the "
+                   "operations log and the calendar. Settings: `config/anomaly.yaml`; full list: "
+                   "`reports/anomaly_report.md`.",
         "identity": "What remains after identity matching joins the five customer keys into one person per golden ID "
                     "(`gold.customer_xref`). These checks read the published gold tables. The rule is: when unsure, "
                     "keep records separate. Details and measured precision: `docs/identity.md` and "

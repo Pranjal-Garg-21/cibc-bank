@@ -24,7 +24,7 @@ Details: [`curation.md`](curation.md) (results), [`documentation.md`](documentat
 
 ## 2b. Data quality report (new)
 
-`reports/data_quality_report.md` lists every issue found, how many records it affected and how it was handled (53 issues, 20 clean checks). It is **generated** from `config/dq_checks.yaml` by `python -m trustissues.factory.quality.dq_report`. **The plan assigns `dq_report.py` to P2.** Anushka built it first so the submission item exists; P2 should extend `config/dq_checks.yaml` (for example with the unmatched records and open review items the identity step will produce) instead of writing a second one.
+`reports/data_quality_report.md` lists every issue found, how many records it affected and how it was handled (66 issues, 37 clean checks; now also codes against `code_lookups`, identity outcomes and anomaly detection, sections F-H). It is **generated** from `config/dq_checks.yaml` by `python -m trustissues.factory.quality.dq_report`. **The plan assigns `dq_report.py` to P2.** Anushka built it first so the submission item exists; P2 should extend `config/dq_checks.yaml` instead of writing a second one. Anushka has since added the identity checks (I1-I8), code-list checks (V0-V16) and anomaly checks (A1-A3); the anomaly detail is in `reports/anomaly_report.md`.
 
 The run also added columns to the curated tables. **Use these instead of the originals:** `contact_history.channel_resolved` (not `channel`), `deposit_accounts.cif10` (not `src_customer_ref`, which lost its leading zeros in 20% of rows), `customers.salutation_std`. **Flag columns** (`dq_*`, listed in the report) mark rows with problems that cannot be repaired, such as `external.dq_inquiries_inconsistent` and `deposit_accounts.dq_non_cad`. Rows pointing at a CRM customer that does not exist are listed in `curated.dq_orphan_customer_refs`.
 
@@ -54,7 +54,7 @@ Everything built is on `main` except `config/sensitivity.yaml` (generated; run `
 
 ## 5c. Not started (Layer 1, owned by P1)
 
-`mapping_assistant.py`, enum validation against `code_lookups`, `quality/anomaly.py`, identity outcomes in the data quality report, and a single end-to-end timed pipeline run. **Ask Anushka before starting any of them.**
+Running `mapping_assistant.py` against the API (written and tested offline; needs `OPENROUTER_API_KEY`), checksum verification of the voice recordings (dropped for now), and a single end-to-end timed pipeline run. **Ask Anushka before starting any of them.**
 
 ## 6. Before you run anything
 
