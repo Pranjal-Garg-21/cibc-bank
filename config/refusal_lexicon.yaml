@@ -10,9 +10,21 @@ protected_attributes:
     - '\bnewcomers?\b'
     - '\bimmigra\w+'
     - '\b(race|racial|ethnic\w*|religio\w*|sexual orientation)\b'
-    - '\bage\b(?!\w)'
-    - '\bage (band|group|bracket)s?\b'
+    - '\b(?:customers?|clients?|borrowers?|debtors?|cardholders?|persons?|individuals?)(?:[''’]s?)?\s+(?:chronological\s+)?ages?\b'
+    - '\bage(?:s| bands?| groups?| brackets?| distribution| mix| profile)?\s+(?:of|for|among)\s+(?:(?:the|our|all|these)\s+)?(?:customers?|clients?|borrowers?|debtors?|cardholders?|people|persons?|individuals?)\b(?![''’]s?\s+(?:accounts?|cases?|loans?|debts?|promises?|balances?))'
+    - '\b(?:customers?|clients?|borrowers?|people|debtors?|cardholders?)\s+(?:(?:grouped|ranked|segmented|sorted)\s+)?(?:by|according to|based on)\s+(?:their\s+)?age(?:s| bands?| groups?| brackets?)?\b'
+    - '\b(?:customers?|clients?|borrowers?|people|debtors?|cardholders?)\b.{0,40}\b(?:aged|under|over)\s+\d+\b'
     - '\bdate of birth\b|\bdob\b|\bbirth ?date\b'
+name_origin_discrimination:
+  reason: "Names or inferred personal origin cannot determine collections treatment."
+  intent_patterns:
+    - '\b(exclude|avoid|skip|reject|deprioriti[sz]e|prioriti[sz]e|rank|target|select|prefer|suppress)\b'
+    - '\b(?:stop|never|do not|don''t|should not)\s+(?:calling|contacting|call|contact)\b'
+  patterns:
+    - '\b(?:foreign|native|ethnic|non[- ]native)(?:[- ]sounding)?\s+(?:first |last |family |sur)?names?\b'
+    - '\b(?:names?|surnames?)\b.{0,60}\b(?:foreign|native|origins?|nationalit\w*)\b'
+    - '\b(?:origins?|nationalit\w*)\b.{0,60}\b(?:names?|surnames?)\b'
+    - '\b(?:national|ethnic) origin\b|\bcountry of (?:birth|origin)\b|\bnationality\b'
 proxy_geography:
   reason: "Postal areas act as a proxy for protected attributes and cannot drive treatment decisions."
   registry_proxies: true
@@ -24,9 +36,14 @@ proxy_geography:
 pii_export:
   reason: "Customer identities and contact details are not disclosed in bulk."
   registry_levels: [direct_pii]
+  intent_patterns:
+    - '\b(export|download|list|show|give|extract|provide|print|output|display|reveal|fetch|return|send)\b'
+    - '\btell me\b'
+    - '\bwhat(?: is| are|''s)\s+(?:the\s+)?(?:(?:customers?|clients?|borrowers?)[''’]s?\s+)?(?:full names?|names?|phones?|e-?mails?|addresses|contact details)\b'
   patterns:
-    - '\b(names?|phones?|phone numbers?|emails?|e-mail addresses?|home addresses?|addresses|sin|social insurance)\b.{0,60}\b(customers?|clients?|borrowers?)\b'
-    - '\b(customers?|clients?|borrowers?)\b.{0,60}\b(names?|phone numbers?|emails?|home addresses?|addresses|sin|social insurance)\b'
+    - '\b(names?|(?:phone|telephone) numbers?|(?:e-?mail|home|postal) addresses?|contact details|addresses|sin|social insurance)\b.{0,60}\b(customers?|clients?|borrowers?)\b'
+    - '\b(customers?|clients?|borrowers?)\b.{0,60}\b(names?|(?:phone|telephone) numbers?|(?:e-?mail|home|postal) addresses?|contact details|addresses|sin|social insurance)\b'
+    - '\b(?:customers?|clients?|borrowers?)[''’]s?\s+(?:phone|email)(?!\s+(?:attempts?|calls?|contacts?|logs?|rates?|counts?|volumes?))\b'
 out_of_scope:
   reason: "This question is outside collections analytics and policy."
   patterns:

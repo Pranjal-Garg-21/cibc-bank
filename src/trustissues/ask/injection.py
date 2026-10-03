@@ -5,6 +5,11 @@ import re
 from dataclasses import dataclass
 
 PATTERNS = [
+    (r"^\s*(?:forget|ignore|disregard|bypass|override)\s+(?:(?:all|any|the)\s+)?"
+     r"(?:rules?|instructions?|guidelines?|restrictions?|safeguards?|polic(?:y|ies))\b", "override_instructions"),
+    (r"\b(?:forget|ignore|disregard|bypass|override)\s+(?:(?:all|any|the)\s+)?"
+     r"(?:(?:your|previous|prior|earlier|above|system|safety|security|existing)\s+){1,3}"
+     r"(?:rules?|instructions?|guidelines?|restrictions?|safeguards?|polic(?:y|ies))\b", "override_instructions"),
     (r"\b(?:ignore|disregard)\b.{0,30}\b(?:what you (?:were|have been) told|your instructions)\b", "override_instructions"),
     (r"\bfrom now on\b.{0,60}\b(?:unrestricted|no rules|no restrictions)\b", "role_override"),
     (r"\bpretend\b.{0,30}\b(?:admin|administrator|unrestricted)\b", "role_override"),
