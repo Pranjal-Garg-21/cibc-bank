@@ -34,7 +34,7 @@ def _view(group: str) -> FeatureView:
         entities=[promise],
         ttl=TTL,
         schema=fields,
-        online=True,
+        online=False,  # offline only: see feature_store.yaml
         source=FileSource(name=f"{group}_source", path=str(path), timestamp_field="event_ts"),
         tags={"sql": f"src/trustissues/features/sql/{group}.sql"},
     )

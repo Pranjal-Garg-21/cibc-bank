@@ -1,11 +1,13 @@
-# Feast: file offline store over warehouse/p3/feature_views/*.parquet (written by features/compute.py),
-# Redis online store (docker-compose.yml). Run from this folder: `feast apply`.
+# Feast: the registry of P3's feature views, with a file offline store over warehouse/p3/feature_views/*.parquet
+# (written by features/compute.py). Offline only: the morning queue is a batch job that computes its features
+# from the same SQL, so no online store is served (views are online=False; Feast still needs a path for one).
+# Run from this folder: `feast apply`.
 project: trustissues
 provider: local
 registry: ../warehouse/p3/feast/registry.db
 offline_store:
   type: file
 online_store:
-  type: redis
-  connection_string: "localhost:6379"
+  type: sqlite
+  path: ../warehouse/p3/feast/online_unused.db
 entity_key_serialization_version: 3

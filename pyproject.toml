@@ -10,7 +10,7 @@ dependencies = ["duckdb>=1.1", "pyyaml", "openpyxl"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
-p3 = ["lightgbm", "shap", "scikit-learn", "pandas", "pyarrow", "feast", "redis"]
+p3 = ["lightgbm", "shap", "scikit-learn", "pandas", "pyarrow", "feast"]
 
 [project.scripts]
 ti-load-raw = "trustissues.factory.ingest.load_raw:main"

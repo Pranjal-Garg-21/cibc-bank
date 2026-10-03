@@ -38,7 +38,7 @@ Promises, cases, contacts and account snapshots already carry `crm_customer_id` 
 |---|---|
 | `src/trustissues/features/__init__.py`, `src/trustissues/nba/__init__.py` | Package stubs. |
 | `src/trustissues/features/sources.py` | `promises()`, `account_snapshots()`, `contacts()`, `cases()`, `hardship_programs()`, `incumbent_ptp_scores()`: typed relations over raw with casts and only the allow-listed columns. The single place to swap to gold. |
-| `pyproject.toml` | Add an optional `p3` dependency group: `lightgbm`, `shap`, `scikit-learn`, `pandas`, `pyarrow`, `feast`, `redis`. |
+| `pyproject.toml` | Add an optional `p3` dependency group: `lightgbm`, `shap`, `scikit-learn`, `pandas`, `pyarrow`, `feast`. |
 
 **Done when:** each function returns a typed DuckDB relation, and a test checks that no returned column is labelled protected or direct PII.
 
@@ -83,14 +83,18 @@ Each SQL file takes the promise spine and returns `ptp_id` plus features, all po
 ### Step 5: Feast skeleton
 | File | Intention |
 |---|---|
-| `docker-compose.yml` | Redis only. |
-| `feature_repo/feature_store.yaml` | File offline store over `warehouse/p3/*.parquet`; Redis online store. |
+| `feature_repo/feature_store.yaml` | File offline store over `warehouse/p3/feature_views/*.parquet`. |
 | `feature_repo/entities.py` | `ptp_id`, `crm_customer_id` for now (`golden_customer_id` later). |
 | `feature_repo/feature_views.py` | One feature view per SQL file in step 3. |
-| `features/materialize.py` | Pushes the latest values to Redis. |
-| `tests/test_feature_parity.py` | Offline value equals online value for the same entity and timestamp. |
+| `tests/test_feast_offline.py` | Feast's point-in-time retrieval returns the values `features/compute.py` wrote. |
 
-**Done when:** `feast apply` works, and one promise's features can be read from both stores and match.
+**Done when:** `feast apply` works and historical retrieval matches the computed features.
+
+**Redis online store removed (3 Oct).** It was built (`docker-compose.yml`, `features/materialize.py`, an
+offline = online parity test) but nothing read it: the morning queue is a batch job that computes its features
+from the same SQL files, so serving them from Redis changed no decision and added a service that had to be
+running. An online store is only worth it for real-time scoring (the promise coach, re-scoring on a payment),
+which is not built.
 
 ### Step 6: Rules and hardship, pure logic plus tests
 | File | Intention |
@@ -142,7 +146,7 @@ python -m trustissues.features.build_training_set   # step 1
 python -m trustissues.nba.evaluate                  # step 2: incumbent
 python -m trustissues.features.compute              # step 3
 python -m trustissues.nba.train                     # step 4
-docker compose up -d redis && (cd feature_repo && feast apply) && python -m trustissues.features.materialize   # step 5
+(cd feature_repo && feast apply)                     # step 5: Feast registry (offline only)
 python -m trustissues.features.build_case_training_set && python -m trustissues.features.compute --case
 python -m trustissues.nba.train --case              # case model vs the bank's cure_30d
 python -m trustissues.nba.actions                   # step 7 + calibration from the randomised test
@@ -156,7 +160,7 @@ python -m pytest tests -q
 | 2 Incumbent | AUC **0.695**, Brier 0.229, top-20% capture 27.0% (ceiling at a 61% broken rate is 32.5%) |
 | 3 Features | 45 features, 6 SQL files, leakage test passes (and catches an injected 1-day look-ahead) |
 | 4 v0 | AUC **0.950**, Brier 0.086, top-20% capture 32.5%. **Without the promise-amount features: AUC 0.690**, level with the incumbent. See below |
-| 5 Feast | `feast apply` + Redis materialize work; offline = online for 20 promises × 6 views |
+| 5 Feast | `feast apply` works; historical retrieval = computed features for 20 promises × 6 views. Redis online store removed (step 5) |
 | 6 Rules, hardship | Pure logic with tests (hard stops, consent default-deny, contact cap, hours; hardship never harsher, programme eligibility) |
 | 7 Action data | `warehouse/p3/action_values.parquet` + report section |
 | NBA queue | `nba/actions.py` (values), `nba/allocate.py` (capacity), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`; every case has a case-model risk. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
@@ -171,6 +175,29 @@ New facts from the data (add to §2):
 | `ptp_to_overdue_ratio` nearly determines the outcome (full-amount promises rarely break) and dominates v0 | Checked it is creation-time, not back-filled: `overdue_at_creation` matches the creating contact ~91% in every status, broken promises also have ratio 1, and the full-amount share falls across fully resolved months (49% → 15%, May–Aug 2026). The drift also explains the jump in break rate since May 2026. Treat v0's 0.95 as a property of this synthetic data; the ablation (0.690) is the measure of the other features |
 | Only ~40% of champion/challenger cases have `assignment_method = random` | Cell comparison uses random cases only. Result: champion and both challengers are within 0.1 pt (16.0–16.1% paid in 30 days), no-contact 15.2% |
 | `prior_broken_ptp_count` = earlier broken promises in the same case, all resolved before creation | Safe to use as-is |
+| Promise outcomes follow the promised amount, not the customer's history (`data_quality_report.md` T2, T4) | Full-amount promises break ~2%, promises for 90–99.9% of the amount break 100%, below that the rate rises with the share promised. Without the amount features, AUC among partial promises is ~0.54 |
+
+### Promise model experiments (3 Oct): nothing beat v0, code not kept
+
+Tested on two time folds: before the shift (train before 2026, validate Jan–Feb 2026, test Mar–Apr 2026) and the
+official holdout. AUC overall / among partial promises:
+
+| Variant | Before the shift | Holdout |
+|---|---|---|
+| v0 (45 features) | 0.959 / 0.862 | **0.951 / 0.902** |
+| + explicit full-amount flag and shortfall in CAD | 0.959 / 0.861 | 0.951 / 0.902 |
+| + monthly repayment record (card statements, loan instalments, chequing payroll and balance) | 0.958 / 0.859 | 0.950 / 0.900 |
+| + promise behaviour (share paid on earlier promises, agent's broken rate over 180 days, case contact in 7 days) | 0.958 / 0.856 | 0.949 / 0.898 |
+| all of the above, without the snapshot-timing features | 0.958 / 0.858 | 0.949 / 0.898 |
+| same, simpler trees (15 leaves, 500 per leaf) | 0.956 / 0.852 | 0.947 / 0.895 |
+| v0 without amount features | 0.638 / 0.505 | 0.690 / 0.543 |
+| + repayment + behaviour, without amount features | 0.646 / 0.508 | 0.695 / 0.534 |
+
+Among partial promises every new feature scores 0.50–0.57 on its own (latest card utilisation 0.62, the best).
+In this data the customer's record barely predicts whether a promise is kept; the amount does. v0 is kept as it
+is: it already calibrates well on the shifted holdout (calibration error 0.017), so recalibrating on recent
+weeks would not help it (the case model is where recalibration matters, `data_quality_report.md` T1). Below the
+90% cliff v0 still scores 0.888 against the bank's 0.691, all of it from the amount features.
 
 ### NBA decision logic (v1)
 
