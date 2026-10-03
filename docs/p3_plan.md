@@ -593,3 +593,28 @@ different person** (86,050 people, plus the 9 unresolved cases), so a same-day d
 this snapshot; Step 3 still adds the rule. Fairness: case model 6 screening flags (was 8); a new one for the promise
 model, preferred language TL (riskiest-20% ratio 0.64, small group). Monitoring: `card_utilisation` drift PSI 0.26
 (was 0.24, now "act"), as cards newly link to the person. Both for Step 7.
+
+### Golden records, Step 3: rules and contact at the customer level (3 Oct)
+
+**What changed.** `nba/rules.py` `load_case_flags` reads the safeguards of the case's golden customer (one row per
+person: any flag set, any consent withheld, the latest start and earliest end of the permitted and preferred hours),
+OR-ed with the case's own flags as before. A case whose CRM ID does not exist now gets its person's safeguards
+(through `gold.case_customer`); a person with no CRM record still has no consent. The 7-day contact count is the
+person's outbound contacts on any of their cases in the 7 days before the planned day, never fewer than the case's
+own `contacts_last_7d` (which matches that definition for 93% of open cases). `nba/queue.py` `load_cases` reads
+vulnerability per person. **One contact per person per day** (`one_contact_per_customer`, before capacity is
+allocated, so freed capacity goes to other customers): a support call wins, else the most valuable contact; the
+person's other cases wait, with `customer_already_contacted_today` in the blocked actions and the other case named
+on the card. Tests: `test_every_case_of_a_person_gets_the_persons_safeguards`,
+`test_the_7_day_contact_cap_counts_the_persons_contacts_on_every_case` (`tests/test_rules_hard_stops.py`),
+`test_two_cases_of_one_person_get_one_contact_the_most_valuable`,
+`test_a_support_call_wins_over_a_more_valuable_reminder_for_the_same_person` (`tests/test_nba_decisions.py`). 195 pass.
+
+**Effect** (`make nightly --skip-pipeline`, 28 Sep):
+
+| | Before (Step 2) | After |
+|---|---|---|
+| Same-day duplicate contacts removed | n/a | **0**: every open case belongs to a different person on this snapshot |
+| Open cases whose CRM ID does not exist (2,582) that get a contact | 6 | **1,443** (355 support calls, 431 email, 350 push, 161 SMS, 108 letters, 38 calls); 1,139 still wait |
+| Cases blocked by the 7-day contact limit | 4,555 | 6,204 (contacts to the same person through their other, closed cases) |
+| Queue | wait 33,863, email 16,007, push 13,581, support 12,727, SMS 5,423, letter 3,000, call 1,458 | wait 33,532, email 16,160, push 13,695, support 12,721, SMS 5,482, letter 3,000, call 1,469 |

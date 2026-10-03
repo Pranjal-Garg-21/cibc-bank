@@ -181,75 +181,77 @@ interval includes zero, so cheap channels the customer responds to win, and a ca
 
 | Action | Best before capacity | Final | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
-| `wait` | 33,404 | 33,863 | 0.75 | 0.00 | 0 |
-| `email_reminder` | 15,787 | 16,007 | 0.67 | 5.78 | 16,007 |
-| `push_reminder` | 13,555 | 13,581 | 0.68 | 5.58 | 13,581 |
-| `support_call` | 12,727 | 12,727 | 0.75 | 0.00 | 12,727 |
-| `sms_reminder` | 5,311 | 5,423 | 0.67 | 11.11 | 5,423 |
-| `letter` | 3,924 | 3,000 | 0.74 | 8.83 | 38 |
-| `agent_call` | 1,351 | 1,458 | 0.74 | 16.59 | 41 |
+| `wait` | 33,068 | 33,532 | 0.75 | 0.00 | 0 |
+| `email_reminder` | 15,922 | 16,160 | 0.66 | 5.71 | 16,160 |
+| `push_reminder` | 13,667 | 13,695 | 0.67 | 5.54 | 13,695 |
+| `support_call` | 12,721 | 12,721 | 0.75 | 0.00 | 12,721 |
+| `sms_reminder` | 5,366 | 5,482 | 0.67 | 10.95 | 5,482 |
+| `letter` | 3,963 | 3,000 | 0.74 | 8.84 | 37 |
+| `agent_call` | 1,352 | 1,469 | 0.74 | 16.34 | 40 |
+
+One contact per person per day: 0 cases wait because their person is contacted on
+another case today ("Best before capacity" counts after this rule).
 
 Capacity on 2026-09-28 (`channel_capacity`; 720 agents on shift with
-62,028 outbound calls between them, 47,843 left unused):
+62,028 outbound calls between them, 47,838 left unused):
 
 | Channel | Capacity | Used |
 |---|---|---|
-| email | 60,000 | 16,007 |
+| email | 60,000 | 16,160 |
 | mail | 3,000 | 3,000 |
-| phone | 68,976 | 14,185 |
-| push | 30,000 | 13,581 |
-| sms | 40,000 | 5,423 |
+| phone | 68,976 | 14,190 |
+| push | 30,000 | 13,695 |
+| sms | 40,000 | 5,482 |
 
 | Approval reason | Cases |
 |---|---|
-| none | 38,242 |
-| digital_batch | 34,841 |
-| vulnerability | 7,335 |
-| hardship | 5,392 |
-| high_balance | 249 |
+| none | 37,924 |
+| digital_batch | 35,163 |
+| vulnerability | 7,355 |
+| hardship | 5,366 |
+| high_balance | 251 |
 
 ### Hardship and vulnerable cases (`nba/hardship.py`, POL-COLL-004)
 
-36,216 open cases have a hardship or vulnerability flag. None gets a payment reminder or a collections call
-(0); 36,216 have a certified owner; 12,727 get a support call today (a certified agent
+36,229 open cases have a hardship or vulnerability flag. None gets a payment reminder or a collections call
+(0); 36,229 have a certified owner; 12,721 get a support call today (a certified agent
 offering help, hardship programmes first). The rest wait: nothing is due, or a contact rule blocks the call.
 
 | Situation | Support call today | Due, blocked by a rule | Nothing due today | With eligible programmes on the card |
 |---|---|---|---|---|
 | Hardship plan in place: no collections contact while it runs | 0 | 0 | 10,372 | 9,762 |
-| Hardship recorded and no programme offered yet: offer one before asking for payment (§4.2) | 5,901 | 2,923 | 0 | 8,493 |
-| Hardship programme offered in the last 30 days: give the customer time to answer | 0 | 0 | 6,217 | 6,050 |
-| Vulnerable customer due for contact: a certified agent makes it instead of a reminder or a collections call (§4.5) | 4,022 | 924 | 0 | 0 |
-| Hardship programme offered over 30 days ago and not taken up: follow up (§4.2) | 2,599 | 1,556 | 0 | 3,874 |
-| Vulnerable customer, no contact due today | 0 | 0 | 1,409 | 0 |
-| Hardship plan ends within 10 days: review it with the customer (§4.4) | 205 | 88 | 0 | 271 |
+| Hardship recorded and no programme offered yet: offer one before asking for payment (§4.2) | 5,893 | 2,931 | 0 | 8,493 |
+| Hardship programme offered in the last 30 days: give the customer time to answer | 0 | 0 | 6,217 | 6,051 |
+| Vulnerable customer due for contact: a certified agent makes it instead of a reminder or a collections call (§4.5) | 4,056 | 913 | 0 | 0 |
+| Hardship programme offered over 30 days ago and not taken up: follow up (§4.2) | 2,574 | 1,581 | 0 | 3,874 |
+| Vulnerable customer, no contact due today | 0 | 0 | 1,399 | 0 |
+| Hardship plan ends within 10 days: review it with the customer (§4.4) | 198 | 95 | 0 | 271 |
 
 A support call was due but a contact rule blocked it:
 
 | Rule | Cases |
 |---|---|
-| `consent` | 2,303 |
-| `contact_limit` | 1,062 |
+| `consent` | 2,012 |
+| `contact_limit` | 1,379 |
 | `open_dispute` | 671 |
 | `represented_by_third_party` | 551 |
-| `cease_contact` | 411 |
+| `cease_contact` | 409 |
 | `experiment_holdout` | 268 |
-| `do_not_call` | 224 |
-| `insolvency` | 1 |
+| `do_not_call` | 230 |
 
 Cases where a rule (or capacity) removed at least one action:
 
 | Rule | Cases |
 |---|---|
-| `consent` | 61,113 |
-| `contact_limit` | 4,555 |
-| `represented_by_third_party` | 4,284 |
-| `cease_contact` | 2,553 |
+| `consent` | 60,739 |
+| `contact_limit` | 6,204 |
+| `represented_by_third_party` | 4,283 |
+| `cease_contact` | 2,550 |
 | `open_dispute` | 2,507 |
 | `experiment_holdout` | 1,664 |
-| `do_not_call` | 948 |
-| `no_capacity` | 924 |
-| `insolvency` | 4 |
+| `do_not_call` | 984 |
+| `no_capacity` | 963 |
+| `insolvency` | 1 |
 
 Example decision card:
 

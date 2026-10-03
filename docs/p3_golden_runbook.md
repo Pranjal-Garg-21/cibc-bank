@@ -120,13 +120,13 @@ or `duckdb -readonly warehouse/trustissues.duckdb`.
 
 ## Step 3. Rules and contact at the customer level (2 h)
 
-- [ ] `nba/rules.py`, `load_case_flags`: safeguards per golden customer, the most restrictive value across their
+- [x] `nba/rules.py`, `load_case_flags`: safeguards per golden customer, the most restrictive value across their
       records, combined with the case's own flags.
-- [ ] **One contact per person per day**: in `nba/queue.py` after allocation, keep the most valuable contact per
+- [x] **One contact per person per day**: in `nba/queue.py` after allocation, keep the most valuable contact per
       `golden_customer_id` and turn the others into `wait` with blocked reason `customer_already_contacted_today`.
-- [ ] 7-day contact cap counted per customer, not per case.
-- [ ] Tests: two cases of one customer get one contact; most restrictive consent wins; the cap is per customer.
-- [ ] `make nightly`; record how many same-day duplicate contacts were removed and how many former orphan cases are
+- [x] 7-day contact cap counted per customer, not per case.
+- [x] Tests: two cases of one customer get one contact; most restrictive consent wins; the cap is per customer.
+- [x] `make nightly`; record how many same-day duplicate contacts were removed and how many former orphan cases are
       now contactable.
 
 **Done when:** tests green; numbers recorded.

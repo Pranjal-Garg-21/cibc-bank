@@ -3,9 +3,12 @@
 Input: one case's flags. Output: the allowed actions, and for every removed action the rule that
 blocked it (the first one, in RULES order). `wait` is never blocked.
 
-Flags come from collections_cases and the CRM (customers) by crm_customer_id for now
-(`load_case_flags`); they switch to gold.customer_safeguards later. CRM safety flags are read only
-here, never as model features.
+Flags come from the case (collections_cases) and from its PERSON (`load_case_flags`): gold.customer_safeguards
+for the case's golden customer, the most restrictive value across all their CRM records (any flag set, any consent
+withheld, the narrowest hours and preferred window), combined with the case's own flags. A case whose person has no
+CRM record has no consent on any channel. The 7-day contact count is the person's: outbound contacts to them on any
+of their cases in the 7 days before the planned day, never fewer than the case's own counter. Safety flags are read
+only here, never as model features.
 
 Contact hours (POL-COLL-001 §5.1). The queue plans a day, so each case gets a contact window for that day
 (`contact_window`): 07:00–21:00 customer-local (the policy, within the CRM's permitted hours); on Sundays 13:00–17:00
@@ -137,15 +140,36 @@ def _window(start: str | None, end: str | None) -> tuple[time, time] | None:
 
 def load_case_flags(con, case_ids: list[str] | None = None, planned_local_time: time | None = None,
                     contact_day: date | None = None) -> dict[str, CaseFlags]:
-    """Case flags from collections_cases plus CRM safety flags. Missing CRM row = no consent on any channel."""
+    """Case flags from collections_cases plus the safeguards of the case's golden customer (most restrictive across
+    their CRM records). No CRM record for the person = no consent on any channel. contacts_last_7d is the person's
+    outbound contacts in the 7 days before the planned day (default: the as-of date), at least the case's counter."""
     from trustissues.features import sources
 
     sources.register(con)
+    day = contact_day or config.AS_OF_DATE
     where = ""
     if case_ids is not None:
         con.execute("CREATE OR REPLACE TEMP TABLE _rule_cases AS SELECT unnest(?::VARCHAR[]) AS case_id", [case_ids])
         where = "WHERE c.case_id IN (SELECT case_id FROM _rule_cases)"
     rel = con.sql(f"""
+        WITH f AS (  -- one row per person: the same safeguards on each of their CRM rows, the window per record
+            SELECT golden_customer_id,
+                   bool_or(cease_communication_flag) AS cease_communication_flag, bool_or(deceased_flag) AS deceased_flag,
+                   bool_or(bankruptcy_flag) AS bankruptcy_flag, bool_or(consumer_proposal_flag) AS consumer_proposal_flag,
+                   bool_or(legal_representative_flag) AS legal_representative_flag,
+                   bool_or(internal_do_not_call_flag) AS internal_do_not_call_flag,
+                   bool_and(consent_call) AS consent_call, bool_and(consent_sms) AS consent_sms,
+                   bool_and(consent_email) AS consent_email, bool_and(consent_push) AS consent_push,
+                   bool_and(consent_letter) AS consent_letter, bool_and(sunday_contact_permitted) AS sunday_contact_permitted,
+                   max(permitted_call_start_local) AS permitted_call_start_local,
+                   min(permitted_call_end_local) AS permitted_call_end_local,
+                   max(preferred_contact_window_start) AS preferred_contact_window_start,
+                   min(preferred_contact_window_end) AS preferred_contact_window_end
+            FROM src_crm_safety_flags GROUP BY 1),
+        k AS (  -- outbound contacts to the person in the 7 days before the planned day, on any of their cases
+            SELECT golden_customer_id, count(*) AS contacts_7d FROM src_contacts
+            WHERE direction = 'outbound' AND contact_ts >= DATE '{day}' - INTERVAL 7 DAY AND contact_ts < DATE '{day}'
+            GROUP BY 1)
         SELECT c.case_id,
                coalesce(c.cease_contact_flag, false) OR coalesce(f.cease_communication_flag, false) AS cease_contact,
                coalesce(c.deceased_hold_flag, false) OR coalesce(f.deceased_flag, false) AS deceased,
@@ -158,11 +182,11 @@ def load_case_flags(con, case_ids: list[str] | None = None, planned_local_time: 
                coalesce(c.test_cell = 'no_contact_holdout', false) AS experiment_holdout,
                coalesce(f.consent_call, false), coalesce(f.consent_sms, false), coalesce(f.consent_email, false),
                coalesce(f.consent_push, false), coalesce(f.consent_letter, false),
-               coalesce(c.contacts_last_7d, 0), coalesce(c.contact_cap_7d, 3),
+               greatest(coalesce(c.contacts_last_7d, 0), coalesce(k.contacts_7d, 0)), coalesce(c.contact_cap_7d, 3),
                f.permitted_call_start_local, f.permitted_call_end_local,
                f.preferred_contact_window_start, f.preferred_contact_window_end,
                coalesce(f.sunday_contact_permitted, false)
-        FROM src_cases c LEFT JOIN src_crm_safety_flags f USING (crm_customer_id) {where}""")
+        FROM src_cases c LEFT JOIN f USING (golden_customer_id) LEFT JOIN k USING (golden_customer_id) {where}""")
     out = {}
     for (case_id, cease, dead, insolv, dispute, rep, dnc, held, c_call, c_sms, c_email, c_push, c_letter, n7, cap,
          pstart, pend, wstart, wend, sunday) in rel.fetchall():

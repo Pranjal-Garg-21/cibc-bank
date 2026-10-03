@@ -80,6 +80,33 @@ class Plan:
     order: list[str]  # candidates worth more than waiting, best first, then wait
     route_to_certified: bool
     support_reason: str | None = None  # why a support call is due (nba/hardship.py)
+    dropped: list[str] = field(default_factory=list)  # contacts given up: the person is contacted on another case
+    contacted_on: str | None = None  # that other case
+
+
+SAME_DAY = "customer_already_contacted_today"
+
+
+def one_contact_per_customer(plans: list[Plan]) -> int:
+    """One contact per person per day. Of a person's cases that would contact them, the one with a support call
+    (hardship and vulnerability come first), else the most valuable contact, keeps it; the others wait, their
+    contacts blocked as customer_already_contacted_today. Runs before capacity is allocated, so what they would
+    have used goes to other customers. Returns the number of cases turned into waits."""
+    def rank(p: Plan):
+        return p.order[0] == hardship.SUPPORT, p.candidates.get(p.order[0], 0.0), p.case.case_id
+
+    keep: dict[str, Plan] = {}
+    for p in plans:
+        if p.order[0] != "wait" and (p.case.customer_id not in keep or rank(p) > rank(keep[p.case.customer_id])):
+            keep[p.case.customer_id] = p
+    n = 0
+    for p in plans:
+        k = keep.get(p.case.customer_id)
+        if k is None or k is p or p.order[0] == "wait":
+            continue
+        p.dropped, p.order, p.contacted_on = [a for a in p.order if a != "wait"], ["wait"], k.case.case_id
+        n += 1
+    return n
 
 
 def approval_reason(c: CaseInput, action: str, high_balance: float) -> str | None:
@@ -138,27 +165,32 @@ def render(plan: Plan, assignment: allocate.Assignment, ctx: Context) -> dict:
     blocked = [BlockedAction(a, r) for a, r in plan.allowed.blocked.items()
                if plan.route_to_certified or a != hardship.SUPPORT]  # support calls exist only for flagged cases
     blocked += [BlockedAction(a, "no_capacity") for a in assignment.no_capacity]
+    blocked += [BlockedAction(a, SAME_DAY) for a in plan.dropped]
     window = rules.contact_window(c.flags) if card_channel_is_real_time(action) else None
     window_text = f"{window[0]:%H:%M}–{window[1]:%H:%M} customer-local" if window else None
     support = None
     if plan.route_to_certified:
         support = explain.support_text(action, plan.support_reason,
                                        hardship.waiting_reason(c.signal, c.history, ctx.as_of),
-                                       plan.allowed.blocked.get(hardship.SUPPORT), assignment.no_capacity)
+                                       plan.allowed.blocked.get(hardship.SUPPORT)
+                                       or (SAME_DAY if hardship.SUPPORT in plan.dropped else None),
+                                       assignment.no_capacity)
     card = DecisionCard(
         recommended_action=action,
         channel=actions.CATALOGUE[action].channel,
         risk_score=round(c.risk, 4),
         top_reasons=c.reasons,
         runner_up_action=runner,
-        why_beat_runner_up=explain.why_beat(action, runner, plan.candidates, assignment.no_capacity, support),
+        why_beat_runner_up=explain.why_beat(action, runner, plan.candidates, assignment.no_capacity, support,
+                                            same_day=plan.contacted_on),
         blocked_actions=blocked,
         evidence=[],  # P4 text features (gold.text_features) fill this once they exist
         requires_approval=reason is not None,
         approval_reason=reason,
         summary=explain.summary(action, c.risk, c.reasons, plan.route_to_certified, hard_stop,
                                 promise_risk=c.promise_risk, no_capacity=assignment.no_capacity, support=support,
-                                options=[o.name for o in c.options], window=window_text),
+                                options=[o.name for o in c.options], window=window_text,
+                                same_day=plan.contacted_on),
         support_reason=plan.support_reason if action == hardship.SUPPORT else None,
         hardship_options=c.options,
         contact_window=window_text,
@@ -258,7 +290,8 @@ def load_cases(con, as_of) -> list[dict]:
                o.last_offer_ts, coalesce(o.broken_plan_90d, false) AS broken_plan_90d,
                date_diff('month', d.opened, DATE '{as_of}') AS months_on_book
         FROM src_cases c
-        LEFT JOIN src_crm_safety_flags f USING (crm_customer_id)
+        LEFT JOIN (SELECT golden_customer_id, bool_or(vulnerability_flag) AS vulnerability_flag
+                   FROM src_crm_safety_flags GROUP BY 1) f USING (golden_customer_id)  -- the person, any record
         LEFT JOIN src_agents a ON a.agent_id = c.assigned_agent_id
         LEFT JOIN offers o USING (case_id)
         LEFT JOIN opened d ON d.account_id = c.primary_account_id
@@ -316,6 +349,7 @@ def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
         c, flags[c["case_id"]], programs, uses, config.AS_OF_DATE, risk=risk[c["case_id"]],
         reasons=reasons[c["case_id"]], reach=reach[c["case_id"]], promise_risk=promise_risk.get(c["current_ptp_id"]),
     ), ctx) for c in cases]
+    same_day = one_contact_per_customer(plans)
 
     capacity = None
     if with_capacity:
@@ -337,6 +371,7 @@ def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
         assignments = [allocate.Assignment(p.order[0], default_agent(p, p.order[0]), []) for p in plans]
     rows = [render(p, a, ctx) for p, a in zip(plans, assignments)]
     return rows, {"snapshot_id": snapshot_id, "scored_cases": len(risk), "scored_promises": len(promise_risk),
+                  "same_day_waits": same_day,
                   "calibration": cal, "capacity": capacity, "unconstrained": [p.order[0] for p in plans]}
 
 
@@ -412,6 +447,9 @@ interval includes zero, so cheap channels the customer responds to win, and a ca
 | Action | Best before capacity | Final | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
 {t1}
+
+One contact per person per day: {info.get('same_day_waits', 0):,} cases wait because their person is contacted on
+another case today ("Best before capacity" counts after this rule).
 
 Capacity on {config.AS_OF_DATE} (`channel_capacity`; {cap['start']['agents_working']} agents on shift with
 {cap['start']['agent_calls']:,} outbound calls between them, {cap['left']['agent_calls']:,} left unused):

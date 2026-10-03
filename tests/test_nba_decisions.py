@@ -9,7 +9,8 @@ import pytest
 from trustissues.common import config
 from trustissues.common.interfaces import DecisionCard, HardshipOption, Reason, apply_stubs
 from trustissues.nba import actions, allocate, explain, hardship, rules
-from trustissues.nba.queue import COLUMNS, CaseInput, Context, decide_case, plan_case
+from trustissues.nba.queue import (COLUMNS, SAME_DAY, CaseInput, Context, decide_case, one_contact_per_customer,
+                                   plan_case, render)
 
 COSTS = {"phone": 2.4, "sms": 0.01, "email": 0.001, "push": 0.001, "mail": 1.1}
 ALL_CONSENT = {c: True for c in rules.CHANNELS}
@@ -200,3 +201,31 @@ def test_capacity_never_makes_a_hardship_case_harsher():
     plan = plan_case(_case(flags=flags, signal=hardship.HardshipSignal("possible"), amount=3000.0,
                            reach={"agent_call": 2.0}), CTX)
     assert all(actions.harshness(a) <= hardship.MAX_HARSHNESS_IN_HARDSHIP for a in plan.order)
+
+
+# ---- one contact per person per day (golden records Step 3) ------------------------------------------------
+
+def test_two_cases_of_one_person_get_one_contact_the_most_valuable():
+    small, big = _case(case_id="CS-1", amount=300.0), _case(case_id="CS-2", amount=3000.0)
+    other = _case(case_id="CS-3", customer_id="C-2", amount=300.0)
+    plans = [plan_case(c, CTX) for c in (small, big, other)]
+    assert all(p.order[0] != "wait" for p in plans)
+    assert one_contact_per_customer(plans) == 1
+    assert plans[1].order[0] != "wait" and plans[2].order[0] != "wait"  # the bigger case, and another person
+    assert plans[0].order == ["wait"] and plans[0].contacted_on == "CS-2"
+    row = render(plans[0], allocate.Assignment("wait", "AG-1", []), CTX)
+    card = json.loads(row["decision_card"])
+    assert row["action"] == "wait"
+    assert {b["rule"] for b in card["blocked_actions"]} >= {SAME_DAY}
+    assert "CS-2" in card["why_beat_runner_up"] and "CS-2" in card["summary"]
+
+
+def test_a_support_call_wins_over_a_more_valuable_reminder_for_the_same_person():
+    reminder = _case(case_id="CS-1", amount=9000.0)
+    support = _case(case_id="CS-2", amount=100.0, agent_certified=True,
+                    signal=hardship.HardshipSignal("clear", False), options=[])
+    plans = [plan_case(c, CTX) for c in (reminder, support)]
+    if plans[1].order[0] != hardship.SUPPORT:
+        pytest.skip("no support call due for this signal")
+    one_contact_per_customer(plans)
+    assert plans[1].order[0] == hardship.SUPPORT and plans[0].order == ["wait"]

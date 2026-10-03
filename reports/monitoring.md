@@ -78,7 +78,7 @@ What the bank itself records: the AUC it states at validation and the monthly PS
 
 ## Queue and review
 
-Queue for 2026-09-28: 86,059 cases. Actions: wait 33,863, email_reminder 16,007, push_reminder 13,581, support_call 12,727, sms_reminder 5,423, letter 3,000, agent_call 1,458. Needing approval: digital_batch 34,841, vulnerability 7,335, hardship 5,392, high_balance 249.
+Queue for 2026-09-28: 86,059 cases. Actions: wait 33,532, email_reminder 16,160, push_reminder 13,695, support_call 12,721, sms_reminder 5,482, letter 3,000, agent_call 1,469. Needing approval: digital_batch 35,163, vulnerability 7,355, hardship 5,366, high_balance 251.
 
 No review decisions recorded yet (`gold.nba_overrides` is empty or not built): override rate not available.
 

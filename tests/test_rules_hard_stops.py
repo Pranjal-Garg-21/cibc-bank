@@ -1,6 +1,6 @@
 """nba/rules.py: no contact action survives cease, deceased, insolvency or an open dispute."""
 import itertools
-from datetime import time
+from datetime import date, time
 
 import pytest
 
@@ -83,6 +83,7 @@ def test_only_the_internal_do_not_call_list_blocks_calls():
     for case, cust, national, internal in (("CS-N", "C-N", "true", "false"), ("CS-I", "C-I", "false", "true")):
         con.execute(f"INSERT INTO {sources.SCHEMA}.collections_cases (case_id, coll_customer_ref) VALUES (?, ?)",
                     [case, cust])
+        con.execute("INSERT INTO gold.case_customer (case_id, golden_customer_id) VALUES (?, ?)", [case, f"G-{cust}"])
         con.execute("INSERT INTO gold.customer_xref (golden_customer_id, source_system, source_key) VALUES (?, 'crm', ?)",
                     [f"G-{cust}", cust])
         con.execute("""INSERT INTO gold.customer_safeguards (golden_customer_id, consent_phone, national_dncl,
@@ -115,3 +116,43 @@ def test_no_collection_contact_on_a_statutory_holiday():
     r = rules.allowed_actions(_flags(contact_day=date(2026, 9, 30)))  # National Day for Truth and Reconciliation
     assert set(r.allowed) == {"wait", "letter"}  # a letter may still be posted
     assert set(r.blocked.values()) == {"statutory_holiday"}
+
+
+# ---- the person, not the CRM record (golden records Step 3) -----------------------------------------------
+
+def _person_warehouse():
+    """Person G-1 with two CRM records (C-1, C-2) and three cases: CS-A and CS-B name its records, CS-O names a CRM
+    ID that does not exist but P1 tied it to G-1 through its accounts. G-1 withheld phone consent."""
+    import duckdb
+
+    from trustissues.features import sources
+
+    con = duckdb.connect()
+    sources.create_empty_tables(con)
+    for case, ref in (("CS-A", "C-1"), ("CS-B", "C-2"), ("CS-O", "C-MISSING")):
+        con.execute(f"""INSERT INTO {sources.SCHEMA}.collections_cases (case_id, coll_customer_ref, contacts_last_7d,
+                        contact_cap_7d) VALUES (?, ?, '0', '3')""", [case, ref])
+        con.execute("INSERT INTO gold.case_customer (case_id, golden_customer_id) VALUES (?, 'G-1')", [case])
+    for crm in ("C-1", "C-2"):
+        con.execute("""INSERT INTO gold.customer_xref (golden_customer_id, source_system, source_key, node_id)
+                       VALUES ('G-1', 'crm', ?, 'crm|' || ?)""", [crm, crm])
+    con.execute("""INSERT INTO gold.customer_safeguards (golden_customer_id, consent_phone, consent_sms, consent_email,
+                   consent_push, consent_mail) VALUES ('G-1', 'false', 'true', 'true', 'true', 'true')""")
+    return con, sources
+
+
+def test_every_case_of_a_person_gets_the_persons_safeguards():
+    con, _ = _person_warehouse()
+    flags = rules.load_case_flags(con)
+    for case in ("CS-A", "CS-B", "CS-O"):  # including the case whose CRM ID does not exist
+        assert flags[case].consent == {"phone": False, "sms": True, "email": True, "push": True, "mail": True}, case
+
+
+def test_the_7_day_contact_cap_counts_the_persons_contacts_on_every_case():
+    con, sources = _person_warehouse()
+    for i in range(3):  # three outbound contacts on CS-A this week: the cap of 3 is reached for the person
+        con.execute(f"""INSERT INTO {sources.SCHEMA}.contact_history (contact_id, case_id, crm_customer_id, direction,
+                        contact_ts_local) VALUES (?, 'CS-A', 'C-1', 'outbound', '2026-09-2{i + 4} 10:00:00')""", [f"K{i}"])
+    flags = rules.load_case_flags(con, contact_day=date(2026, 9, 28))
+    assert flags["CS-B"].contacts_last_7d == 3
+    assert rules.allowed_actions(flags["CS-B"]).blocked.get("email_reminder") == "contact_limit"

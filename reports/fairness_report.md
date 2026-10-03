@@ -262,49 +262,49 @@ The 2026-09-28 queue (`warehouse/p3/nba_decisions.parquet`). *Collections contac
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 **Age band**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 **Marital status**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 **Citizenship / residency**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 **Newcomer programme**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 **Accessibility needs**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 **Dependants**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 **Preferred language (not protected; checked as a stand-in for origin)**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 45.9% | 1.00 | 1.7% | 14.8% | 39.3% | 42.1% |
+| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
 
 </details>
 
@@ -314,7 +314,7 @@ Not a protected group, so left out of the screens above, but worth knowing: thes
 
 - Promise break risk: 1,042 holdout rows; actual 59.5%; our score's gap +0.015 (overall +0.015), the bank's -0.085; 22.4% in our riskiest 20%.
 - Case risk of not curing in 30 days: 2,202 holdout rows; actual 81.2%; our score's gap -0.093 (overall -0.088), the bank's -0.258; 20.9% in our riskiest 20%.
-- Morning queue: 86,059 cases, 45.9% get any contact and 39.3% wait. With no CRM record there is no consent on any channel, so the rules allow nothing but waiting (default deny).
+- Morning queue: 86,059 cases, 46.3% get any contact and 39.0% wait. With no CRM record there is no consent on any channel, so the rules allow nothing but waiting (default deny).
 
 These close once identity resolution links these cases to a golden customer record.
 
