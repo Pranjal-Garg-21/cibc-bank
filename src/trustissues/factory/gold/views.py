@@ -71,6 +71,9 @@ def customer_safeguards(con) -> int:
                     bool_and(coalesce(c.voicemail_permitted, true)) voicemail_ok, bool_and(coalesce(c.contact_at_work_permitted, true)) work_ok,
                     bool_and(coalesce(c.sunday_contact_permitted, true)) sunday_ok,
                     max(c.permitted_call_start_local) call_start, min(c.permitted_call_end_local) call_end,
+                    -- the customer's own preferred window: the narrowest across their records (latest start, earliest end)
+                    max(c.preferred_contact_window_start) pref_start, min(c.preferred_contact_window_end) pref_end,
+                    arg_max(c.time_zone, c.last_profile_update_ts) time_zone,
                     arg_max(c.preferred_language, c.last_profile_update_ts) preferred_language
                 FROM gold_stage.customer_xref x JOIN curated.customers_current c ON x.source_system = 'crm' AND c.crm_customer_id = x.source_key
                 GROUP BY 1),
@@ -97,7 +100,9 @@ def customer_safeguards(con) -> int:
                coalesce(crm.counselling, false) AS credit_counselling, coalesce(crm.fraud_victim, false) AS fraud_victim,
                coalesce(crm.consumer_proposal, false) OR coalesce(cases.insolvency, false) AS insolvency,
                crm.voicemail_ok AS voicemail_permitted, crm.work_ok AS contact_at_work_permitted, crm.sunday_ok AS sunday_contact_permitted,
-               crm.call_start AS permitted_call_start_local, crm.call_end AS permitted_call_end_local
+               crm.call_start AS permitted_call_start_local, crm.call_end AS permitted_call_end_local,
+               crm.pref_start AS preferred_contact_window_start, crm.pref_end AS preferred_contact_window_end,
+               crm.time_zone
         FROM gold_stage.c360_customer g LEFT JOIN crm USING (golden_customer_id) LEFT JOIN cases USING (golden_customer_id)
         LEFT JOIN contacts USING (golden_customer_id)""")
     return con.execute("SELECT count(*) FROM gold_stage.customer_safeguards").fetchone()[0]

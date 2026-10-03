@@ -25,8 +25,8 @@ days), 1–30 → 31–60 roll rate (down) and contacts per dollar recovered (do
 
 **How we measure it.**
 - *Hackathon:* our models against the bank's on the same rows with a time-based holdout. Case risk (not cured in 30 days):
-  AUC **0.840 vs 0.725** for the bank's `cure_30d`, better calibrated (calibration error 0.088 vs 0.251, and 0.014 when
-  calibrated on the latest month, as the model now is). Promise break risk: **0.950 vs 0.695** for `ptp_break`; most of that lead comes from the promised share of the overdue amount, which
+  AUC **0.839 vs 0.725** for the bank's `cure_30d`, better calibrated (calibration error 0.085 vs 0.251, and 0.015 when
+  calibrated on the latest month, as the model now is). Promise break risk (broken; a partly kept promise is not broken): **0.968 vs 0.712** for `ptp_break`; most of that lead comes from the promised share of the overdue amount, which
   in this data almost decides the outcome. The value of a contact comes from the bank's own randomised test
   (contacted cells vs the no-contact hold-out): +0.62 points of cure per extra contact, an interval that includes zero,
   so the queue is deliberately conservative.
@@ -99,9 +99,8 @@ decision is logged and summarised for the weekly override review. Fairness is ch
 
 **P1 (decisioning view).** Exclude age and age band, `id_document_type`, `interpreter_used_flag`, voice acoustic features
 and benefit-type categories. P3 now reads the gold layer and keys everything by golden ID (`docs/p3_plan.md`, golden records
-Steps 0-7). Open with P1: `label_broken` treats partially kept as not broken, P3's label does not (both certified
-metrics); `customer_safeguards` lacks the preferred contact window and `promises_enriched` the reminder flag (read
-from curated meanwhile).
+Steps 0-7). P3's label is P1's `label_broken` (partially kept is not broken). `customer_safeguards` now carries
+the preferred contact window and time zone; `promises_enriched` still lacks the reminder flag (read from curated).
 
 **P2.** Add `gold.nba_decisions` and `gold.nba_overrides` to the Ask schema graph. Use P3's feature definitions for the
 drivers dimensions. The Data Quality page can call `trustissues.governance.monitoring.snapshot()`.

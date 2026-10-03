@@ -25,7 +25,7 @@ now AS (
 promises AS (
     SELECT s.row_id,
            count(p.ptp_id) AS case_promises,
-           count(p.ptp_id) FILTER (WHERE p.ptp_status IN ('broken', 'partially_kept') AND p.status_ts < s.event_ts)
+           count(p.ptp_id) FILTER (WHERE p.ptp_status = 'broken' AND p.status_ts < s.event_ts)
                AS case_promises_broken,
            count(p.ptp_id) FILTER (WHERE p.ptp_status = 'kept' AND p.status_ts < s.event_ts) AS case_promises_kept,
            arg_max(p.ptp_to_overdue_ratio, p.ptp_created_ts)

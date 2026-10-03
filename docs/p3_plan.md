@@ -14,7 +14,7 @@ Promises, cases, contacts and account snapshots already carry `crm_customer_id` 
 
 | Fact | Consequence |
 |---|---|
-| `metric_definitions.promise_kept_rate` = `kept / (kept + partially_kept + broken)`, excluding `open` and `cancelled` | **Label = 1 if `broken` or `partially_kept`**, 0 if `kept`. Drop `open` (33,005) and `cancelled` (1,441). ~204k labelled promises. |
+| `metric_definitions.broken_promise_rate` = `broken / (kept + partially_kept + broken)`, excluding `open` and `cancelled` | **Label = 1 if `broken`**, 0 if `kept` or `partially_kept` (changed 4 Oct: a partial payment is partial, not broken; was 1 for `partially_kept` too). Drop `open` (33,005) and `cancelled` (1,441). ~204k labelled promises. |
 | Incumbent `model_scores.model_name = 'ptp_break'` exists only for score dates 2026-06-30 to 2026-09-28: 66,121 promises, **32,869 of them resolved** | **Time split at 2026-06-30.** Train on promises created before; the holdout is the 32,869 resolved promises the incumbent scored. |
 | 130k of 239k promises were created in 2026 | Recent-heavy. Keep a validation slice from the months just before the split for early stopping. |
 | `account_id` is null for 68k promises (case-level or `multi`); 160,880 match `account_monthly_snapshot` | Account features at account level when present, otherwise rolled up by `crm_customer_id`. LightGBM handles the nulls. |
@@ -712,3 +712,32 @@ connection in a process to match, so `app/ui.py` and two tests go back to a plai
 16 GB `systemd-run` scope stays. `preserve_insertion_order: false` exposed an order dependence in the queue:
 `allocate._pick_agent` broke ties between agents with equally many calls left by row order, which changed the agent
 on 1,858 cases (never the action or the risk). Ties now go to the lower agent ID; two runs give identical queues.
+
+### Partially kept is not broken; contact window from gold (4 Oct)
+
+**Label.** Decided with the team: a partially kept promise is partial, not broken. Label = 1 for `broken` only, 0 for
+`kept` or `partially_kept`: the certified `broken_promise_rate`, identical to P1's `gold.promises_enriched.label_broken`
+(the Step 0 mismatch of 7,549 promises is gone). History features follow: `broken_ptp_90d`, `broken_ptp_365d`,
+`days_since_last_broken` (`promise_history.sql`) and `case_promises_broken` (`case_state.sql`) count `broken` only, and
+a new `partial_ptp_365d` counts partially kept promises in the last year on its own (so the model still sees them;
+card sentence in `nba/explain.py`). Partial payments still count as payments in `nba/actions.py`.
+
+| Holdout | Before (broken or partial = 1) | After (broken = 1) |
+|---|---|---|
+| Promise model AUC (calibrated) / Brier / ECE | 0.9501 / 0.0860 / 0.0175 | **0.9680** / 0.0677 / 0.0177 |
+| Bank's `ptp_break` AUC / ECE | 0.6946 / 0.1120 | 0.7116 / 0.0738 |
+| Promise model without amount features | 0.6906 | 0.6745 |
+| Case model AUC (44 + 8 -> 53 features) | 0.8405 | 0.8391 |
+| Case recalibration test (Jun -> Jul ECE) | 0.0842 -> 0.0139 | 0.0824 -> 0.0147 |
+
+Promise holdout broken rate 56.7%. Fairness: promise model **0 screening flags** (was 5), the bank's 0 (was 2); case
+model 6 (was 7). Queue: 151 cases change action, mostly between reminder channels. The >0.95 AUC warning still comes
+from the amount features (`ptp_to_overdue_ratio`, DQ T4), as before.
+
+**Contact window.** The CRM has each customer's preferred contact window (`customers.preferred_contact_window_start`
+/ `_end`, filled for 661,923 of 1,017,885 records) and `time_zone`; P1's `gold.customer_safeguards` did not carry them.
+Added there (`factory/gold/views.py`): the narrowest window across the person's CRM records (latest start, earliest
+end; no person ends up with an empty window) and the time zone of their latest-updated record, as extra columns after
+the agreed shape. Published through the contract gate (all blocking rules pass): 653,542 of 1,013,156 people have a
+window, 992,947 a time zone. `crm_safety_flags` now reads the window from gold; the curated join is gone. No card
+changes window (the rules already combined a person's records the same way).

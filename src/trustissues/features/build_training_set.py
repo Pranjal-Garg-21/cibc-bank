@@ -2,7 +2,8 @@
 
     python -m trustissues.features.build_training_set
 
-Label (metric_definitions.promise_kept_rate): 1 = broken or partially_kept, 0 = kept. Open and
+Label (metric_definitions.broken_promise_rate, the same as gold.promises_enriched.label_broken): 1 = broken,
+0 = kept or partially_kept (a partial payment is partial, not broken). Open and
 cancelled promises are dropped.
 
 Split (dates in config/settings.yaml, p3):
@@ -20,7 +21,7 @@ from trustissues.common.db import connect
 from trustissues.features import sources
 
 SPINE_FILE = "training_spine.parquet"
-BROKEN = ("broken", "partially_kept")
+BROKEN = ("broken",)
 RESOLVED = ("kept", "broken", "partially_kept")
 
 

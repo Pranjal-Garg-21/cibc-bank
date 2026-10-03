@@ -91,8 +91,8 @@ RECORD_PERSON = "coalesce(cc.golden_customer_id, x.golden_customer_id)"
 
 SOURCES: dict[str, Source] = {
     # gold.promises_enriched is curated.promises_to_pay with the golden ID added; reminder_scheduled_flag is not in
-    # gold yet, so it comes from curated by ptp_id. The label is P3's own, from ptp_status (partially kept = 1); P1's
-    # label_broken (partially kept = 0) is never read (p3_plan.md, golden records Step 0).
+    # gold yet, so it comes from curated by ptp_id. The label (build_training_set.py) is broken = 1, kept or partially
+    # kept = 0, the same as P1's label_broken; it is built from ptp_status, which as_of can mask.
     "promises": Source(
         table="promises_enriched",
         schema="gold",
@@ -291,16 +291,15 @@ SOURCES: dict[str, Source] = {
         },
     ),
     # Safety flags: nba/rules.py ONLY (P3 plan §4 step 6). Never a model feature. One row per CRM record, carrying
-    # its PERSON's safeguards (gold.customer_safeguards: most restrictive across all their records, and P1 adds
-    # case insolvency holds and vulnerability disclosed on contacts). Not in gold yet, so from the CRM record itself:
-    # the preferred contact window. Consents are 'true' / 'false' text in gold.
+    # its PERSON's safeguards (gold.customer_safeguards: most restrictive across all their records, including the
+    # preferred contact window, and P1 adds case insolvency holds and vulnerability disclosed on contacts).
+    # Consents are 'true' / 'false' text in gold.
     "crm_safety_flags": Source(
         table="customer_xref",
         schema="gold",
         use="rules",
         where="t.source_system = 'crm'",
-        joins=(Join("s", "customer_safeguards", "s.golden_customer_id = t.golden_customer_id", schema="gold"),
-               Join("c", "customers_current", "c.crm_customer_id = t.source_key")),
+        joins=(Join("s", "customer_safeguards", "s.golden_customer_id = t.golden_customer_id", schema="gold"),),
         label_as={
             "source_key": "customers.crm_customer_id", "golden_customer_id": GOLDEN_ID_LABEL,
             "s.consent_phone": "customers.consent_call", "s.consent_sms": "customers.consent_sms",
@@ -313,8 +312,8 @@ SOURCES: dict[str, Source] = {
             "s.sunday_contact_permitted": "customers.sunday_contact_permitted",
             "s.permitted_call_start_local": "customers.permitted_call_start_local",
             "s.permitted_call_end_local": "customers.permitted_call_end_local",
-            "c.preferred_contact_window_start": "customers.preferred_contact_window_start",
-            "c.preferred_contact_window_end": "customers.preferred_contact_window_end",
+            "s.preferred_contact_window_start": "customers.preferred_contact_window_start",
+            "s.preferred_contact_window_end": "customers.preferred_contact_window_end",
         },
         columns={
             "crm_customer_id": ("source_key", "VARCHAR"),
@@ -333,8 +332,8 @@ SOURCES: dict[str, Source] = {
             "internal_do_not_call_flag": ("s.internal_do_not_call", "BOOLEAN"),
             "legal_representative_flag": ("s.legal_representative", "BOOLEAN"),
             "sunday_contact_permitted": ("s.sunday_contact_permitted", "BOOLEAN"),
-            "preferred_contact_window_start": ("c.preferred_contact_window_start", "VARCHAR"),
-            "preferred_contact_window_end": ("c.preferred_contact_window_end", "VARCHAR"),
+            "preferred_contact_window_start": ("s.preferred_contact_window_start", "VARCHAR"),
+            "preferred_contact_window_end": ("s.preferred_contact_window_end", "VARCHAR"),
             "permitted_call_start_local": ("s.permitted_call_start_local", "VARCHAR"),
             "permitted_call_end_local": ("s.permitted_call_end_local", "VARCHAR"),
         },

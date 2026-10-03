@@ -77,6 +77,7 @@ TEMPLATES = {
     "ptp_made_90d": lambda v: f"{_n(v, 'promise')} made in the last 90 days",
     "broken_ptp_365d": lambda v: f"{_n(v, 'promise')} broken in the last year",
     "kept_ptp_365d": lambda v: f"{_n(v, 'promise')} kept in the last year",
+    "partial_ptp_365d": lambda v: f"{_n(v, 'promise')} partly kept in the last year",
     "days_since_last_broken": lambda v: f"Last broken promise {_n(v, 'day')} ago",
     "dpd_last_snapshot": lambda v: f"{_n(v, 'day')} past due at the last account snapshot",
     "worst_dpd_12m": lambda v: f"Worst arrears in the last year: {_n(v, 'day')} past due",
