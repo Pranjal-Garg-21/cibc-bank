@@ -28,7 +28,7 @@ Layer 1, Data Product Factory (owner P1). Legend: ✅ done and tested · 🟡 bu
 | 3.1 | `ingest/schema_drift.py` | ✅ |
 | 3.1 | `ingest/dictionary.py` → `config/sensitivity.yaml` | 🟡 ran once on the real data. Since then added hand overrides and label inheritance for `std_*` columns (3 unit tests); **not yet re-run on the real data** |
 | 3.2 | `curate/standardise.py` | ✅ 18 unit tests |
-| 3.2 | `curate/build_curated.py` + `config/curate.yaml` (generic, replaces per-table `sql/*.sql`, see D6) | 🟡 unit-tested on synthetic data; not yet run on the full warehouse |
+| 3.2 | `curate/build_curated.py` + `config/curate.yaml` (generic, replaces per-table `sql/*.sql`, see D6) | 🟡 **Ran on 16 of 31 real tables** with no errors (0 exact duplicates, 0 cast failures except 1 column). Crashed on `external` (see D8), fixed with a regression test; the remaining 15 tables are being built |
 | 3.2 | `curate/text_controls.py`, `mapping_assistant.py` | ⬜ |
 | 3.3 | identity (`nodes`, `rules`, `splink_model`, `second_opinion`, `review_queue`, `cluster`, `relationships`) | ⬜ |
 | 3.4 | gold (`survivorship`, `build_c360`, views, `publish`) | ⬜ |
@@ -192,12 +192,14 @@ Facts learned from the real data, recorded as we find them.
 | D4 | Unclassified columns are restricted by default | A new column must never reach a model unreviewed |
 | D5 | Rename suggestions use name similarity for now | LLM wrapper (`common/llm.py`) is not built; plan assigns LLM ranking later |
 | D6 | Curated is built **generically from `schema.json`** plus `config/curate.yaml`, instead of one hand-written `sql/<table>.sql` per table (plan §3.2) | Keeps the system dynamic: a new table is typed and deduped with no code change. Per-table SQL can still be added where a table needs special logic |
+| D8 | The standardise functions receive their inputs cast to text | The full-data run crashed on `external`: `subject_dob_reported` is a DATE in `schema.json`, and the DOB function only accepted text (`No function matches std_dob(DATE)`). The four earlier identity tables use text columns, so they passed. A regression test now reproduces the exact error on the old code |
 | D7 | Ambiguous dates keep both readings; ambiguous ALL-CAPS names stay unparsed unless the source sets a convention | Never invent identity evidence; wrong merges are worse than missed ones |
 
 ## Changelog
 
 | Date | Slice | Change |
 |---|---|---|
+| 2026-10-03 | Layer 1 · curate | First full-data run: 16 tables OK, then crash on `external` (DATE-typed identity column). Fixed (D8) and added a regression test (30 tests total). Documented that the curated build is slow and single-core (requirements.md section 4a) |
 | 2026-10-03 | Layer 1 · tooling | Added `pipeline.py`, `scripts/verify_warehouse.py`, `requirements.md`, `requirements.txt`, `config/sensitivity_overrides.yaml`, label inheritance (3 tests). Merged teammate's `.gitignore`. Aligned setup docs with the updated plan (voice pack, shared DuckDB) |
 | 2026-10-03 | Layer 1 · curate | Added `standardise.py` (18 tests), `build_curated.py`, `config/curate.yaml`, 2 builder tests. Fixed: Parquet `year` partition column no longer reported as schema drift. Documented source formats |
 | 2026-10-03 | Layer 1 · ingest | Added config, db, `load_raw`, `manifest`, `schema_drift`, `dictionary`, 5 tests. Created this file |

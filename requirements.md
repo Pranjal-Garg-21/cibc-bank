@@ -2,7 +2,7 @@
 
 This gets you from nothing to a populated `warehouse/trustissues.duckdb` (raw and curated schemas) using only the original dataset. Nothing here depends on another person's database file: every teammate builds their own from the source data, and `scripts/verify_warehouse.py` proves it came out the same.
 
-For what the code does and why, see [`docs/documentation.md`](docs/documentation.md) and [`docs/curation.md`](docs/curation.md).
+For what the code does and why, see [`docs/documentation.md`](docs/documentation.md). For what is running on P1's machine and what is already done, see [`docs/team_status.md`](docs/team_status.md).
 
 ## 1. What you need
 
@@ -10,7 +10,7 @@ For what the code does and why, see [`docs/documentation.md`](docs/documentation
 |---|---|---|
 | Python | 3.10 or newer | Developed and tested on 3.14.6 |
 | OS | Windows, macOS or Linux | Developed on Windows 11. Paths in the code are OS-neutral |
-| Disk | **about 30 GB free** | Both zips 4.7 GB + extracted data about 9.5 GB + warehouse (raw 5.7 GB, curated adds roughly the same again, see [curation.md](docs/curation.md) for the measured size) |
+| Disk | **about 30 GB free** | Both zips 4.7 GB + extracted data about 9.5 GB + warehouse (raw 5.7 GB, curated adds a similar amount; the final size is not measured yet) |
 | RAM | **16 GB recommended** | Built on a 15.7 GB machine. The raw load peaked around 1.8 GB for the Python process and DuckDB spills to disk when it needs more. 8 GB should work but is untested |
 | Network | one-off ~4.7 GB download | Both zips: the release (2.2 GB) and the voice pack (about 2.5 GB, 2,000 WAV files). The voice pack is needed by the plan (recordings are checksum-verified) but **nothing in the current raw/curated build reads the audio**, so the build works without it for now |
 | Packages | see [`requirements.txt`](requirements.txt) | `duckdb`, `pyyaml`, `openpyxl`, `pytest`, `huggingface_hub` |
@@ -69,13 +69,29 @@ Or stage by stage:
 ```bash
 python -m trustissues.factory.ingest.load_raw        # source files -> raw.*     (about 35 min on the reference machine)
 python -m trustissues.factory.ingest.dictionary      # data dictionary -> raw._dictionary + config/sensitivity.yaml
-python -m trustissues.factory.curate.build_curated   # raw.* -> curated.*        (see docs/curation.md for timing)
+python -m trustissues.factory.curate.build_curated   # raw.* -> curated.*        (SLOW: see section 4a)
 python -m trustissues.factory.ingest.dictionary      # again, so derived std_* columns get sensitivity labels
 ```
 
 Useful options: `python -m trustissues.factory.pipeline --from curate` (resume), `--only ingest`, `load_raw --only customers agents` (a subset).
 
 The build is **re-runnable**. Running ingest again reads only new or changed files and skips unchanged ones, so a second run takes seconds.
+
+### 4a. The curated build is slow: read this before you run it
+
+Measured on the reference laptop (12 logical cores, 15.7 GB RAM): the first 16 of 31 tables took **1.7 hours** of build time, and the rest are still being measured. The big ones: `customers` 41 min, `deposit_accounts` 32 min, `contact_history` 14 min, `card_accounts` 9 min. Raw ingest, by contrast, is about 35 minutes for everything.
+
+- **It uses about 1 core of 12.** Disk and memory were not the limit (disk 3% busy, 4 GB RAM free). So **more cores will not help right now**; a faster single core might. The cause has not been identified yet. A speed-up is planned and **not started**.
+- **You do not need to build everything.** Curated tables are independent, so build only what you need:
+
+  ```bash
+  python -m trustissues.factory.curate.build_curated --only promises_to_pay collections_cases
+  ```
+
+  Small and narrow tables take seconds to a few minutes. The slow ones are the wide identity tables: `customers`, `deposit_accounts`, `external`, `loan_accounts`, `card_accounts`. P3's training spine needs `promises_to_pay`, which is small.
+- **`<table>_current`** tables (one row per key) are built at the end of every run for whichever curated tables exist, so re-running with `--only` is safe.
+- Only one process may write to the database at a time, so run builds one after another, not in parallel.
+- **What the real data showed (so far):** no exact duplicate rows in any table and no failed type casts except one column in `account_monthly_snapshot`. Duplicate customers are business-level (the same person under two CRM IDs), which is the job of the identity step, not of this one.
 
 ## 5. Verify
 
