@@ -8,6 +8,7 @@ identity_fields:
   customers:
     name: {col: full_name_raw, order: auto, caps_default: first_last}
     dob: dob_raw
+    dob_clean: date_of_birth   # the CRM's own cleaned date; agrees with every unambiguous dob_raw, so it settles the ambiguous ones
     phones: {primary: primary_phone_raw, secondary: secondary_phone_raw, work: work_phone_raw}
     postal: postal_code_raw
     employer: employer_name

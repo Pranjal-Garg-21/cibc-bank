@@ -32,7 +32,8 @@ Layer 1, Data Product Factory (owner P1). Legend: ✅ done and tested · 🟡 bu
 | 3.2 | `curate/text_controls.py`, `mapping_assistant.py` | ⬜ |
 | 3.3 | identity (`nodes`, `rules`, `splink_model`, `second_opinion`, `review_queue`, `cluster`, `relationships`) | ⬜ |
 | 3.4 | gold (`survivorship`, `build_c360`, views, `publish`) | ⬜ |
-| 3.5 | quality (`contract_checks`, `anomaly`, `dq_report`) | ⬜ |
+| 3.5 | `quality/dq_report.py` + `config/dq_checks.yaml`: data quality report (`reports/data_quality_report.md`), `dq_*` flag columns, derived columns, `curated.dq_orphan_customer_refs` | ✅ run on the real data: 53 checks with records, 20 clean checks, 0 errors; 6 unit tests. **The plan assigns `dq_report.py` to P2: coordinate before anyone rewrites it** |
+| 3.5 | `quality/contract_checks.py`, `quality/anomaly.py` | ⬜ |
 | 3.6 | `pipeline.py` (runs ingest, dictionary, curate, labels with timings) | 🟡 written; each stage has been run on the real data separately, the single command has not been run end to end |
 | 3.6 | `contracts/c360_customer.yaml` | ⬜ |
 | — | `scripts/verify_warehouse.py` (row counts vs the release, curated reconciliation) | ✅ run on the real database: all 31 raw tables and all 31 curated tables pass |
@@ -50,6 +51,7 @@ python -m trustissues.factory.ingest.load_raw            # raw load (re-runnable
 python -m trustissues.factory.ingest.load_raw --only customers agents   # a subset
 python -m trustissues.factory.ingest.dictionary          # data dictionary + config/sensitivity.yaml
 python -m trustissues.factory.curate.build_curated       # raw -> curated (typed, deduped, std_* identity columns)
+python -m trustissues.factory.quality.dq_report          # dq flags, derived columns, reports/data_quality_report.md (about 20 s)
 python -m trustissues.factory.curate.build_curated --only customers card_accounts
 python -m pytest tests -q
 ```
@@ -117,14 +119,14 @@ Reads `DATA_DICTIONARY.xlsx` into `raw._dictionary` (columns), `raw._dictionary_
 - **Derived columns inherit.** Curated `std_*` columns take the label of the column they come from (standardised DOB is `direct_pii` like the raw DOB; `std_postal` and `std_fsa` are `quasi_identifier`), and `<col>__raw` takes the label of `<col>`. A derived column with an unknown source is `unclassified`.
 
 ### 4.7 `curate/standardise.py`
-Pure functions (no DB), the single place where messy identity fields become comparable. Principle: **never invent information**. When a value is ambiguous we keep both readings or leave the field empty.
+Pure functions (no DB), the single place where messy identity fields become comparable. Principle: **never invent information**. When a value is ambiguous we use the strongest evidence available, and otherwise keep both readings or leave the field empty (see [`ambiguous_values.md`](ambiguous_values.md)).
 
 | Function | Input examples seen in the data | Output |
 |---|---|---|
-| `parse_dob` | `1975-09-12`, `1975/09/12`, `19750912`, `Feb 23 2008`, `13-01-1990`, `07/12/1992` | `dob_iso`, `dob_alt_iso`, `dob_ambiguous`. Year-first and month-name forms are unambiguous. A day above 12 resolves the order. Both parts ≤ 12 and different keeps **both** readings (`/` ranked month-first, `-` and `.` day-first). Invalid dates (31/02) give null |
+| `parse_dob` | `1975-09-12`, `1975/09/12`, `19750912`, `Feb 23 2008`, `13-01-1990`, `07/12/1992` | `dob_iso`, `dob_alt_iso`, `dob_ambiguous`, `dob_was_ambiguous`, `dob_basis` (`exact`, `convention`, `ambiguous`). A part above 12 resolves the order; year-first and month-name forms are unambiguous. When both readings are valid, a per-column **convention** (`infer_date_convention`: at least 1,000 one-way dates and a minority order under 0.1%) chooses one; with no convention both are kept. Build-time: the CRM's own cleaned `date_of_birth` takes precedence (`std_dob_basis` = `source_clean_column`). Impossible dates give NULL |
 | `parse_phone` | `6045336260`, `(416) 373-5940`, `236.749.7421`, `+1 (438) 988 9802`, `450672xxx81` | `phone_e164` (`+1…`). A masked phone has **no** e164; its visible `phone_prefix` and `phone_suffix` are kept. Invalid NANP numbers give null |
-| `parse_name` | `Ariel I Kline`, `Ball, Tracy`, `J. LANGLOIS`, `DYER D C`, `NOWAK, OKSANA ZOFIA` | `first`, `middle_initials`, `last`, `first_is_initial`, `name_key` (sorted token set, order-insensitive). Uppercase, accents stripped, U+FFFD dropped (not guessed). A comma always means last-first. Trailing single letters mean last-first. An ALL-CAPS two-word name is decided only by the source's `caps_default`, else left ambiguous (`last` null, `name_key` still set) |
-| `parse_postal` | `N5Y2A2`, `M5V 2T6` | `postal` (`A1A1A1`), `fsa`. Rejects letters Canada never uses in the first position (D F I O Q U) |
+| `parse_name` | `Ariel I Kline`, `Ball, Tracy`, `J. LANGLOIS`, `DYER D C`, `NOWAK, OKSANA ZOFIA` | `first`, `middle_initials`, `last`, `first_is_initial`, `name_key` (sorted token set, order-insensitive). Uppercase, accents stripped. A comma always means last-first. Trailing single letters mean last-first. An ALL-CAPS two-word name is decided only by the source's `caps_default`, else left ambiguous (`last` null, `name_key` still set) |
+| `parse_postal` | `N5Y2A2`, `M5V 2T6`, `VOC2S8` | `postal` (`A1A1A1`), `fsa`, `repaired`. Rejects letters Canada never uses in the first position (D F I O Q U). One repair, because it is certain: the letter **O in a digit position** can only be a zero (`VOC2S8` becomes `V0C2S8`, `repaired` = true). Checked on the real data against the CRM's own cleaned postal code: 1,887 of 1,887 agree. Nothing else is repaired |
 | `normalise_employer` | `Wildrose Machining Corp.` / `... Limited`, `Silverbirch Media Inc. (Saguenay)` | Drops the `(City)` suffix and legal-form words, so spelling variants collapse to one key |
 
 ### 4.8 `curate/build_curated.py` and `config/curate.yaml`
@@ -179,7 +181,7 @@ Facts learned from the real data, recorded as we find them.
   | Postal | spaced or not | no space | spaced | spaced | trailing token of the address |
 
   The ALL-CAPS name orders (cards first-last, loans last-first) are **inferred from samples** and set in `config/curate.yaml`. To be confirmed by checking agreement with national-ID matches once identity runs.
-- Some names contain U+FFFD (broken encoding, for example in `Raphaël` and `Ltée`). It is dropped, never guessed.
+- **Encoding is fine.** The files are valid UTF-8 with no broken characters (checked: 0 occurrences of the replacement character U+FFFD in the customer text columns). 77,262 customers have genuine accented letters (`Frédérique`, stored as the correct bytes) and 77,386 employer names do too. An earlier version of this note claimed names contained broken characters; that was wrong, a display problem in the Windows console. Accents are stripped only in the matching columns (`std_name_*`).
 - Raw load throughput is dominated by the row hash over wide tables (`contact_history` 2.7M rows took ~3 min).
 
 *Open questions from plan §11 are tracked in [§7](#7-decisions-and-deviations) until answered.*
@@ -196,12 +198,18 @@ Facts learned from the real data, recorded as we find them.
 | D6 | Curated is built **generically from `schema.json`** plus `config/curate.yaml`, instead of one hand-written `sql/<table>.sql` per table (plan §3.2) | Keeps the system dynamic: a new table is typed and deduped with no code change. Per-table SQL can still be added where a table needs special logic |
 | D8 | The standardise functions receive their inputs cast to text | The full-data run crashed on `external`: `subject_dob_reported` is a DATE in `schema.json`, and the DOB function only accepted text (`No function matches std_dob(DATE)`). The four earlier identity tables use text columns, so they passed. A regression test now reproduces the exact error on the old code |
 | D9 | Date columns fall back to non-ISO formats, but only when exactly one reading is valid | `account_monthly_snapshot.month_end_date` came in as ISO, `YYYYMMDD`, `DD/MM/YYYY` and `MM/DD/YYYY`; 1,255,152 rows (10%) were NULL after the first build. All are month-end dates, so the day is always above 12 and the reading is certain. Ambiguous values (both parts 12 or less) still stay NULL with their text kept. Recoveries are counted in `curated._format_recoveries` |
-| D7 | Ambiguous dates keep both readings; ambiguous ALL-CAPS names stay unparsed unless the source sets a convention | Never invent identity evidence; wrong merges are worse than missed ones |
+| D10 | Data-quality handling is applied as **new columns and flags**, never by overwriting a value, and by an idempotent step (`dq_report`) that can be re-run | A repair the data cannot justify (shifted bureau columns, masked phones, bucket vs dpd) must not be guessed. Flags let downstream code exclude rows; the report is generated from query results so its numbers cannot drift |
+| D11 | Ambiguous dates of birth are decided by a ladder of evidence, strongest first, and the basis is recorded per row (`std_dob_basis`). CRM: its own cleaned `date_of_birth`. Cards: the column's day-first convention, inferred from 398,847 day-first dates against 0 month-first. A mixed column (the CRM text column: 122,353 vs 91,531) is never given a convention | The first build kept both readings for 12.6% of CRM and 36.3% of card dates. The CRM clean column was overlooked and is verified against every unambiguous date (0 disagreements in about 823,000 checks). Full reasoning: [`ambiguous_values.md`](ambiguous_values.md) |
+| D12 | The letter O typed for the digit 0 in a postal code's digit positions is repaired (`std_postal_repaired` marks it); no other repair is made | 1,887 CRM postal codes had this typo. My first parser rejected them and my quality report wrongly called them truncated. The CRM's own cleaned `postal_code` agrees with the repair in 1,887 of 1,887 cases, so it is certain. `I` is deliberately not mapped to `1`: there is no evidence for it in this data |
+| D7 | Ambiguous dates are resolved only by evidence (see D11); when none exists both readings are kept. Ambiguous ALL-CAPS names stay unparsed unless the source sets a convention | Never invent identity evidence; wrong merges are worse than missed ones |
 
 ## Changelog
 
 | Date | Slice | Change |
 |---|---|---|
+| 2026-10-03 | Layer 1 · curate | **Postal-code repair.** Found by checking my standardised columns against the CRM's own cleaned columns: 1,887 postal codes with the letter O for 0 were being rejected. Repaired (D12), new column `std_postal_repaired`; my `std_postal` now equals the CRM's clean postal code in 1,009,780 of 1,009,780 rows. Corrected the quality report, which had called them truncated. New quality check C23. 58 tests. Rebuilt the four identity tables |
+| 2026-10-03 | Layer 1 · curate | **Ambiguous dates of birth resolved.** CRM 128,980 settled by the CRM's own `date_of_birth`; cards 239,324 settled by the inferred day-first convention; 0 ambiguous left in any identity table. New columns `std_dob_was_ambiguous`, `std_dob_basis`; new table `curated._date_conventions`; new quality checks C21, C22. Policy and evidence in `ambiguous_values.md`. 56 tests |
+| 2026-10-03 | Layer 1 · quality | **Data quality report.** 53 issues quantified (6 known incidents verified against the data; formats, broken references, missing values, contradictions), 20 clean checks. Handling applied: `channel_resolved`, `cif10`, `salutation_std`, 12 `dq_*` flag columns, `curated.dq_orphan_customer_refs`. Corrected an earlier false claim that names contain broken characters (the data is clean UTF-8). Fixed a proxy-column false positive (`dq_trade_age_inconsistent`). 49 tests |
 | 2026-10-03 | Layer 1 · curate | **Curation complete on all 31 tables.** Found and fixed mixed date formats in `account_monthly_snapshot.month_end_date` (D9, 35 tests). Validated the standardised identity columns against the data (name parse 99.5% / 99.9%, ALL-CAPS name order confirmed for cards and loans). Wrote `curation.md` |
 | 2026-10-03 | Layer 1 · curate | First full-data run: 16 tables OK, then crash on `external` (DATE-typed identity column). Fixed (D8) and added a regression test (30 tests total). Documented that the curated build is slow and single-core (requirements.md section 4a) |
 | 2026-10-03 | Layer 1 · tooling | Added `pipeline.py`, `scripts/verify_warehouse.py`, `requirements.md`, `requirements.txt`, `config/sensitivity_overrides.yaml`, label inheritance (3 tests). Merged teammate's `.gitignore`. Aligned setup docs with the updated plan (voice pack, shared DuckDB) |

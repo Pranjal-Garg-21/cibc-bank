@@ -87,14 +87,17 @@ def register_udfs(con) -> None:
         return con.sql(f"SELECT NULL::{sql_type}").types[0]
 
     reg = [
-        ("std_dob", S.parse_dob, ["VARCHAR"], "STRUCT(dob_iso VARCHAR, dob_alt_iso VARCHAR, dob_ambiguous BOOLEAN)"),
         ("std_phone", S.parse_phone, ["VARCHAR"],
          "STRUCT(phone_e164 VARCHAR, phone_masked BOOLEAN, phone_prefix VARCHAR, phone_suffix VARCHAR)"),
-        ("std_postal", S.parse_postal, ["VARCHAR"], "STRUCT(postal VARCHAR, fsa VARCHAR)"),
+        ("std_postal", S.parse_postal, ["VARCHAR"], "STRUCT(postal VARCHAR, fsa VARCHAR, repaired BOOLEAN)"),
         ("std_employer", S.normalise_employer, ["VARCHAR"], "VARCHAR"),
     ]
     for name, fn, params, ret in reg:
         con.create_function(name, fn, [t(p) for p in params], t(ret))
+
+    dob_t = t("STRUCT(dob_iso VARCHAR, dob_alt_iso VARCHAR, dob_ambiguous BOOLEAN, dob_was_ambiguous BOOLEAN, dob_basis VARCHAR)")
+    for conv in (None, "day_first", "month_first"):  # one function per convention actually used
+        con.create_function(f"std_dob_{conv or 'none'}", (lambda c: (lambda raw: S.parse_dob(raw, c)))(conv), [t("VARCHAR")], dob_t)
 
     name_t = t("STRUCT(first VARCHAR, middle_initials VARCHAR, last VARCHAR, first_is_initial BOOLEAN, "
                "name_key VARCHAR, name_tokens VARCHAR)")
@@ -120,7 +123,20 @@ def register_udfs(con) -> None:
     con.create_function("std_postal_from_address", postal_from_address, [t("VARCHAR")], t("VARCHAR"))
 
 
-def identity_select(table: str, cfg: dict) -> list[str]:
+def date_convention(con, table: str, col: str) -> dict:
+    """Evidence for which part of d/m/Y is the day in a raw date column, from the dates that can only be read one way."""
+    pat = "^[0-9]{1,2}[/.-][0-9]{1,2}[/.-][0-9]{4}$"
+    a = f"try_cast(regexp_extract({q(col)}, '^([0-9]{{1,2}})[/.-]', 1) AS INT)"
+    b = f"try_cast(regexp_extract({q(col)}, '^[0-9]{{1,2}}[/.-]([0-9]{{1,2}})[/.-]', 1) AS INT)"
+    first, second, ambiguous = con.execute(
+        f"SELECT count(*) FILTER (WHERE {a} > 12), count(*) FILTER (WHERE {b} > 12), "
+        f"count(*) FILTER (WHERE {a} <= 12 AND {b} <= 12 AND {a} <> {b}) "
+        f"FROM raw.{q(table)} WHERE regexp_matches({q(col)}, '{pat}')").fetchone()
+    return {"first_over_12": first, "second_over_12": second, "ambiguous_rows": ambiguous,
+            "decision": S.infer_date_convention(first, second)}
+
+
+def identity_select(table: str, cfg: dict, dob_convention: str | None = None) -> list[str]:
     """SQL select items that add std_* columns for one source."""
     items: list[str] = []
     n = cfg.get("name")
@@ -130,15 +146,24 @@ def identity_select(table: str, cfg: dict) -> list[str]:
         for f in ("first", "middle_initials", "last", "first_is_initial", "name_key"):
             items.append(f"{c}.{f} AS std_name_{f}")
     if cfg.get("dob"):
-        c = f"std_dob(raw_{cfg['dob']})"
-        items += [f"{c}.dob_iso AS std_dob", f"{c}.dob_alt_iso AS std_dob_alt", f"{c}.dob_ambiguous AS std_dob_ambiguous"]
+        c = f"std_dob_{dob_convention or 'none'}(raw_{cfg['dob']})"
+        clean = f"raw_{cfg['dob_clean']}" if cfg.get("dob_clean") else None
+        if clean:  # the source's own cleaned date wins; validated against every unambiguous raw value (see curation.md)
+            items += [f"coalesce({clean}, {c}.dob_iso) AS std_dob",
+                      f"CASE WHEN {clean} IS NOT NULL THEN NULL ELSE {c}.dob_alt_iso END AS std_dob_alt",
+                      f"CASE WHEN {clean} IS NOT NULL THEN false ELSE {c}.dob_ambiguous END AS std_dob_ambiguous",
+                      f"{c}.dob_was_ambiguous AS std_dob_was_ambiguous",
+                      f"CASE WHEN {clean} IS NOT NULL THEN 'source_clean_column' ELSE {c}.dob_basis END AS std_dob_basis"]
+        else:
+            items += [f"{c}.dob_iso AS std_dob", f"{c}.dob_alt_iso AS std_dob_alt", f"{c}.dob_ambiguous AS std_dob_ambiguous",
+                      f"{c}.dob_was_ambiguous AS std_dob_was_ambiguous", f"{c}.dob_basis AS std_dob_basis"]
     for label, col in (cfg.get("phones") or {}).items():
         c = f"std_phone(raw_{col})"
         items += [f"{c}.phone_e164 AS std_phone_{label}_e164", f"{c}.phone_masked AS std_phone_{label}_masked",
                   f"{c}.phone_prefix AS std_phone_{label}_prefix", f"{c}.phone_suffix AS std_phone_{label}_suffix"]
     if cfg.get("postal"):
         c = f"std_postal(raw_{cfg['postal']})"
-        items += [f"{c}.postal AS std_postal", f"{c}.fsa AS std_fsa"]
+        items += [f"{c}.postal AS std_postal", f"{c}.fsa AS std_fsa", f"{c}.repaired AS std_postal_repaired"]
     if cfg.get("postal_from_address"):
         items += [f"std_postal_from_address(raw_{cfg['postal_from_address']}) AS std_postal",
                   f"left(std_postal_from_address(raw_{cfg['postal_from_address']}), 3) AS std_fsa"]
@@ -151,7 +176,7 @@ def identity_source_cols(cfg: dict) -> list[str]:
     cols = []
     if cfg.get("name"):
         cols.append(cfg["name"]["col"])
-    for k in ("dob", "postal", "employer", "postal_from_address"):
+    for k in ("dob", "dob_clean", "postal", "employer", "postal_from_address"):
         if cfg.get(k):
             cols.append(cfg[k])
     cols += list((cfg.get("phones") or {}).values())
@@ -193,6 +218,15 @@ def curate_table(con, name: str, schema: dict, curate_cfg: dict) -> dict:
     # 2. select list
     ident = (curate_cfg.get("identity_fields") or {}).get(name)
     ident_src = set(identity_source_cols(ident)) if ident else set()
+    dob_conv = None
+    con.execute("CREATE TABLE IF NOT EXISTS curated._date_conventions (table_name VARCHAR, column_name VARCHAR, "
+                "first_over_12 BIGINT, second_over_12 BIGINT, ambiguous_rows BIGINT, decision VARCHAR, recorded_at TIMESTAMP)")
+    con.execute("DELETE FROM curated._date_conventions WHERE table_name = ?", [name])
+    if ident and ident.get("dob") and ident["dob"] in data_cols:
+        ev = date_convention(con, name, ident["dob"])
+        dob_conv = ev["decision"]
+        con.execute("INSERT INTO curated._date_conventions VALUES (?,?,?,?,?,?, now())",
+                    [name, ident["dob"], ev["first_over_12"], ev["second_over_12"], ev["ambiguous_rows"], dob_conv or "mixed: not inferred"])
     sel = [f"{typed_expr(c, kinds[c])} AS {q(c)}" for c in data_cols]
     for c in failing:  # keep the original text where the cast failed
         sel.append(f"CASE WHEN {typed_expr(c, kinds[c])} IS NULL THEN NULLIF(trim({q(c)}),'') END AS {q(c + '__raw')}")
@@ -207,7 +241,7 @@ def curate_table(con, name: str, schema: dict, curate_cfg: dict) -> dict:
         # the standardise functions take text; a source column may be typed (external.subject_dob_reported is a DATE)
         pre = ", ".join([f"CAST({q(c)} AS VARCHAR) AS raw_{c}" for c in sorted(ident_src) if c in data_cols] + ["*"])
         final = (f"SELECT * EXCLUDE ({', '.join('raw_' + c for c in sorted(ident_src) if c in data_cols)}), "
-                 f"{', '.join(identity_select(name, ident))} FROM (SELECT {pre} FROM ({dedup}))")
+                 f"{', '.join(identity_select(name, ident, dob_conv))} FROM (SELECT {pre} FROM ({dedup}))")
         # raw_<col> must hold the typed (trimmed) text: identity cols are text kind so q(c) is already clean
     else:
         final = dedup

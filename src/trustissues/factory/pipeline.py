@@ -14,6 +14,7 @@ import time
 
 from trustissues.factory.curate import build_curated
 from trustissues.factory.ingest import dictionary, load_raw
+from trustissues.factory.quality import dq_report
 
 
 def _ingest() -> None:
@@ -27,6 +28,7 @@ STAGES = [
     ("ingest", _ingest),                   # source files -> raw.*
     ("dictionary", dictionary.main),       # data dictionary -> raw._dictionary, sensitivity labels (raw columns)
     ("curate", build_curated.run),         # raw.* -> curated.*
+    ("quality", dq_report.run),            # dq flags, derived columns, reports/data_quality_report.md
     ("labels", dictionary.main),           # re-run so derived std_* columns inherit sensitivity labels
 ]
 

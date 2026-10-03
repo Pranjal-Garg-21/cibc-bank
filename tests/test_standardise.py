@@ -93,7 +93,7 @@ def test_replacement_character_is_dropped_not_guessed():
 # ----- postal -----
 def test_postal():
     for raw in ["M5V 2T6", "m5v2t6", "M5V-2T6"]:
-        assert parse_postal(raw) == {"postal": "M5V2T6", "fsa": "M5V"}
+        assert parse_postal(raw) == {"postal": "M5V2T6", "fsa": "M5V", "repaired": False}
     assert parse_postal("12345")["postal"] is None
     assert parse_postal("D0D 0D0")["postal"] is None  # D, F, I, O, Q, U never start a Canadian code
 
@@ -104,3 +104,49 @@ def test_employer_variants_collapse():
     assert a == normalise_employer("Wildrose Machining Limited") == "WILDROSE MACHINING"
     assert normalise_employer("Silverbirch Media Inc. (Saguenay)") == "SILVERBIRCH MEDIA"
     assert normalise_employer("Cascade Engineering Ltée") == normalise_employer("Cascade Engineering Ltd")
+
+
+# ----- column convention for ambiguous dates -----
+from trustissues.factory.curate.standardise import infer_date_convention  # noqa: E402
+
+
+def test_convention_inferred_only_when_one_sided_and_plentiful():
+    assert infer_date_convention(398_847, 0) == "day_first"          # cards: first part is >12 often, second never
+    assert infer_date_convention(0, 5_000) == "month_first"
+    assert infer_date_convention(122_353, 91_531) is None            # CRM text column: both orders present, never guessed
+    assert infer_date_convention(100, 0) is None                     # too little evidence
+    assert infer_date_convention(0, 0) is None
+    assert infer_date_convention(100_000, 50) == "day_first"         # 0.05% minority is still under the 0.1% limit
+    assert infer_date_convention(100_000, 101) is None               # 0.1% limit exceeded: treated as mixed
+
+
+def test_ambiguous_date_resolved_by_convention_and_basis_recorded():
+    free = parse_dob("07-12-1992")
+    assert free["dob_ambiguous"] and free["dob_was_ambiguous"] and free["dob_basis"] == "ambiguous"
+    day = parse_dob("07-12-1992", "day_first")
+    assert (day["dob_iso"], day["dob_alt_iso"], day["dob_ambiguous"], day["dob_basis"]) == ("1992-12-07", None, False, "convention")
+    assert day["dob_was_ambiguous"]                                  # the text alone was ambiguous; the column resolved it
+    month = parse_dob("07-12-1992", "month_first")
+    assert month["dob_iso"] == "1992-07-12" and month["dob_basis"] == "convention"
+
+
+def test_convention_never_overrides_an_unambiguous_date():
+    r = parse_dob("30-09-2024", "month_first")                       # 30 can only be a day, whatever the convention says
+    assert (r["dob_iso"], r["dob_basis"], r["dob_was_ambiguous"]) == ("2024-09-30", "exact", False)
+    assert parse_dob("1992-07-12", "day_first")["dob_basis"] == "exact"
+    assert parse_dob("", "day_first")["dob_basis"] is None and parse_dob("31/02/1990")["dob_basis"] is None
+
+
+# ----- postal: letter O typed for the digit 0 -----
+def test_letter_o_in_a_digit_position_is_repaired_and_marked():
+    for raw, want in [("VOC2S8", "V0C2S8"), ("L6X OZ4", "L6X0Z4"), ("v5l 4wO", "V5L4W0"), ("G0E0M2", "G0E0M2")]:
+        r = parse_postal(raw)
+        assert r["postal"] == want and r["fsa"] == want[:3], raw
+    assert parse_postal("VOC2S8")["repaired"] is True and parse_postal("G0E0M2")["repaired"] is False
+
+
+def test_postal_repair_never_guesses_anything_else():
+    assert parse_postal("OOC2S8")["postal"] is None      # O in a LETTER position is not a valid code and cannot be repaired
+    assert parse_postal("V5L4W")["postal"] is None       # truncated: nothing to repair
+    assert parse_postal("V1L4WI")["postal"] is None      # an I is not turned into a 1: no evidence for it in this data
+    assert parse_postal("12345")["postal"] is None

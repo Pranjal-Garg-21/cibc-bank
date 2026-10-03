@@ -54,3 +54,4 @@ def test_new_column_warns_but_loads(con, tmp_path):
 def test_proxy_detection():
     assert is_proxy("accent_group") and is_proxy("interpreter_used") and is_proxy("customer_age")
     assert not is_proxy("language") and not is_proxy("days_ageing_bucket") and not is_proxy("account_age_months")
+    assert not is_proxy("dq_trade_age_inconsistent") and not is_proxy("months_since_oldest_trade_age")  # a bureau trade age is not a person's age
