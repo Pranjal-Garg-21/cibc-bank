@@ -148,6 +148,8 @@ P4 supplies policy chunking, metadata/version filtering, BM25 retrieval, section
 
 The working-tree `make_rag_handler(index, llm)` connects corpus requests to P4's `answer_policy`. A model outage becomes a not-found response with coverage information. Customer requests explicitly return “customer notes and calls are not connected yet.” Ask defaults to `fake_rag` unless a caller supplies a handler.
 
+**Since the P2 merge (4 Oct):** `make_rag_handler(index, llm, con=...)` sends customer requests to P4's `customer_path.answer_customer`, `RagRequest` has a `case_id` field, and `access.case_customer_resolver(con, as_of)` resolves cases on the published warehouse. The paragraph above and the one below describe the branch before the merge. See `merge.md` §6 and `docs/interfaces.md`.
+
 Customer access wiring is present, but retrieving the latest recorded call for a particular case is not. P2/P4 still need a case-to-customer-to-call selection contract; a customer timeline alone is insufficient. `RagRequest` currently carries the golden customer ID and original question, without a dedicated case-ID field. Role-to-document confidentiality mapping also remains a P4 integration decision.
 
 Policy retrieval may attach hardship rows by opening the warehouse. The current handler does not expose the standalone policy CLI's no-hardship option. Consequently the benchmark `--llm` path is not safe to run during the worker lock just because its metric database is isolated.
@@ -244,7 +246,7 @@ Coverage includes routing released questions, explicit refusals, assignment chec
 | Validate every metric against release references and inspect discrepant cohorts/denominators | Codex SQL + Claude catalogue, after warehouse release |
 | Add unsupported-history rejection, missing relative dates, pilot variant, and measure selection | Claude catalogue/service with reviewed Codex SQL shapes |
 | Preserve executed SQL, bound parameters, richer citations, and consistent errors in answer/audit output | Claude service with shared interface/P4 agreement |
-| Define case-to-latest-call resolution and connect customer RAG | P2 access + P4 retrieval |
+| Define case-to-latest-call resolution (connected in the P2 merge; whether a named case limits the answer is open, `merge.md` §6) | P2 access + P4 retrieval |
 | Connect the new incident route to metric evidence and cited incident records | Claude service with P4 evidence retrieval |
 | Wire eight checks to the product contract/staging/publish process and persist anomaly history | P1 pipeline + Codex quality helpers |
 | Resolve curated-report caveats and clarify anomaly effects on publishing | Report owners / P1 integration |

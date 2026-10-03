@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Callable, Protocol
 
 from .data.schema_graph import SEMANTIC_JOIN_KEYS
@@ -23,6 +24,10 @@ class AccessDenied(PermissionError):
     pass
 
 
+# One wording for a missing case and a case the user may not see, so a refusal never says whether a case exists.
+NOT_VISIBLE = "Case not found or not visible."
+
+
 @dataclass(frozen=True)
 class CaseOwner:
     golden_customer_id: str
@@ -30,7 +35,8 @@ class CaseOwner:
 
 
 class CaseResolver(Protocol):
-    """Case id -> owner. The contract with P4 is pending; the Ask router only needs this one call."""
+    """Case id -> owner. The Ask router only needs this one call: case_customer_resolver on the warehouse,
+    connection_resolver on the Ask dev database."""
     def __call__(self, case_id: str) -> CaseOwner | None: ...
 
 
@@ -42,9 +48,9 @@ def check_path(user: UserContext, path: str) -> None:
 def check_case(user: UserContext, case_id: str, resolver: CaseResolver) -> CaseOwner:
     owner = resolver(case_id)
     if owner is None:
-        raise AccessDenied("Case not found or not visible.")  # same wording for both: no existence oracle
+        raise AccessDenied(NOT_VISIBLE)  # same wording for both: no existence oracle
     if user.role == "agent" and owner.assigned_agent_id != user.user_id:
-        raise AccessDenied("Case not found or not visible.")
+        raise AccessDenied(NOT_VISIBLE)
     return owner
 
 
@@ -53,8 +59,19 @@ def query_policy(user: UserContext, *, row_cap: int = 500) -> QueryPolicy:
     return QueryPolicy(user.role, SCHEMAS, join_keys=SEMANTIC_JOIN_KEYS, row_cap=row_cap)
 
 
+def case_customer_resolver(con, as_of: date) -> Callable[[str], CaseOwner | None]:
+    """Resolve cases from the published warehouse: the customer from gold.case_customer (the account holder when the
+    case's CRM ID disagrees) and the agent assigned on the as-of date, using the customer path's own lookups."""
+    from .rag.customer_path import case_assignee, resolve_case
+
+    def resolve(case_id: str) -> CaseOwner | None:
+        golden = resolve_case(con, case_id)
+        return CaseOwner(golden, case_assignee(con, case_id, as_of)) if golden else None
+    return resolve
+
+
 def connection_resolver(con) -> Callable[[str], CaseOwner | None]:
-    """Resolve cases from gold.semantic_cases on an already-open connection."""
+    """Resolve cases from gold.semantic_cases on an already-open connection (the Ask dev database)."""
     def resolve(case_id: str) -> CaseOwner | None:
         row = con.execute("SELECT golden_customer_id, assigned_agent_id FROM gold.semantic_cases WHERE case_id = ?",
                           [case_id]).fetchone()

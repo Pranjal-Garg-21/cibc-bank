@@ -1,8 +1,19 @@
-"""Contract runners retained across the P1/P2 integration.
+"""Run the data contract (contracts/c360_customer.yaml) against a schema. Drives the publish gate.
 
-run() evaluates contracts/c360_customer.yaml and drives P1's gold_stage publish
-gate. run_checks() preserves P2's eight evidence-based fixture/report checks;
-it is not a replacement for the YAML-backed production publish gate.
+    python -m trustissues.factory.quality.contract_checks              # checks gold_stage
+    python -m trustissues.factory.quality.contract_checks --schema gold
+
+Rules are SQL returning (violations, total), except two kinds computed here:
+  decisioning_allow_list  no column of gold.decisioning_customer is protected, direct PII or a proxy anywhere in
+                          config/sensitivity.yaml, or in the rule's forbidden_extra list
+  interface_shape         every P1 table carries the columns and types agreed in contracts/interfaces/stubs.sql
+
+Plain SQL, not Great Expectations as the plan suggested: the rules already are SQL, and one fewer dependency
+keeps the gate fast and easy to read. Results go to <schema>._contract_results.
+
+Two runners since the P2 merge (4 Oct). run() above is the publish gate (gold/publish.py). run_checks() is P2's
+eight evidence-based checks over the gold tables, rendered by check_report.py; nothing calls it in the pipeline and
+it does not gate publishing. Whether it should, or should be folded into the YAML, is open (merge.md §6).
 """
 from __future__ import annotations
 

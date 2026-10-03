@@ -56,7 +56,8 @@ def test_free_text_identifiers_replaced():
     t = "Called 416-555-1234, email jane@x.ca, SIN 123 456 789, card 4111 1111 1111 1111, postal M5V 2T6. Promised $95."
     out = M.mask_text(t, "agent")
     assert "416" not in out and "jane@" not in out and "123 456" not in out and "4111" not in out and "M5V" not in out
-    assert "[PHONE]" in out and "[EMAIL]" in out and "[SIN]" in out and "[CARD]" in out and "[POSTAL]" in out
+    # the same placeholders as text_controls.scrub(), the single scrubber: a SIN-style number is [ID]
+    assert "[PHONE]" in out and "[EMAIL]" in out and "[ID]" in out and "[CARD]" in out and "[POSTAL]" in out
     assert "Promised $95" in out
     assert M.mask_text("Promised $95 on 14 Oct", "analyst") == "Promised $95 on 14 Oct"
 

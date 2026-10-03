@@ -2,8 +2,8 @@
 
 Levels come from `config/sensitivity.yaml` (generated from the data dictionary). Columns it does not know,
 such as gold views or UI frames, are classified by name from `config/masking.yaml`; anything still unknown
-and not clearly a key, date, flag or measure is masked (fail closed). Free text has phone numbers, e-mail
-addresses, SINs, card numbers and postal codes replaced.
+and not clearly a key, date, flag or measure is masked (fail closed). Free text goes through P4's `scrub()`
+(phone numbers, e-mail addresses, SIN-style numbers, card numbers, dates of birth, postal codes, long digit runs).
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 
 from trustissues.common.config import CONFIG_DIR
+from trustissues.factory.curate.text_controls import scrub
 
 SENSITIVITY_PATH = CONFIG_DIR / "sensitivity.yaml"
 MASKING_PATH = CONFIG_DIR / "masking.yaml"
@@ -122,25 +123,13 @@ def partial(column: str, value) -> str:
     return f"{MASK}{d[-4:]}" if len(d) >= 6 else MASK  # account / card / SIN style numbers: last 4 only
 
 
-_TEXT_RULES = [
-    (re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"), "[EMAIL]"),
-    (re.compile(r"\b\d{3}[ -]?\d{3}[ -]?\d{3}\b"), "[SIN]"),
-    (re.compile(r"\b(?:\d[ -]?){13,19}\b"), "[CARD]"),
-    (re.compile(r"(?<!\d)(?:\+?1[ .-]?)?\(?\d{3}\)?[ .-]?\d{3}[ .-]?\d{4}(?!\d)"), "[PHONE]"),
-    (re.compile(r"\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d\b", re.I), "[POSTAL]"),
-]
-
-
 def mask_text(text: str | None, role: str) -> str | None:
     """Replace identifiers inside free text (notes, transcripts). Every role gets the same replacement:
-    a note's context is shown, its identifiers never are."""
-    if text is None or role not in _config()["roles"]:
-        if role not in _config()["roles"]:
-            raise ValueError(f"Unknown role: {role}")
-        return text
-    for rx, token in _TEXT_RULES:
-        text = rx.sub(token, text)
-    return text
+    a note's context is shown, its identifiers never are. The replacement is P4's `scrub()`, the single scrubber
+    (factory/curate/text_controls.py), so a note reads the same here as in the timeline and RAG."""
+    if role not in _config()["roles"]:
+        raise ValueError(f"Unknown role: {role}")
+    return None if text is None else scrub(text).text
 
 
 def _apply(action: str, column: str, value):
