@@ -35,8 +35,9 @@ def test_unknown_metric_or_path_is_ignored():
 def test_rule_matches_and_refusals_never_reach_the_model():
     llm = FakeLLM({"path": "sql"})
     assert classify("Which religious groups default the most?", llm)[0] == "refused"
+    assert llm.calls == []  # a rule refusal is final: not even the model screen is asked
     assert classify("Promise kept rate in July 2026", llm)[0] == "metric"
-    assert llm.calls == []
+    assert not [c for c in llm.calls if c["prompt_version"].startswith("ask_route")]  # a rule match needs no routing help
 
 
 def test_wrongly_typed_fields_do_not_crash():

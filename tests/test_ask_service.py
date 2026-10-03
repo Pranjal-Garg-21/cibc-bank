@@ -81,3 +81,10 @@ def test_grouped_rows_come_back_in_a_stable_natural_order():
     assert got == ["1-30", "31-60", "61-90", "121-150", "180+", None]
     assert stable_rows(cols, list(reversed(rows))) == stable_rows(cols, rows)
     assert stable_rows(["metric_value"], [(2,), (1,)]) == [(2,), (1,)]  # no group column: left alone
+
+
+def test_period_after_the_as_of_date_is_called_out():
+    from trustissues.ask.service import _after_as_of_note
+    assert _after_as_of_note("How many calls were made in November 2026?", AS_OF)
+    assert not _after_as_of_note("How many calls were made in September 2026?", AS_OF)
+    assert not _after_as_of_note("How many open cases are there?", AS_OF)

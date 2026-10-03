@@ -21,6 +21,8 @@ class ScriptedLLM:
         self.replies, self.calls = list(replies), []
 
     def complete(self, **kw):
+        if kw.get("prompt_version", "").startswith("ask_screen"):  # the model screen is not part of the script
+            return SimpleNamespace(data={"verdict": "allow", "category": "none"})
         self.calls.append(kw)
         return SimpleNamespace(data=self.replies.pop(0))
 
@@ -149,3 +151,29 @@ def test_unknown_column_hint_names_the_owning_table():
     assert "gold.semantic_cases" in column_hint("ValidationError: Column 'queue' could not be resolved. Line: 1, Col: 12")
     assert column_hint("ValidationError: something else") == ""
     assert column_hint("Unknown column: not_a_column") == ""
+
+
+# ---- label values that do not exist ---------------------------------------------------------------------------
+
+from trustissues.ask.sql_fallback import unknown_label  # noqa: E402
+
+
+def test_unknown_label_value_is_caught_and_valid_values_pass(con):
+    bad = "SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket = 'default'"
+    msg = unknown_label(bad, con=con)
+    assert msg and "'default'" in msg and "1-30" in msg
+    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket IN ('1-30', '31-60')", con=con) is None
+    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket IN ('1-30', 'nope')", con=con)
+
+
+def test_non_label_columns_and_unparseable_sql_are_never_blocked(con):
+    assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE case_id = 'C-not-there'", con=con) is None
+    assert unknown_label("SELECT FROM WHERE", con=con) is None
+
+
+def test_fallback_repairs_after_a_nonexistent_label(con):
+    bad = {"sql": "SELECT COUNT(*) AS n FROM gold.semantic_cases WHERE reported_bucket = 'late stage'", "reason": ""}
+    llm = ScriptedLLM(bad, GOOD)
+    out = run_fallback(Q, llm=llm, policy=query_policy(LEAD), as_of=AS_OF, con=con)
+    assert out.result is not None and out.attempts == 2
+    assert "never occurs in reported_bucket" in llm.calls[1]["user"]

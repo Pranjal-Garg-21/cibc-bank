@@ -18,6 +18,7 @@ from .data.execute import QueryTimeout, execute
 from .data.metric_templates import render_metric
 from .data.validator import ValidationError, validate
 from .router import Route, route
+from . import llm_screen
 from .llm_router import llm_route
 from .sql_fallback import run_fallback
 from .types import AnswerCard, UserContext
@@ -40,6 +41,8 @@ def classify(question: str, llm=None):
     change to injection, refusal, catalogue or router shows up in one measurable number.
     """
     if injection.screen(question) or refusal.check(question):
+        return "refused", None
+    if llm is not None and llm_screen.check(question, llm):
         return "refused", None
     r = _route(question, llm)
     return r.path, r.metric_id
@@ -68,6 +71,13 @@ def stable_rows(columns, rows, *, by: int | None = None):
     return sorted(rows, key=lambda r: tuple(_natural(v) for v in r[:by]))
 
 
+def _after_as_of_note(question: str, as_of: date) -> list[str]:
+    """Data cannot exist after the as-of date, so a period that starts later is empty by construction."""
+    if any(p.start > as_of for p in parse_periods(question, as_of)):
+        return [f"The period asked about starts after the as-of date ({as_of.isoformat()}); no data exists after it."]
+    return []
+
+
 def _csv(columns, rows) -> str:
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
@@ -89,6 +99,10 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
     hit = refusal.check(question)
     if hit:
         return card(f"I can't help with that. {hit.reason}", "refused", refused=True, refusal_reason=hit.category)
+
+    flagged = llm_screen.check(question, llm) if llm is not None else None
+    if flagged:
+        return card(f"I can't help with that. {flagged[1]}", "refused", refused=True, refusal_reason=f"model_screen:{flagged[0]}")
 
     r = _route(question, llm)
     if r.clarification:
@@ -122,7 +136,8 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
             return card(_csv(fb.result.columns, rows), "sql", sql=fb.sql, certified=False,
                         columns=fb.result.columns, rows=rows, sources=["gold.semantic_*"],
                         notes=["Uncertified: this query was generated for this question and checked by the validator, "
-                               "not by a reviewed metric definition."] + (["The first query needed one repair."] if fb.attempts > 1 else []))
+                               "not by a reviewed metric definition."] + (["The first query needed one repair."] if fb.attempts > 1 else [])
+                              + _after_as_of_note(question, as_of_date))
         if r.path == "drivers":
             return _drivers(question, user, as_of_date, r, con, database, card)
         if r.path == "incident":

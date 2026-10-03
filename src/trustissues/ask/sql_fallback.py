@@ -11,6 +11,10 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+import duckdb
+import sqlglot
+from sqlglot import exp
+
 from trustissues.common.llm import LLMError
 
 from .data.execute import QueryResult, QueryTimeout, execute
@@ -120,6 +124,49 @@ def column_hint(err: str) -> str:
             "Join that table on a key both tables have (case_id, golden_customer_id or account_id).\n")
 
 
+# Label columns with a handful of values. A filter on a value that is not among them returns an empty or zero
+# result that reads like a fact ("0 accounts in default"), so the value is checked before the query runs.
+LABEL_COLUMNS = frozenset({
+    "reported_bucket", "canonical_bucket", "queue", "outcome", "primary_product", "product", "product_code", "channel",
+    "direction", "province", "agent_site", "ptp_status", "account_status", "assignment_method", "test_cell"})
+
+
+def _distinct(con, database, table: str, column: str) -> set:
+    own = con is None
+    if own:
+        con = duckdb.connect(str(database), read_only=True)
+    try:
+        return {r[0] for r in con.execute(f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL").fetchall()}
+    finally:
+        if own:
+            con.close()
+
+
+def unknown_label(sql: str, con=None, database=None) -> str | None:
+    """A repair message when the query filters a label column on a value the column never holds."""
+    try:
+        tree = sqlglot.parse_one(sql, read="duckdb")
+        tables = {f"gold.{t.name}" for t in tree.find_all(exp.Table) if f"gold.{t.name}" in SCHEMAS}
+        checks = []
+        for node in tree.find_all(exp.EQ, exp.In):
+            col = node.this if isinstance(node.this, exp.Column) else None
+            if col is None or col.name not in LABEL_COLUMNS:
+                continue
+            lits = [node.expression] if isinstance(node, exp.EQ) else list(node.expressions)
+            checks += [(col.name, l.this) for l in lits if isinstance(l, exp.Literal) and l.is_string]
+        for name, value in checks:
+            owners = [t for t in tables if name in SCHEMAS[t]]
+            if not owners:
+                continue
+            valid = set().union(*(_distinct(con, database, t, name) for t in owners))
+            if valid and value not in valid:
+                shown = ", ".join(sorted(map(str, valid))[:12])
+                return f"The value '{value}' never occurs in {name}. Its values are: {shown}. Use one of them, or say the question cannot be answered"
+    except Exception:  # a check that cannot run must never block a question
+        return None
+    return None
+
+
 @dataclass
 class FallbackResult:
     sql: str | None
@@ -151,7 +198,7 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
         if sql is None:
             return FallbackResult(last_sql, None, reason or "the model could not express this question over the approved tables", attempts)
         try:
-            problem = implied_filter_problem(question, sql)
+            problem = implied_filter_problem(question, sql) or unknown_label(sql, con, database)
             if problem:
                 raise ValueError(problem)
             checked = validate(sql, policy)
