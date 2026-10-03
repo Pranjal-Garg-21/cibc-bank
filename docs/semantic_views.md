@@ -37,6 +37,15 @@ Creation and outcome fields coexist in promises for reporting, not for model fea
 | `roll_rate` | `start_snapshot`, `end_snapshot`, `start_dpd_min`, `start_dpd_max`, `exclude_holds` | paired observed DPD; worse canonical rank; catalogue exclusions optional and disclosed (benchmark reference differs) |
 | `cure_rate` | `start`, `end`, `observation_end` | default: cases open at period start cured within period; `cohort_30d`: matured opening cohort cured within 30 days; both exclude insolvency/deceased holds |
 
+Two additional benchmark-specific templates are now available beyond the original 15 metrics:
+
+| Template | Caller parameters / grouping | Definition |
+|---|---|---|
+| `out_of_hours_share` | `start`; requires `dimensions=('province',)` | outbound calls from the lower bound, INNER JOIN cases, non-NULL province, supplied permitted-hours flag, two-decimal percentage and count; no upper bound, matching dev reference |
+| `dispute_count` | `start`, `end`, `comparison_start`, `comparison_end`; no dimensions | dispute flag in two disjoint half-open local-midnight periods; compact labels generated and bound by renderer |
+
+See [Claude/P1 handoff](p2_claude_handoff.md) for wiring, review findings, and pending publication/contract decisions. These additions are fixture-tested; warehouse comparisons remain pending.
+
 BQ-008's cohort variant and default calendar-period cure are implemented separately. BQ-014's certification-at-assignment pilot still needs a reviewed variant. Certification history must not be joined as multiple rows per case. BQ-035 uses reported buckets as its primary answer; mismatch statistics are separate. These are explicitly remaining integration questions, not hidden changes to metric definitions.
 
 ## Ownership and integration

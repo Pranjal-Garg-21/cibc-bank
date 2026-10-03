@@ -4,7 +4,7 @@ import duckdb
 import pytest
 
 from trustissues.ask.data.execute import execute
-from trustissues.ask.data.metric_templates import METRICS, render_metric
+from trustissues.ask.data.metric_templates import render_metric
 from trustissues.ask.data.schema_graph import SEMANTIC_JOIN_KEYS
 from trustissues.ask.data.semantic import SCHEMAS, create_semantic_fixtures
 from trustissues.ask.data.validator import QueryPolicy, validate
@@ -82,7 +82,7 @@ EXPECTED = {'promise_kept_rate':100/3,'broken_promise_rate':100/3,'collected_amo
             'roll_rate':50,'contact_attempts_per_case':2/3,'cure_rate':50}
 
 
-@pytest.mark.parametrize('metric', sorted(METRICS))
+@pytest.mark.parametrize('metric', sorted(EXPECTED))
 def test_all_15_templates_validate_and_compute(metric,con):
     q=render_metric(metric,parameters=parameters(metric))
     checked=validate(q.sql,QueryPolicy('analyst',SCHEMAS,join_keys=SEMANTIC_JOIN_KEYS))
@@ -110,3 +110,43 @@ def test_identifier_and_variant_injection_rejected():
     with pytest.raises(ValueError):render_metric('average_dpd',parameters={},dimensions=('queue; DROP TABLE gold.t',))
     with pytest.raises(ValueError):render_metric('average_dpd',parameters={},variant='guess')
     with pytest.raises(ValueError):render_metric('rpc_rate',parameters={'start': START})
+
+
+def test_out_of_hours_supplied_flag_inner_join_and_filters(con):
+    con.execute("DELETE FROM gold.semantic_contacts")
+    con.execute("UPDATE gold.semantic_cases SET province='ON' WHERE case_id='A'")
+    for i, case, channel, direction, flag, timestamp in [
+        (1,'A','call','outbound',False,datetime(2026,9,1)),
+        (2,'A','call','outbound',True,datetime(2026,9,2)),
+        (3,'A','call','outbound',None,datetime(2026,9,3)),
+        (4,'B','call','outbound',False,datetime(2026,9,3)),
+        (5,'missing','call','outbound',False,datetime(2026,9,3)),
+        (6,'A','sms','outbound',False,datetime(2026,9,3)),
+        (7,'A','call','inbound',False,datetime(2026,9,3)),
+        (8,'A','call','outbound',False,datetime(2026,8,31)),
+    ]:
+        insert(con,'contacts',contact_id=str(i),case_id=case,channel=channel,direction=direction,
+               within_permitted_hours_flag=flag,contact_ts_local=timestamp)
+    q=render_metric('out_of_hours_share',parameters={'start':START},dimensions=('province',))
+    checked=validate(q.sql,QueryPolicy('team_lead',SCHEMAS,join_keys=SEMANTIC_JOIN_KEYS))
+    result=execute(checked,q.parameters,con=con)
+    assert result.columns == ('province','out_of_hours_pct','calls')
+    assert result.rows == (('ON',33.33,3),)
+
+
+def test_dispute_periods_boundaries_and_compact_labels(con):
+    con.execute('DELETE FROM gold.semantic_contacts')
+    for i, day, flag in [(1,6,True),(2,7,True),(3,14,True),(4,15,True),(5,22,True),(6,23,True),(7,16,False)]:
+        insert(con,'contacts',contact_id=str(i),contact_ts_local=datetime(2026,9,day),dispute_raised_flag=flag)
+    params=dict(start=date(2026,9,15),end=date(2026,9,23),comparison_start=date(2026,9,7),comparison_end=date(2026,9,15))
+    q=render_metric('dispute_count',parameters=params)
+    result=execute(validate(q.sql,QueryPolicy('team_lead',SCHEMAS)),q.parameters,con=con)
+    assert result.columns == ('period','disputes')
+    assert result.rows == (('15-22 Sep',2),('7-14 Sep',2))
+    assert 'period_label' not in params
+    with pytest.raises(ValueError,match='overlap'):
+        render_metric('dispute_count',parameters={**params,'comparison_end':date(2026,9,16)})
+    with pytest.raises(ValueError,match='requires grouping'):
+        render_metric('out_of_hours_share',parameters={'start':START})
+    with pytest.raises(ValueError,match='ISO'):
+        render_metric('out_of_hours_share',parameters={'start':'bad date'},dimensions=('province',))

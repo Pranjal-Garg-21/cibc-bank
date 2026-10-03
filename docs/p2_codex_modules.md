@@ -1,6 +1,6 @@
 # Codex P2 modules: integration handoff
 
-All development uses in-memory or explicitly isolated dev databases. The running warehouse is never opened. These modules are not wired into Claude's service yet, and no full-data validation or certification is claimed.
+The metric renderer, validator and executor are now wired into Claude's Ask service. Development uses in-memory or explicitly isolated dev databases; full-data validation and certification remain pending. See [the consolidated P2 implementation documentation](p2_documentation.md) for both authors' contributions, current integration status, validation, and remaining work. The worker warehouse must not be opened while loading/curation holds it.
 
 ## Claude-facing API
 
@@ -36,7 +36,7 @@ P1's `contracts/c360_customer.yaml` is still absent. `load_contract(path)` reads
 ## Shared-file requirements (Claude is editor)
 
 - Dependencies: sqlglot, networkx; pytest for development. They are installed locally in `.venv`; dependency metadata remains Claude's file.
-- Package SQL assets under `trustissues.ask.data`: include `metric_sql/*.sql` as package data so wheels work as well as editable installs.
+- Dependency declarations and `metric_sql/*.sql` package-data configuration are now present in `pyproject.toml`. Claude remains its single editor; installed-wheel behavior has not been separately verified here.
 - The service/catalogue/parameter adapters should use these signatures or agree a change before either side edits shared files.
 - Do not activate worker-DB adapters or production execution until the warehouse is declared free.
 

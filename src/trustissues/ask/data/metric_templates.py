@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from .semantic import SQL_DIR
 
@@ -10,13 +10,14 @@ from .semantic import SQL_DIR
 METRICS = frozenset({"roll_rate", "cure_rate", "promise_kept_rate", "broken_promise_rate", "rpc_rate",
                      "ptp_rate", "cost_per_contact", "cost_per_rpc", "collected_amount", "hardship_rate",
                      "delinquency_rate", "write_off_rate", "average_dpd", "contact_attempts_per_case",
-                     "payroll_delay_share"})
+                     "payroll_delay_share", "out_of_hours_share", "dispute_count"})
 DIMENSIONS = {
     "promises": {x: x for x in ("product", "agent_site", "queue", "test_cell", "prior_broken_ptp_count")},
     "contacts": {x: x for x in ("channel", "contact_hour_local", "province", "agent_site")},
     "cases": {x: x for x in ("primary_product", "queue", "province", "reported_bucket", "canonical_bucket")},
     "accounts": {x: x for x in ("product", "product_code")},
     "snapshots": {"product": "a.product"}, "payroll": {},
+    "out_of_hours": {"province": "c.province"}, "disputes": {},
 }
 FAMILIES = {
     **dict.fromkeys(("promise_kept_rate", "broken_promise_rate", "collected_amount"), "promises"),
@@ -24,6 +25,7 @@ FAMILIES = {
     **dict.fromkeys(("cure_rate", "hardship_rate", "average_dpd", "contact_attempts_per_case"), "cases"),
     **dict.fromkeys(("delinquency_rate", "write_off_rate"), "accounts"),
     "roll_rate": "snapshots", "payroll_delay_share": "payroll",
+    "out_of_hours_share": "out_of_hours", "dispute_count": "disputes",
 }
 
 
@@ -39,6 +41,8 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
                   cap_at: int | None = None, variant: str = "default") -> MetricQuery:
     if metric_id not in METRICS:
         raise ValueError("Unknown metric")
+    if metric_id == "out_of_hours_share" and dimensions != ("province",):
+        raise ValueError("out_of_hours_share requires grouping by province")
     if variant not in ({"default", "cohort_30d"} if metric_id == "cure_rate" else {"default"}):
         raise ValueError("Unsupported metric variant")
     if len(set(dimensions)) != len(dimensions) or len(dimensions) > 3:
@@ -64,8 +68,9 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
     # Parse parameter names structurally; callers must provide exactly the required scalar parameters.
     from sqlglot import parse_one, exp
     names = {p.name for p in parse_one(sql, read="duckdb").find_all(exp.Placeholder)}
-    if set(parameters) != names:
-        raise ValueError(f"Expected parameters {sorted(names)}; received {sorted(parameters)}")
+    inputs = names - {"period_label", "comparison_label"} if metric_id == "dispute_count" else names
+    if set(parameters) != inputs:
+        raise ValueError(f"Expected parameters {sorted(inputs)}; received {sorted(parameters)}")
     for key, value in parameters.items():
         if value is not None and not isinstance(value, (str, int, float, bool, date, datetime)):
             raise ValueError(f"Non-scalar parameter: {key}")
@@ -73,7 +78,7 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
             raise ValueError(f"Boolean parameter required: {key}")
         if key in {"start_dpd_min", "start_dpd_max"} and (type(value) is not int or value < 0):
             raise ValueError(f"Non-negative integer parameter required: {key}")
-        if key in {"start", "end", "snapshot_date", "start_snapshot", "end_snapshot", "observation_end"}:
+        if key in {"start", "end", "comparison_start", "comparison_end", "snapshot_date", "start_snapshot", "end_snapshot", "observation_end"}:
             if not isinstance(value, (date, datetime, str)):
                 raise ValueError(f"Date parameter required: {key}")
             if isinstance(value, str):
@@ -81,8 +86,8 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
                     datetime.fromisoformat(value)
                 except ValueError as e:
                     raise ValueError(f"ISO date/timestamp required: {key}") from e
-    for first, last in (("start", "end"), ("start_snapshot", "end_snapshot")):
-        if first in parameters:
+    for first, last in (("start", "end"), ("comparison_start", "comparison_end"), ("start_snapshot", "end_snapshot")):
+        if first in parameters and last in parameters:
             def timestamp(value):
                 if isinstance(value, datetime):
                     return value
@@ -95,6 +100,28 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
                 raise ValueError("Date boundaries must have compatible time zones") from e
             if not increasing:
                 raise ValueError("Date window must have increasing boundaries")
+    parameters = dict(parameters)
+    if metric_id == "dispute_count":
+        def boundary(key):
+            value = parameters[key]
+            if isinstance(value, str):
+                value = datetime.fromisoformat(value)
+            if isinstance(value, datetime):
+                if value.time() != datetime.min.time() or value.tzinfo is not None:
+                    raise ValueError("Dispute periods require local midnight date boundaries")
+                value = value.date()
+            return value
+        start, end, previous, previous_end = (boundary(k) for k in
+                                             ("start", "end", "comparison_start", "comparison_end"))
+        if start < previous_end and previous < end:
+            raise ValueError("Dispute periods must not overlap")
+        months = ('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec')
+        def label(first, exclusive_end):
+            last = exclusive_end - timedelta(days=1)
+            if first.year == last.year and first.month == last.month:
+                return f"{first.day}-{last.day} {months[first.month-1]}"
+            return f"{first.day} {months[first.month-1]} {first.year}-{last.day} {months[last.month-1]} {last.year}"
+        parameters.update(period_label=label(start,end), comparison_label=label(previous,previous_end))
     if metric_id == "roll_rate" and (parameters['start_dpd_min'],parameters['start_dpd_max']) not in {
         (0,0),(1,30),(31,60),(61,90),(91,120),(121,150),(151,180),
     }:
