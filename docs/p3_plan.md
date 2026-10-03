@@ -113,6 +113,10 @@ Rules use case flags (`collections_cases`) and CRM flags (`customers`) by `crm_c
 
 ## 5. Blocked until identity and gold, and what changes then
 
+**The full switch-over plan, written 3 Oct evening, is in [`p3_golden_plan.md`](p3_golden_plan.md)**: first checks, interface gaps
+to close with P1 and P4, the steps in order with effort, new feature groups and the governance gates. The table below is
+the original summary.
+
 | Item | Waiting for | Change needed |
 |---|---|---|
 | Deposit balance vs promise amount; payday gap from `salary_credit_history` | Deposit → golden ID link | New SQL in `liquidity.sql` / `payday.sql`; the interim payday features stay or are dropped based on the model |
