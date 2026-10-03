@@ -30,7 +30,10 @@ AREAS = [
     ("reference", "C. Broken references and duplicate customers"),
     ("missing", "D. Missing values"),
     ("logic", "E. Values that contradict each other"),
-    ("shift", "F. Shifts and patterns that affect models"),
+    ("codes", "F. Codes against the bank's reference lists"),
+    ("identity", "G. Customer identity and the golden record"),
+    ("anomaly", "H. Unusual days found by anomaly detection"),
+    ("shift", "I. Shifts and patterns that affect models"),
 ]
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 STATUS_TEXT = {
@@ -38,6 +41,8 @@ STATUS_TEXT = {
     "standardised": "Standardised",
     "flagged": "Flagged",
     "deferred": "Deferred to identity layer",
+    "resolved": "Resolved by identity matching",
+    "review": "Sent to human review",
     "documented": "Documented",
     "context": "Context, not a defect",
     "excluded": "Excluded from current view",
@@ -147,9 +152,64 @@ def reported_by_ops(con, event: str | None) -> int | None:
     return int(r[0]) if r and r[0] is not None else None
 
 
+def expand_code_checks(cfg: dict) -> list[dict]:
+    """Turn `code_checks` and `code_columns_without_list` into ordinary checks (area `codes`)."""
+    out = []
+    entries = cfg.get("code_checks", [])
+    for e in entries:
+        t, col, ct = e["table"], e["column"], e["code_type"]
+        short = t.split(".")[-1]
+        codes = f"(SELECT code FROM curated.code_lookups WHERE code_type = '{ct}' AND coalesce(active_flag, true))"
+        out.append({
+            "id": e["id"], "area": "codes", "tables": [short], "severity": e.get("severity", "medium"),
+            "status": "documented",
+            "title": f"Codes in `{short}.{col}` missing from the `{ct}` list, or inactive",
+            "sql": f"SELECT count(*) FILTER (WHERE {col} IS NOT NULL AND {col} NOT IN {codes}), count({col}) FROM {t}",
+            "evidence": f"SELECT string_agg(v || ' ' || n, ', ' ORDER BY n DESC) FROM (SELECT {col} AS v, count(*) n FROM {t} "
+                        f"WHERE {col} IS NOT NULL AND {col} NOT IN {codes} GROUP BY 1 ORDER BY 2 DESC LIMIT 10)",
+            "how": e.get("how", "Kept as received: there is nothing certain to replace an unknown code with. The owner "
+                                "of the reference list should add the code, or the source should stop sending it."),
+        })
+    dated = [e for e in entries if e.get("date")]
+    if dated:
+        u = " UNION ALL ".join(
+            f"SELECT '{e['table'].split('.')[-1]}.{e['column']}' AS col, "
+            f"count(*) FILTER (WHERE l.effective_from IS NOT NULL AND CAST(x.{e['date']} AS DATE) < l.effective_from) AS early, "
+            f"count(x.{e['column']}) AS n FROM {e['table']} x LEFT JOIN curated.code_lookups l "
+            f"ON l.code_type = '{e['code_type']}' AND l.code = x.{e['column']}" for e in dated)
+        out.append({
+            "id": "V0", "area": "codes", "tables": sorted({e["table"].split(".")[-1] for e in dated}), "severity": "info",
+            "status": "documented",
+            "title": "Code used on a record dated before the code list's `effective_from`",
+            "sql": f"SELECT sum(early), sum(n) FROM ({u})",
+            "evidence": f"SELECT string_agg(col || ' ' || early, ', ' ORDER BY early DESC) FROM ({u}) WHERE early > 0",
+            "how": "Not a defect in the records. Every list's effective_from is recent (2019-2026) while the codes are "
+                   "used from 2016; 2016 cases even carry rule sets named `*-STD-2026`, because a case stores its "
+                   "current rule set. So effective_from is the date of the list's current version, not when a code "
+                   "started, and it cannot validate historical codes. Code history is not in the release.",
+        })
+    nolist = cfg.get("code_columns_without_list", [])
+    if nolist:
+        counts = " UNION ALL ".join(
+            f"SELECT '{c.split('.', 1)[1]}' AS col, count(DISTINCT {c.split('.')[-1]}) AS d FROM {c.rsplit('.', 1)[0]}"
+            for c in nolist)
+        out.append({
+            "id": "V16", "area": "codes", "tables": sorted({c.split(".")[1] for c in nolist}), "severity": "low",
+            "status": "documented",
+            "title": "Code column with no published reference list (count of columns)",
+            "sql": f"SELECT count(*), count(*) FROM ({counts})",
+            "evidence": f"SELECT string_agg(col || ' (' || d || ' codes)', ', ') FROM ({counts})",
+            "how": "These columns hold codes (loan and deposit product codes, letter and push templates, note "
+                   "templates, case queues) that `code_lookups` does not list, so they cannot be validated. Each "
+                   "column is internally consistent (no case or spelling variants, F17). The reference list should "
+                   "gain them.",
+        })
+    return out
+
+
 def evaluate(con, cfg: dict) -> tuple[list[Result], list[Result]]:
     issues, clean = [], []
-    for c in cfg.get("checks", []):
+    for c in cfg.get("checks", []) + expand_code_checks(cfg):
         r = Result(c["id"], c["area"], c["title"], c.get("tables", []), c["severity"], c["status"], c["how"],
                    event=c.get("event"), flag=c.get("flag"))
         try:
@@ -239,7 +299,8 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
     w("| Standardised | A clean `std_*` or derived column holds one format; the original is kept |")
     w("| Flagged | The problem cannot be repaired. A `dq_*` flag column marks the rows so downstream code can exclude or discount them |")
     w("| Documented | Not changed and not flaggable per row; downstream users are told what to do |")
-    w("| Deferred | Handled in a later layer (customer identity), not in curation |")
+    w("| Resolved | Settled by identity matching in the gold layer (curation never merges people) |")
+    w("| Review | Left undecided on purpose; a person decides from the identity review queue |")
     w("| Excluded | Kept in the full table, left out of the one-row-per-key `_current` table |")
     w("| Context | A real-world event, not a data defect |")
     w("")
@@ -259,6 +320,18 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
         "reference": "Records that point at something that is not there, and people stored more than once.",
         "missing": "Values that are blank where they should not be. None were imputed.",
         "logic": "Fields that cannot all be true at once. Neither value was changed; the rows are flagged.",
+        "codes": "Columns that hold a code from a published list (`curated.code_lookups`) were checked for codes that "
+                 "are not on the list or are inactive. Columns with no list at all, and what the lists' effective dates "
+                 "can and cannot prove, are reported here too. Checks with nothing to report are in the clean list.",
+        "anomaly": "Every day of the last year, per series (contacts by channel, cases by product, payments, notes, "
+                   "bureau files...), was compared with its own normal: row counts against the same weekday of the "
+                   "previous weeks, every column's null rate likewise. Days far from normal are matched to the "
+                   "operations log and the calendar. Settings: `config/anomaly.yaml`; full list: "
+                   "`reports/anomaly_report.md`.",
+        "identity": "What remains after identity matching joins the five customer keys into one person per golden ID "
+                    "(`gold.customer_xref`). These checks read the published gold tables. The rule is: when unsure, "
+                    "keep records separate. Details and measured precision: `docs/identity.md` and "
+                    "`reports/identity_report.md`.",
         "shift": "Not wrong values in single rows, but patterns across time or across records that change what a model "
                  "or a baseline learns. Nothing was changed. None of these is explained by an event in the operations log.",
     }
@@ -309,8 +382,9 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
     w("")
     w("- **The original columns are untouched.** `dob_raw`, `*_phone_raw`, `*_name_raw`, `src_customer_ref` and the "
       "rest still carry each system's own format. Use the `std_*` and derived columns, not the originals.")
-    w("- **Customer keys still differ by system** (CRM ID, card number, loan number, 10-digit CIF). Joining them into "
-      "one customer is the identity layer's job; curation only repairs the CIF format.")
+    w("- **Customer keys still differ by system in `curated.*`** (CRM ID, card number, loan number, 10-digit CIF). "
+      "Identity matching joins them into one golden ID per person in `gold.customer_xref`; what it left open is in "
+      f"section {sec['identity']}.")
     w("- **The problems flagged above stay in the data.** Flagged rows are marked, not repaired (masked phones, shifted "
       "bureau columns, bucket and days-past-due disagreements, missing CRM customers).")
     w("- **Currency is mixed** in deposit balances (flag `dq_non_cad`); no conversion is possible without a rate.")
@@ -328,8 +402,9 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
     w("3. A rule finds the records it is written to find. Where the operations log gives a count and a rule finds "
       "fewer (K4), the rule is the lower bound, not the true number. Where the log cannot be matched to rows (K3), "
       "this report says so.")
-    w("4. **Not covered yet:** unmatched records and open review items. They come from the customer identity "
-      "step, which is not built; this report will gain them when it is.")
+    w(f"4. Unmatched records and open review items come from identity matching and are reported in section "
+      f"{sec['identity']}, read from the published gold tables. If identity has not been run, those checks are "
+      "listed as not runnable instead.")
     w("5. Unlisted issues may remain. The checks cover what was thought of; new data re-runs them automatically but "
       "does not add new kinds of check.")
     w("")

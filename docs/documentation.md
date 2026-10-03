@@ -29,13 +29,18 @@ Layer 1, Data Product Factory (owner P1). Legend: ✅ done and tested · 🟡 bu
 | 3.1 | `ingest/dictionary.py` → `config/sensitivity.yaml` | ✅ re-run on the real data after curation: overdraft decision applied, `std_*` columns inherit labels (3 unit tests), proxy false positive gone |
 | 3.2 | `curate/standardise.py` | ✅ 18 unit tests |
 | 3.2 | `curate/build_curated.py` + `config/curate.yaml` (generic, replaces per-table `sql/*.sql`, see D6) | ✅ **Complete on the real data: all 31 tables**, verified by `scripts/verify_warehouse.py`. 0 exact duplicates; the one real defect (mixed date formats, 10% of `account_monthly_snapshot`) is recovered. Two bugs found and fixed on the way (D8, D9). Full report: [`curation.md`](curation.md) |
-| 3.2 | `curate/text_controls.py`, `mapping_assistant.py` | ⬜ |
-| 3.3 | identity (`nodes`, `rules`, `splink_model`, `second_opinion`, `review_queue`, `cluster`, `relationships`) | ⬜ |
-| 3.4 | gold (`survivorship`, `build_c360`, views, `publish`) | ⬜ |
-| 3.5 | `quality/dq_report.py` + `config/dq_checks.yaml`: data quality report (`reports/data_quality_report.md`), `dq_*` flag columns, derived columns, `curated.dq_orphan_customer_refs` | ✅ run on the real data: 53 checks with records, 20 clean checks, 0 errors; 6 unit tests. **The plan assigns `dq_report.py` to P2: coordinate before anyone rewrites it** |
-| 3.5 | `quality/contract_checks.py`, `quality/anomaly.py` | ⬜ |
+| 3.2 | `curate/text_controls.py` | ✅ eligible + masked notes and transcripts; see [`consumer_views.md`](consumer_views.md) |
+| 3.2 | `mapping_assistant.py` | 🟡 written and unit-tested offline (fake model, 9 tests); **not yet run against the API**. Proposals go to `data/mappings/column_mappings.csv` for review; `evaluate` measures agreement with the hand-built mappings. Needs `OPENROUTER_API_KEY` |
+| 3.3 | identity (`nodes`, `rules`, `splink_model`, `second_opinion`, `review_queue`, `cluster`, `relationships`, `evaluate`) | ✅ **run on the real data**: 3,487,885 source customers → 1,013,152 people; every rule and Splink method agrees 100% with the held-out case evidence (allowing for case typos); 6/6 identity contract checks pass; 19 tests. LLM step not yet run (no credentials on this machine). Full record: [`identity.md`](identity.md) |
+| 3.4 | gold `build_c360` (survivorship inside): `c360_customer`, `c360_account` | ✅ run on the real data, stub shapes checked by `apply_stubs` |
+| 3.4 | consumer views (`promises_enriched`, `customer_safeguards`, `decisioning_customer`, `customer_timeline`, `bucket_transitions`, `case_customer`), `publish` | ✅ built into `gold_stage`, published to `gold` through the contract gate; defaults to confirm listed in [`consumer_views.md`](consumer_views.md) |
+| 3.4 | `semantic_*` views | ⬜ waiting for P2 |
+| 3.5 | `quality/dq_report.py` + `config/dq_checks.yaml`: data quality report (`reports/data_quality_report.md`), `dq_*` flag columns, derived columns, `curated.dq_orphan_customer_refs` | ✅ run on the real data: 66 issues and 4 context events found, 37 clean checks, 0 errors. Sections A-E (curation), F (codes against `code_lookups`), G (identity outcomes), H (anomaly detection), I (P3's shifts and patterns that affect models, T1-T4). **The plan assigns `dq_report.py` to P2: coordinate before anyone rewrites it** |
+| 3.5 | `quality/contract_checks.py` (driven by `contracts/c360_customer.yaml`) | ✅ all blocking rules pass on the real data |
+| 3.5 | `quality/anomaly.py` + `config/anomaly.yaml` | ✅ run on the real data: 665,784 points (a day of one series, or one column's null rate) over the last year; 516 episodes: 58 explained by the operations log (found INC-0923, REL-0926, ECO-0715 unaided), 276 calendar (holidays, monthly cycles), 182 unexplained leads in `reports/anomaly_report.md` and check A1. 9 tests |
+| 3.2 | enum validation against `code_lookups` (`code_checks` in `config/dq_checks.yaml`, expanded by `dq_report.py`) | ✅ 15 code columns checked: V5 finds 74,697 assignments using 4 routing rules missing from the list; V16 lists 6 code columns with no list; V0 explains why the lists' effective dates cannot validate history. 1 test |
 | 3.6 | `pipeline.py` (runs ingest, dictionary, curate, labels with timings) | 🟡 written; each stage has been run on the real data separately, the single command has not been run end to end |
-| 3.6 | `contracts/c360_customer.yaml` | ⬜ |
+| 3.6 | `contracts/c360_customer.yaml` | ✅ |
 | — | `scripts/verify_warehouse.py` (row counts vs the release, curated reconciliation) | ✅ run on the real database: all 31 raw tables and all 31 curated tables pass |
 | — | `requirements.md` / `requirements.txt` (rebuild on your own machine) | ✅ |
 
@@ -51,8 +56,16 @@ python -m trustissues.factory.ingest.load_raw            # raw load (re-runnable
 python -m trustissues.factory.ingest.load_raw --only customers agents   # a subset
 python -m trustissues.factory.ingest.dictionary          # data dictionary + config/sensitivity.yaml
 python -m trustissues.factory.curate.build_curated       # raw -> curated (typed, deduped, std_* identity columns)
+python -m trustissues.factory.quality.anomaly            # unusual days vs the ops log -> reports/anomaly_report.md (~1 min)
 python -m trustissues.factory.quality.dq_report          # dq flags, derived columns, reports/data_quality_report.md (about 20 s)
 python -m trustissues.factory.curate.build_curated --only customers card_accounts
+python -m trustissues.factory.curate.text_controls       # eligible, masked notes and transcripts (seconds)
+python -m trustissues.factory.gold.views                 # consumer views into gold_stage (~1.5 min)
+python -m trustissues.factory.gold.publish               # contract gate: gold_stage -> gold (~20 s)
+python -m trustissues.factory.curate.mapping_assistant prompts   # AI mapping proposals: preview only; `propose --call` sends
+python -m trustissues.factory.identity.build             # curated -> identity -> gold.customer_xref (~4 min)
+python -m trustissues.factory.gold.build_c360            # gold.c360_customer, gold.c360_account (~45 s)
+python -m trustissues.factory.identity.evaluate          # reports/identity_report.md
 python -m pytest tests -q
 ```
 
@@ -76,10 +89,18 @@ maple_data/ (31 tables: CSV, Parquet by year, transcript JSON)
       │  build_curated.py  (types from schema.json, dedupe, std_* identity columns)
       ▼
  curated.* ──── curated._cast_failures, curated._build_log, curated.<t>_current
-      │  (next) identity  →  gold.* (c360_customer, c360_account, views)
+      │  identity/build.py  (nodes, exact rules, Splink, LLM grey zone, constrained clustering)
+      ▼
+ identity.* ──── nodes, rule_links, splink_pairs, llm_verdicts, clusters, golden_id_registry
+      │
+      ▼
+ gold_stage.* ── customer_xref, review queue, relationships, c360_*, case_customer, consumer views
+      │  publish.py  (contracts/c360_customer.yaml: blocking rules must pass)
+      ▼
+   gold.* ──── what consumers read
 ```
 
-Schemas: `raw` is as received. `curated` is typed, cleaned and deduplicated. `gold` is the only thing consumers read.
+Schemas: `raw` is as received. `curated` is typed, cleaned and deduplicated. `identity` holds matching work tables. `gold` is the only thing consumers read.
 
 ## 4. Layer 1 components
 
@@ -87,7 +108,13 @@ Schemas: `raw` is as received. `curated` is typed, cleaned and deduplicated. `go
 Loads `config/settings.yaml`. Exposes `AS_OF_DATE` (a `date`), `maple_data_dir()`, `warehouse_path()`. Code never calls `today()`.
 
 ### 4.2 `common/db.py`
-`connect(read_only=False)` opens the warehouse and creates the `raw`, `curated`, `gold` schemas (not when read-only).
+`connect(read_only=False)` opens the warehouse and creates the `raw`, `curated`, `identity`, `gold_stage`, `gold` schemas (not when read-only).
+
+### 4.9 `identity/*` and `gold/build_c360.py`
+See [`identity.md`](identity.md): steps, matching rules and safeguards, measured precision, gold survivorship.
+
+### 4.10 `curate/text_controls.py`, `gold/views.py`, `quality/contract_checks.py`, `gold/publish.py`
+See [`consumer_views.md`](consumer_views.md): the views, the defaults to confirm, the contract and the publish gate.
 
 ### 4.3 `ingest/load_raw.py`
 - **Discovery:** every `data/*.csv` is a source, and so is every `data/<dir>/year=*/*.parquet` folder. No hard-coded table list.
@@ -136,7 +163,7 @@ Builds `curated.<table>` from `raw.<table>` for **every** table in `raw`, with n
 - **Duplicates** are removed on `_row_hash` (earliest ingest wins). Counts are in `curated._build_log` (`raw_rows`, `curated_rows`, `dupes_removed`).
 - **Identity sources** (`customers`, `card_accounts`, `loan_accounts`, `deposit_accounts`, `external`), listed in `config/curate.yaml`, get `std_*` columns: `std_name_{first,middle_initials,last,first_is_initial,key}`, `std_dob`, `std_dob_alt`, `std_dob_ambiguous`, `std_phone_<label>_{e164,masked,prefix,suffix}`, `std_postal`, `std_fsa`, `std_employer`. For `external` the postal code is the trailing token of `subject_address_reported`.
 - **History is kept.** `curated.<table>_current` (customers, card, loan, deposit) holds one row per key: latest `snapshot_date`, or the latest non-deleted CRM version.
-- Not yet done in this slice: enum validation against `code_lookups`, and `text_controls.py` (note and transcript eligibility).
+- Enum validation against `code_lookups` and `text_controls.py` were added later (see the status table).
 
 ## 5. Dynamic behaviour
 
@@ -147,9 +174,9 @@ What happens when new data arrives. "Auto" means no human step.
 | More rows or a new file for a known table | **Auto.** Only new or changed files are read; rows already loaded are skipped |
 | A new column | **Auto, restricted.** Loaded, logged, `unclassified` until someone classifies it |
 | A removed or renamed column | **Blocked** with a rename hint until a person approves |
-| A brand-new table | **Lands in `raw` and in `curated` automatically** (as text, since there is no schema entry). Reaches gold only after a reviewed mapping (`mapping_assistant.py`, not yet built) |
+| A brand-new table | **Lands in `raw` and in `curated` automatically** (as text, since there is no schema entry). Reaches gold only after a reviewed mapping (`mapping_assistant.py` proposes them; written and tested offline, not yet run against the API) |
 
-Covered by `tests/test_ingest_dynamic.py` and `tests/test_build_curated.py` (an unregistered table passes through as text). The curated and gold stages are not built yet, so end-to-end "new data becomes golden" is **not yet demonstrated**. It will be tested once `pipeline.py` exists.
+Covered by `tests/test_ingest_dynamic.py` and `tests/test_build_curated.py` (an unregistered table passes through as text). Every stage from curated to gold is now built and has run on the real data, but only stage by stage: end-to-end "new data becomes golden" in one `pipeline` run is **not yet demonstrated**.
 
 ## 6. Data findings
 
@@ -201,12 +228,23 @@ Facts learned from the real data, recorded as we find them.
 | D10 | Data-quality handling is applied as **new columns and flags**, never by overwriting a value, and by an idempotent step (`dq_report`) that can be re-run | A repair the data cannot justify (shifted bureau columns, masked phones, bucket vs dpd) must not be guessed. Flags let downstream code exclude rows; the report is generated from query results so its numbers cannot drift |
 | D11 | Ambiguous dates of birth are decided by a ladder of evidence, strongest first, and the basis is recorded per row (`std_dob_basis`). CRM: its own cleaned `date_of_birth`. Cards: the column's day-first convention, inferred from 398,847 day-first dates against 0 month-first. A mixed column (the CRM text column: 122,353 vs 91,531) is never given a convention | The first build kept both readings for 12.6% of CRM and 36.3% of card dates. The CRM clean column was overlooked and is verified against every unambiguous date (0 disagreements in about 823,000 checks). Full reasoning: [`ambiguous_values.md`](ambiguous_values.md) |
 | D12 | The letter O typed for the digit 0 in a postal code's digit positions is repaired (`std_postal_repaired` marks it); no other repair is made | 1,887 CRM postal codes had this typo. My first parser rejected them and my quality report wrongly called them truncated. The CRM's own cleaned `postal_code` agrees with the repair in 1,887 of 1,887 cases, so it is certain. `I` is deliberately not mapped to `1`: there is no evidence for it in this data |
+| D13 | Collections-case account links are **held out** as an evaluation set, never used as matching evidence | They are the only independent check on the matcher. They turned out to carry mistyped CRM IDs (0.3%), which would have caused false merges if trusted |
+| D14 | Splink links automatically only if the person's own identifiers agree (the **family guard**: name and DOB), whatever the score; a nameless record needs an exact DOB and postal code | Shared surname, phone and address pushed spouses, parents and siblings to 0.999. Every guard condition is measured against the case evidence (`identity.md` §3) |
+| D15 | Splink learns DOB weights in a full name + postal block, not surname + postal | A surname + postal block is full of family members, which taught EM that a different DOB is normal for a match |
+| D16 | Clustering is a constrained union (strongest link first, a merge refused if it breaks a conflict rule) instead of connected components followed by splitting | One pass gives the plan's "split along the weakest links", and every refused link goes to review |
+| D17 | Golden IDs are `G-` + 7 digits | 6 digits cannot hold 1M+ people |
+| D18 | Everything P1 builds goes to `gold_stage`; `publish.py` copies it to `gold` in one transaction only if every blocking contract rule passes | Consumers never read a build that failed its checks; a rule that cannot run counts as failed |
+| D19 | We mask personal data in every eligible note and transcript ourselves | The upstream `redaction_status` misses card numbers, even in `auto_redacted` notes |
+| D20 | A collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID (`gold.case_customer`, both readings kept) | Evidence in `identity.md` §3; also ties 11,125 of the 11,137 cases whose CRM ID does not exist to a person |
 | D7 | Ambiguous dates are resolved only by evidence (see D11); when none exists both readings are kept. Ambiguous ALL-CAPS names stay unparsed unless the source sets a convention | Never invent identity evidence; wrong merges are worse than missed ones |
 
 ## Changelog
 
 | Date | Slice | Change |
 |---|---|---|
+| 2026-10-03 | Layer 1 · quality | **Anomaly detection and code-list checks.** `quality/anomaly.py` (row counts per slice against the same weekday, null rates per slice and column, explained by the operations log, holidays and monthly cycles) writes `curated._anomaly_days`, `curated._anomaly_episodes`, `reports/anomaly_report.md`; new stage `anomaly` before `quality`. Code columns checked against `code_lookups` (V0-V16). Data quality report gains sections F (codes) and H (unusual days). Also: `mapping_assistant.py` written and tested offline, not yet run against the API. 106 tests |
+| 2026-10-03 | Layer 1 · views + gate | **Consumer views, text controls, contract and publish gate.** `text_controls.py`, `gold/views.py` (5 views), `gold.case_customer`, `contracts/c360_customer.yaml`, `quality/contract_checks.py`, `gold/publish.py`, new `gold_stage` schema. First publish: all blocking rules pass, 2 warnings explained. Defaults to confirm in `consumer_views.md` (D18–D20). 87 tests |
+| 2026-10-03 | Layer 1 · identity + gold | **Identity resolution and the golden record.** `identity/` (nodes, rules, Splink, LLM second opinion, relationships, review queue, constrained clustering, stable IDs, report) and `gold/build_c360.py`. 3,487,885 source customers → 1,013,152 people; `gold.customer_xref`, `identity_review_queue`, `customer_relationship`, `c360_customer`, `c360_account`. Found mistyped CRM IDs in collections cases, surname-first card names, compound surnames, and family false matches (D13–D17). New `identity` schema; `reports/identity_report.md`. 19 identity tests (77 total) |
 | 2026-10-03 | Layer 1 · curate | **Postal-code repair.** Found by checking my standardised columns against the CRM's own cleaned columns: 1,887 postal codes with the letter O for 0 were being rejected. Repaired (D12), new column `std_postal_repaired`; my `std_postal` now equals the CRM's clean postal code in 1,009,780 of 1,009,780 rows. Corrected the quality report, which had called them truncated. New quality check C23. 58 tests. Rebuilt the four identity tables |
 | 2026-10-03 | Layer 1 · curate | **Ambiguous dates of birth resolved.** CRM 128,980 settled by the CRM's own `date_of_birth`; cards 239,324 settled by the inferred day-first convention; 0 ambiguous left in any identity table. New columns `std_dob_was_ambiguous`, `std_dob_basis`; new table `curated._date_conventions`; new quality checks C21, C22. Policy and evidence in `ambiguous_values.md`. 56 tests |
 | 2026-10-03 | Layer 1 · quality | **Data quality report.** 53 issues quantified (6 known incidents verified against the data; formats, broken references, missing values, contradictions), 20 clean checks. Handling applied: `channel_resolved`, `cif10`, `salutation_std`, 12 `dq_*` flag columns, `curated.dq_orphan_customer_refs`. Corrected an earlier false claim that names contain broken characters (the data is clean UTF-8). Fixed a proxy-column false positive (`dq_trade_age_inconsistent`). 49 tests |

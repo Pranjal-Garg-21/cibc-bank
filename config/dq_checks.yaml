@@ -185,7 +185,7 @@ checks:
     status: flagged
     table: curated.card_accounts
     where: "std_phone_primary_masked"
-    how: "Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. To be treated as weak evidence in matching (the design rule is that a phone alone never links two records); the identity layer is not built yet."
+    how: "Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. Used as weak evidence in identity matching: Splink's phone comparison has a level for visible digits that fit a full phone, and a phone alone never links two records (see `docs/identity.md`)."
   - id: F10
     area: format
     title: "CRM postal code written with and without a space, in lower case, or both"
@@ -279,7 +279,7 @@ checks:
     severity: high
     status: flagged
     sql: "select count(*) filter (where coll_customer_ref is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.coll_customer_ref)), count(*) from curated.collections_cases c"
-    how: "Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a customer record. The identity layer (not yet built) is meant to treat them as unresolved, and customer-level features should leave them out. The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it."
+    how: "Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a CRM record, but identity matching ties almost all of these cases to a person through the accounts they list: see I6 (`gold.case_customer`). The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it."
   - id: R2
     area: reference
     title: "Contact record points to a CRM customer that does not exist"
@@ -350,10 +350,10 @@ checks:
     title: "Same person stored as more than one CRM record (identical national-ID hash)"
     tables: [customers]
     severity: high
-    status: deferred
+    status: resolved
     sql: "select count(*), (select count(*) from curated.customers) from curated.customers where national_id_hash in (select national_id_hash from curated.customers where national_id_hash is not null group by 1 having count(*) > 1)"
-    evidence: "select count(*) || ' records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source' from curated.customers where duplicate_of_crm_id is not null"
-    how: "Not merged here. Curation never merges people. The identity layer (not yet built) is meant to link them (national-ID hash is its first exact rule) and assign one golden ID. Affected counts the records sitting in a duplicate group."
+    evidence: "select (select count(*) from curated.customers where duplicate_of_crm_id is not null) || ' records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source. After identity matching, ' || count(*) || ' people have two or more CRM records' from (select golden_customer_id from gold.customer_xref where source_system = 'crm' group by 1 having count(*) > 1)"
+    how: "Curation never merges people. Identity matching links them: the national-ID hash and `duplicate_of_crm_id` are exact rules (checked against the DOB), then name + DOB + phone or postal, then Splink for CRM records with no hash. Each person gets one golden ID in `gold.customer_xref`. Affected counts the records sitting in a hash duplicate group (deleted records included)."
   - id: R11
     area: reference
     title: "CRM record marked deleted (change-data operation D)"
@@ -363,6 +363,16 @@ checks:
     table: curated.customers
     where: "coalesce(is_deleted, false)"
     how: "Kept in `curated.customers`, excluded from `curated.customers_current`."
+
+  - id: R12
+    area: reference
+    title: "A French document with no English version: the Quebec annex REG-SUM-001-QC"
+    tables: [reference_documents]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where language = 'FR' and not exists (select 1 from curated.reference_documents e where e.language = 'EN' and e.doc_id || '-FR' = d.doc_id)), count(*) filter (where language = 'FR') from curated.reference_documents d"
+    evidence: "select string_agg(doc_id || ' (' || title || '; applies to provinces ' || applies_to_provinces || ')', '; ') from curated.reference_documents d where language = 'FR' and not exists (select 1 from curated.reference_documents e where e.language = 'EN' and e.doc_id || '-FR' = d.doc_id)"
+    how: "Of the 3 French documents, two are summaries of an English document (POL-COLL-001 and POL-COLL-004). The Quebec annex is not: it holds rules that no English document states (no collection calls on Sundays in Quebec, while the English contact policy allows Sunday calls from 13:00 to 17:00 where Sunday contact is permitted, and French service by default). English is the reference language for answers, but this document is kept searchable and is always included when a question or a customer is in Quebec (province QC). Its quotes stay in French. An English version, or confirmation of the Quebec rule, should be requested from the organisers."
 
   # ------------------------------------------------------------------ D. missing values
   - id: M1
@@ -435,6 +445,26 @@ checks:
     table: curated.customers
     where: "employer_name is null"
     how: "May be genuine (not employed). Not imputed."
+
+  - id: M9
+    area: missing
+    title: "Reference documents that exist only in English (no French version)"
+    tables: [reference_documents]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where language = 'EN' and not exists (select 1 from curated.reference_documents f where f.language = 'FR' and f.doc_id = d.doc_id || '-FR')), count(*) filter (where language = 'EN') from curated.reference_documents d"
+    evidence: "select 'languages: ' || string_agg(language || ' ' || n, ', ' order by language) || '; French versions exist only for ' || (select string_agg(left(doc_id, length(doc_id) - 3), ' and ' order by doc_id) from curated.reference_documents where language = 'FR' and doc_id like '%-FR') from (select language, count(*) n from curated.reference_documents group by 1)"
+    how: "Most of the policy, procedure, script, FAQ and incident documents are written in English only. English is therefore the reference language. A French question is translated to English only to search the documents; the answer is written in French, and the quoted evidence stays in English so it can still be checked word for word."
+
+  - id: M10
+    area: missing
+    title: "French versions are condensed summaries: sections of the English document are missing from the French one"
+    tables: [reference_documents]
+    severity: medium
+    status: documented
+    sql: "select coalesce(sum(len(list_filter(from_json(e.section_ids, '[\"VARCHAR\"]'), x -> not list_contains(from_json(f.section_ids, '[\"VARCHAR\"]'), x)))), 0), coalesce(sum(len(from_json(e.section_ids, '[\"VARCHAR\"]'))), 0) from curated.reference_documents f join curated.reference_documents e on e.language = 'EN' and e.doc_id || '-FR' = f.doc_id where f.language = 'FR'"
+    evidence: "select string_agg(doc || ' ' || sec, ', ' order by doc, sec) from (select e.doc_id as doc, unnest(list_filter(from_json(e.section_ids, '[\"VARCHAR\"]'), x -> not list_contains(from_json(f.section_ids, '[\"VARCHAR\"]'), x))) as sec from curated.reference_documents f join curated.reference_documents e on e.language = 'EN' and e.doc_id || '-FR' = f.doc_id where f.language = 'FR')"
+    how: "Counted from the section list in the document metadata (total column is the English sections of the two translated documents). The French text is also about a third of the length and drops details inside the sections it keeps (the Sunday 13:00 to 17:00 window, the 30-day contact pause, the 90-day re-review). No number in a French section differs from its English counterpart, so nothing contradicts; the French is only less complete. The French POL-COLL-004 file also has no section 4.1 although its metadata lists one, so 5 sections are missing in practice, not the count above. Handling: English is the reference, and a French rendering of an English document is not searched, so an answer cannot be built from the shorter text. The organisers should confirm that the English version governs."
 
   # ------------------------------------------------------------------ E. contradictions
   - id: L1
@@ -582,6 +612,143 @@ checks:
     sql: "select count(*) filter (where ptp_to_overdue_ratio > 0.9 and ptp_to_overdue_ratio < 0.999), count(*) from curated.promises_to_pay where ptp_status in ('kept', 'broken', 'partially_kept')"
     evidence: "select format('{:,}', count(*) filter (where r = 'near' and ptp_status = 'broken')) || ' of ' || format('{:,}', count(*) filter (where r = 'near')) || ' resolved promises for 90% to 99.9% of the overdue amount were broken (typical shortfall $' || round(median(gap) filter (where r = 'near'), 2) || '); for exactly the full amount ' || round(100 * avg(case when ptp_status = 'kept' then 0.0 else 1.0 end) filter (where r = 'full'), 1) || '% were broken, for 50% to 90% ' || round(100 * avg(case when ptp_status = 'kept' then 0.0 else 1.0 end) filter (where r = 'mid'), 1) || '%. The overdue amount on the promise matches the contact that created it for ' || round(100 * avg(case when matches then 1.0 else 0.0 end) filter (where r = 'near' and matches is not null), 1) || '% of the 90% to 99.9% promises' from (select p.ptp_status, p.overdue_at_creation - p.ptp_amount gap, abs(c.overdue_at_contact - p.overdue_at_creation) < 0.01 matches, case when p.ptp_to_overdue_ratio >= 0.999 then 'full' when p.ptp_to_overdue_ratio > 0.9 then 'near' when p.ptp_to_overdue_ratio > 0.5 then 'mid' else 'low' end r from curated.promises_to_pay p left join curated.contact_history c using (contact_id) where p.ptp_status in ('kept', 'broken', 'partially_kept'))"
     how: "Not changed. Nothing in the data explains why a promise a few dollars short of the full amount should always break, so this is most likely a rule of how the synthetic data was made, not customer behaviour. It is not outcome leakage: both amounts are on record when the promise is made (see evidence). Break-risk models learn it, and it carries much of the P3 promise model's lead over the bank's `ptp_break` (`reports/model_evaluation.md`). Do not present it as a finding about customers."
+
+  # ------------------------------------------------------------------ F. customer identity and the golden record
+  # These read the published gold tables, so they report what consumers actually see.
+  # Details: docs/identity.md, reports/identity_report.md, docs/consumer_views.md.
+  - id: I1
+    area: identity
+    title: "Source customer that matched nobody (kept as its own person)"
+    tables: [customer_xref]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where status = 'singleton'), count(*) from gold.customer_xref"
+    evidence: "select string_agg(source_system || ' ' || n, ', ' order by n desc) from (select source_system, count(*) n from gold.customer_xref where status = 'singleton' group by 1)"
+    how: "Not linked: no rule matched and Splink scored below 0.80, or the record is too thin to compare (3.9% of bureau files have no name). Each keeps its own golden ID so no account is dropped (`gold.customer_xref.status = 'singleton'`). Some are probably missed links, which can be added later; a wrong merge could not be undone."
+  - id: I2
+    area: identity
+    title: "Source customer waiting for a person to decide its match"
+    tables: [customer_xref, identity_review_queue]
+    severity: medium
+    status: review
+    sql: "select count(*) filter (where status in ('in_review', 'blocked_conflict', 'unresolved')), count(*) from gold.customer_xref"
+    evidence: "select string_agg(status || ' ' || n, ', ' order by n desc) from (select status, count(*) n from gold.customer_xref where status in ('in_review', 'blocked_conflict', 'unresolved') group by 1)"
+    how: "Kept separate until decided. The candidate pairs are in `gold.identity_review_queue`, both records side by side with the Splink and LLM reasons. Decisions go in `data/review/identity_decisions.csv` and are re-applied on every run. `c360_customer.dq_status = 'identity_in_review'` marks the people affected."
+  - id: I3
+    area: identity
+    title: "Candidate match pair in the human review queue"
+    tables: [identity_review_queue]
+    severity: medium
+    status: review
+    sql: "select (select count(*) from gold.identity_review_queue), (select count(*) from gold.identity_review_queue) + (select count(*) from identity.accepted_links)"
+    evidence: "select string_agg(reason || ' ' || n, ', ' order by n desc) from (select reason, count(*) n from gold.identity_review_queue group by 1)"
+    how: "Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and the LLM second opinion has not been run (no credentials); with an LLM, only the pairs it disagrees with stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth."
+  - id: I4
+    area: identity
+    title: "More people than the bank's stated 1,000,000 customers"
+    tables: [c360_customer]
+    severity: low
+    status: documented
+    sql: "select greatest(count(*) - 1000000, 0), count(*) from gold.c360_customer"
+    evidence: "select count(*) filter (where source_systems not like '%crm%') || ' people have no CRM record (' || count(*) filter (where source_systems = 'bureau') || ' of them bureau only); ' || count(*) filter (where source_systems like '%crm%') || ' people have one' from gold.c360_customer"
+    how: "The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as review decisions and the LLM second opinion link them."
+  - id: I5
+    area: identity
+    title: "Collections case names a different customer than the holder of the accounts it lists"
+    tables: [collections_cases, case_customer]
+    severity: high
+    status: resolved
+    sql: "select count(*) filter (where case_customer_mismatch), count(*) from gold.case_customer"
+    evidence: "select count(*) || ' of these cases have the two customers in different provinces; the case''s own province matches the account holder in ' || count(*) filter (where c.province_code = h.province) || ' and the named customer in ' || count(*) filter (where c.province_code = n.province_code) from gold.case_customer cc join curated.collections_cases c using (case_id) join curated.customers_current n on n.crm_customer_id = cc.named_crm_customer_id join gold.c360_customer h on h.golden_customer_id = cc.golden_customer_id where cc.case_customer_mismatch and n.province_code <> h.province"
+    how: "Two different, real customers; they are never merged. The CRM IDs differ by one character in every such case and the province points to the account holder, so the case's CRM ID is almost certainly mistyped (an inference, not proven). `gold.case_customer` keeps both readings and resolves the case to the account holder; promises, contacts and notes on the case follow it, and the case's safety flags reach both people. Promises copy the same CRM ID, so joining on `crm_customer_id` alone attaches them to the wrong person."
+  - id: I6
+    area: identity
+    title: "Collections case whose CRM ID does not exist, tied to a person through its accounts"
+    tables: [collections_cases, case_customer]
+    severity: medium
+    status: resolved
+    sql: "select count(*) filter (where named_customer_missing and golden_customer_id is not null), count(*) from gold.case_customer"
+    how: "The missing CRM IDs (R1) cannot be repaired, but the case lists its accounts and the accounts have a matched holder, so the case gets that person's golden ID (`gold.case_customer.resolved_by = 'account_holder'`)."
+  - id: I7
+    area: identity
+    title: "Collections case that could not be tied to any person"
+    tables: [collections_cases, case_customer]
+    severity: low
+    status: flagged
+    sql: "select count(*) filter (where golden_customer_id is null), count(*) from gold.case_customer"
+    how: "Its CRM ID does not exist and its accounts are not found. `gold.case_customer.golden_customer_id` is NULL; these cases appear in no customer view."
+  - id: I8
+    area: identity
+    title: "Promise to pay with no owner"
+    tables: [promises_to_pay, promises_enriched]
+    severity: low
+    status: flagged
+    sql: "select count(*) filter (where golden_customer_id is null), count(*) from gold.promises_enriched"
+    how: "Its case could not be tied to a person (I7) and its CRM ID does not exist. Kept in `gold.promises_enriched` with a NULL `golden_customer_id`; training and features should leave it out."
+
+  # ------------------------------------------------------------------ H. unusual days (anomaly detection)
+  # Read curated._anomaly_episodes, written by `python -m trustissues.factory.quality.anomaly` (config/anomaly.yaml).
+  # Full list: reports/anomaly_report.md.
+  - id: A1
+    area: anomaly
+    title: "Unusual day or run of days that nothing in the operations log or the calendar explains"
+    tables: [contact_history, collections_cases, promises_to_pay, agent_notes, offers, transactions, external]
+    severity: medium
+    status: documented
+    sql: "select (select count(*) from curated._anomaly_episodes where status = 'unexplained'), (select count(*) from curated._anomaly_episodes)"
+    evidence: "select string_agg(series || ' ' || slice || ' ' || metric || ' ' || start || (case when days > 1 then ' to ' || \"end\" else '' end) || ' (' || case when metric = 'row_count' then printf('%+.0f%%', change * 100) else printf('%+.0f pts', change * 100) end || ')', '; ') from (select * from curated._anomaly_episodes where status = 'unexplained' order by abs(worst_z) * days desc limit 6)"
+    how: "Total is all episodes found. These are leads, not proven defects: the operations log does not list every issue (the release says finding them is part of the task), and some will be business changes the log does not record (a campaign, a new channel). Each needs a person to look before anything is changed. Counted per episode: consecutive flagged days of one metric moving the same way."
+  - id: A2
+    area: anomaly
+    title: "Unusual days explained by a logged operations event"
+    tables: [contact_history, collections_cases, external]
+    severity: info
+    status: context
+    sql: "select (select count(*) from curated._anomaly_episodes where status = 'explained'), (select count(*) from curated._anomaly_episodes)"
+    evidence: "select string_agg(distinct split_part(explained_by, ' (', 1), ', ') from curated._anomaly_episodes where status = 'explained'"
+    how: "Detected automatically and matched to the operations log: the event lists the table and its dates overlap the episode (one day of lag allowed). Long events (layoffs, a policy) explain volume changes only. Section A checks each logged event directly."
+  - id: A3
+    area: anomaly
+    title: "Unusual days explained by the calendar (statutory holidays, monthly billing and benefit cycles)"
+    tables: [contact_history, collections_cases, transactions]
+    severity: info
+    status: context
+    sql: "select (select count(*) from curated._anomaly_episodes where status in ('calendar', 'recurring')), (select count(*) from curated._anomaly_episodes)"
+    how: "A holiday empties the outbound queues; card cases open on statement-cycle days and benefits arrive on fixed days every month. An episode on a statutory holiday, or repeating at the same point of the month in three or more other months, is labelled and not alerted."
+
+# Code columns checked against the bank's reference lists (curated.code_lookups). dq_report expands each entry into a
+# check "values missing from the list or inactive" (area F), plus one summary check of codes used before their
+# list's effective_from. `date` is the record's own date. Columns with no reference list at all are listed in
+# `code_columns_without_list`.
+code_checks:
+  - {id: V1, table: curated.card_accounts, column: block_code, code_type: block_code, date: block_date}
+  - {id: V2, table: curated.card_accounts, column: product_code, code_type: product_code, date: open_date}
+  - {id: V3, table: curated.collections_cases, column: strategy_code, code_type: strategy_code, date: case_open_date}
+  - {id: V4, table: curated.collections_cases, column: contact_rule_set, code_type: contact_rule_set, date: case_open_date}
+  - id: V5
+    table: curated.case_assignment_history
+    column: routing_rule_id
+    code_type: routing_rule
+    date: assigned_ts
+    how: "The four unknown codes are a third version of listed rules (`RR-EARLY-03`, `RR-MID-03`, `RR-LATE-03`, `RR-REC-03`, next to the listed `-01` and `-02`): most likely new rules nobody added to the list. Nothing to repair, the routing still happened. Code that explains an assignment by its rule cannot describe these until the list's owner adds them."
+  - {id: V6, table: curated.contact_history, column: outcome_code, code_type: outcome_code, date: contact_ts_utc}
+  - {id: V7, table: curated.contact_history, column: sub_outcome_code, code_type: outcome_code, date: contact_ts_utc}
+  - {id: V8, table: curated.contact_history, column: strategy_code, code_type: strategy_code, date: contact_ts_utc}
+  - {id: V9, table: curated.contact_history, column: script_id, code_type: script, date: contact_ts_utc}
+  - {id: V10, table: curated.contact_history, column: sms_template_id, code_type: sms_template, date: contact_ts_utc}
+  - {id: V11, table: curated.contact_history, column: email_template_id, code_type: email_template, date: contact_ts_utc}
+  - {id: V12, table: curated.external, column: score_reason_code_1, code_type: bureau_reason, date: pull_date}
+  - {id: V13, table: curated.external, column: score_reason_code_2, code_type: bureau_reason, date: pull_date}
+  - {id: V14, table: curated.external, column: score_reason_code_3, code_type: bureau_reason, date: pull_date}
+  - {id: V15, table: curated.external, column: score_reason_code_4, code_type: bureau_reason, date: pull_date}
+
+code_columns_without_list:   # code-like columns whose values have no published reference list
+  - curated.loan_accounts.product_code
+  - curated.deposit_accounts.product_code
+  - curated.contact_history.letter_template_id
+  - curated.contact_history.push_template_id
+  - curated.agent_notes.template_id
+  - curated.collections_cases.queue
 
 clean_checks:   # checks that found nothing; listed so the coverage is visible
   - {id: C23, title: "Postal code still invalid after cleaning (customers, cards, loans, deposits)", sql: "select (select count(*) filter (where postal_code_raw is not null and trim(postal_code_raw) <> '' and std_postal is null) from curated.customers) + (select count(*) filter (where cardholder_postal_raw is not null and trim(cardholder_postal_raw) <> '' and std_postal is null) from curated.card_accounts) + (select count(*) filter (where borrower_postal_raw is not null and trim(borrower_postal_raw) <> '' and std_postal is null) from curated.loan_accounts) + (select count(*) filter (where holder_postal_raw is not null and trim(holder_postal_raw) <> '' and std_postal is null) from curated.deposit_accounts), (select count(*) from curated.customers) + (select count(*) from curated.card_accounts) + (select count(*) from curated.loan_accounts) + (select count(*) from curated.deposit_accounts)"}

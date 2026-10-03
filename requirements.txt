@@ -1,6 +1,10 @@
-# Layer 1 (raw + curated). Tested versions in comments. `pip install -e ".[dev]"` installs the same set.
+# Layer 1 (raw, curated, identity, gold). Tested versions in comments. `pip install -e ".[dev]"` installs the same set.
 duckdb>=1.1          # tested 1.5.6
 pyyaml>=6.0          # tested 6.0.3
 openpyxl>=3.1        # tested 3.1.5 (reads the data dictionary xlsx)
 pytest>=8            # tested 9.1.1 (tests only)
+splink>=5.0          # tested 5.0.0 (probabilistic identity matching; brings sqlglot)
+scipy>=1.11          # tested 1.18.0 (connected components)
+pyarrow>=15          # tested 25.0.1 (hands Python results to DuckDB)
+anthropic>=0.40      # tested 0.116.0 (optional LLM second opinion on grey-zone identity pairs)
 huggingface_hub      # only to download the dataset; tested 2.1.1 (provides the `hf` command)

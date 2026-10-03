@@ -4,11 +4,11 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 
 ## 1. Summary
 
-- **56 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
-- **23 further checks found nothing** (section 11), so the coverage is visible.
+- **66 issues found** across the 31 tables, plus 4 context events from the operations log that are not data defects.
+- **37 further checks found nothing** (section 13), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **flagged** 19, **documented** 18, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
-- **Schema drift:** the loader recorded 0 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
+- How each issue was handled: **documented** 22, **flagged** 21, **standardised** 12, **fixed** 5, **resolved by identity matching** 3, **sent to human review** 2, **excluded from current view** 1.
+- **Schema drift:** the loader recorded 6 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
 **How to read the handling column**
@@ -19,7 +19,8 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | Standardised | A clean `std_*` or derived column holds one format; the original is kept |
 | Flagged | The problem cannot be repaired. A `dq_*` flag column marks the rows so downstream code can exclude or discount them |
 | Documented | Not changed and not flaggable per row; downstream users are told what to do |
-| Deferred | Handled in a later layer (customer identity), not in curation |
+| Resolved | Settled by identity matching in the gold layer (curation never merges people) |
+| Review | Left undecided on purpose; a person decides from the identity review queue |
 | Excluded | Kept in the full table, left out of the one-row-per-key `_current` table |
 | Context | A real-world event, not a data defect |
 
@@ -31,13 +32,12 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | F9 | Card phone numbers masked (`450672xxx81`): digits missing | 384,422 | 58.2% | high | Flagged |
 | R6 | Account snapshot points to a CRM customer that does not exist | 328,891 | 2.62% | high | Flagged |
 | F12 | Deposit customer key lost its leading zeros (7 or 8 digits instead of the 10-digit CIF) | 156,837 | 20.1% | high | Fixed |
-| T1 | Collections cases change abruptly from April 2026: new cases surge, cures barely grow, and the 30-day cure rate falls | 147,733 | 40.2% | high | Documented |
-| T2 | Promise break rate rises from May 2026, mostly because fewer promises are for the full overdue amount | 76,727 | 37.5% | high | Documented |
 | R2 | Contact record points to a CRM customer that does not exist | 75,500 | 2.81% | high | Flagged |
-| R10 | Same person stored as more than one CRM record (identical national-ID hash) | 36,992 | 3.63% | high | Deferred to identity layer |
+| R10 | Same person stored as more than one CRM record (identical national-ID hash) | 36,992 | 3.63% | high | Resolved by identity matching |
 | K1 | Contact channel renamed upstream: `channel` is empty and the value is in `channel_v2` | 19,463 | 55.1% | high | Fixed |
 | R1 | Collections case points to a CRM customer that does not exist | 10,365 | 2.82% | high | Flagged |
 | R3 | Promise to pay points to a CRM customer that does not exist | 6,744 | 2.82% | high | Flagged |
+| I5 | Collections case names a different customer than the holder of the accounts it lists | 1,265 | 0.34% | high | Resolved by identity matching |
 | F14 | Deposit first name is only an initial (`DYER D C`) | 778,246 | 99.8% | medium | Standardised |
 | F3 | Card date of birth in DD-MM-YYYY (every filled value) | 660,000 | 100.0% | medium | Standardised |
 | F2 | CRM date of birth not in ISO format (`dob_raw`: ISO, MM/DD/YYYY, `Mon DD YYYY`) | 405,432 | 39.7% | medium | Standardised |
@@ -47,6 +47,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | F6 | CRM date of birth where day and month are both 12 or less, so the text alone allows two readings | 128,980 | 12.6% | medium | Fixed |
 | F16 | ALL-CAPS two-word loan names with no comma: word order not stated (`KAPOOR CASEY`) | 80,607 | 19.9% | medium | Standardised |
 | R9 | Routing rule used in assignments is missing from the reference table (RR-EARLY-03, RR-MID-03, RR-LATE-03, RR-REC-03) | 74,697 | 24.0% | medium | Documented |
+| V5 | Codes in `case_assignment_history.routing_rule_id` missing from the `routing_rule` list, or inactive | 74,697 | 24.0% | medium | Documented |
 | M6 | Card days-past-due missing | 52,734 | 7.99% | medium | Documented |
 | L8 | Bureau: oldest trade is younger than newest trade (impossible) | 37,362 | 3.74% | medium | Flagged |
 | M7 | Loan days-past-due missing | 32,179 | 7.96% | medium | Documented |
@@ -56,15 +57,20 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | R4 | Agent note points to a CRM customer that does not exist | 21,592 | 2.84% | medium | Flagged |
 | M5 | Bureau record says `hit` but has no risk score | 18,937 | 1.89% | medium | Flagged |
 | L2 | Loan delinquency bucket disagrees with days past due | 14,769 | 3.65% | medium | Flagged |
-| T4 | Every promise for 90% to 99.9% of the overdue amount was broken, while promises for the full amount almost never are | 11,277 | 5.52% | medium | Documented |
+| I1 | Source customer that matched nobody (kept as its own person) | 12,595 | 0.36% | medium | Documented |
+| I6 | Collections case whose CRM ID does not exist, tied to a person through its accounts | 11,125 | 3.03% | medium | Resolved by identity matching |
 | K4 | Bureau file converted with a shifted column for some rows: inquiry counts impossible (3 months above 6 months, or 6 above 12) | 9,918 | 0.99% | medium | Flagged |
 | F18 | Deposit balances in two currencies (7,780 USD accounts among CAD) with no exchange-rate field in the data | 7,780 | 1.00% | medium | Flagged |
-| T3 | Outcomes are recorded late: case cures stop before the snapshot date, and some promises stay open after their grace period | 5,286 | 16.0% | medium | Documented |
+| I3 | Candidate match pair in the human review queue | 4,154 | 0.14% | medium | Sent to human review |
 | L3 | Case bucket disagrees with current days past due (one band higher than dpd implies) | 3,807 | 1.04% | medium | Flagged |
 | L7 | Promise marked kept but the amount paid is below the promised amount | 2,844 | 1.19% | medium | Flagged |
-| L11 | Hardship offer, or the customer's answer to one, dated after the snapshot date | 1,757 | 4.31% | medium | Documented |
+| I2 | Source customer waiting for a person to decide its match | 1,514 | 0.04% | medium | Sent to human review |
 | R5 | Call transcript points to a CRM customer that does not exist | 695 | 2.78% | medium | Flagged |
+| A1 | Unusual day or run of days that nothing in the operations log or the calendar explains | 182 | 35.3% | medium | Documented |
 | K3 | App outage 14 Sep: payments not posted, late fees charged in error; late-fee disputes about 3x baseline 15-22 Sep | 31 | 4.29% | medium | Documented |
+| M9 | Reference documents that exist only in English (no French version) | 14 | 87.5% | medium | Documented |
+| M10 | French versions are condensed summaries: sections of the English document are missing from the French one | 4 | 33.3% | medium | Documented |
+| R12 | A French document with no English version: the Quebec annex REG-SUM-001-QC | 1 | 33.3% | medium | Documented |
 | F8 | CRM phone numbers in 10 different formats | 1,004,777 | 98.5% | low | Standardised |
 | F5 | Deposit date of birth in YYYYMMDD (every filled value) | 764,244 | 98.0% | low | Standardised |
 | F10 | CRM postal code written with and without a space, in lower case, or both | 737,153 | 72.3% | low | Standardised |
@@ -73,6 +79,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | M4 | Bureau date of birth blank | 39,543 | 3.95% | low | Documented |
 | L5 | Right-party contacts exceed total contact attempts on a case | 27,680 | 7.54% | low | Flagged |
 | M3 | Deposit date of birth blank | 15,756 | 2.02% | low | Documented |
+| I4 | More people than the bank's stated 1,000,000 customers | 13,152 | 1.30% | low | Documented |
 | L6 | Case promise counts do not add up (kept + broken + open is not total) | 8,747 | 2.38% | low | Flagged |
 | L4 | Deposit overdraft used exceeds the overdraft limit | 6,343 | 0.81% | low | Flagged |
 | M1 | CRM date of birth blank | 5,026 | 0.49% | low | Documented |
@@ -80,7 +87,11 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | R11 | CRM record marked deleted (change-data operation D) | 2,115 | 0.21% | low | Excluded from current view |
 | F11 | CRM postal code typed with the letter O where the digit 0 belongs (`VOC2S8`, `L6X OZ4`) | 1,887 | 0.18% | low | Fixed |
 | L10 | Card utilisation outside 0 to 1.5 | 33 | 0.01% | low | Documented |
+| I8 | Promise to pay with no owner | 19 | 0.01% | low | Flagged |
 | L9 | Bureau: file-since date is after the pull date | 17 | 0.00% | low | Documented |
+| I7 | Collections case that could not be tied to any person | 12 | 0.00% | low | Flagged |
+| V16 | Code column with no published reference list (count of columns) | 6 | 100.0% | low | Documented |
+| V0 | Code used on a record dated before the code list's `effective_from` | 2,798,914 | 23.3% | info | Documented |
 | M8 | CRM employer name blank | 359,829 | 35.3% | info | Documented |
 | R8 | Collections case with no assignment history | 86,725 | 23.6% | info | Documented |
 
@@ -192,7 +203,7 @@ Every source system writes dates of birth, phones, postal codes and names in its
 
 **Affected:** 384,422 of 660,000 (58.2%) · **Tables:** `card_accounts` · **Severity:** high
 
-**Handling (flagged).** Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. To be treated as weak evidence in matching (the design rule is that a phone alone never links two records); the identity layer is not built yet.
+**Handling (flagged).** Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. Used as weak evidence in identity matching: Splink's phone comparison has a level for visible digits that fit a full phone, and a phone alone never links two records (see `docs/identity.md`).
 
 ### F10. CRM postal code written with and without a space, in lower case, or both
 
@@ -262,7 +273,7 @@ Records that point at something that is not there, and people stored more than o
 
 **Affected:** 10,365 of 367,229 (2.82%) · **Tables:** `collections_cases` · **Severity:** high
 
-**Handling (flagged).** Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a customer record. The identity layer (not yet built) is meant to treat them as unresolved, and customer-level features should leave them out. The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it.
+**Handling (flagged).** Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a CRM record, but identity matching ties almost all of these cases to a person through the accounts they list: see I6 (`gold.case_customer`). The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it.
 
 ### R2. Contact record points to a CRM customer that does not exist
 
@@ -318,15 +329,23 @@ Records that point at something that is not there, and people stored more than o
 
 **Affected:** 36,992 of 1,020,000 (3.63%) · **Tables:** `customers` · **Severity:** high
 
-*Evidence:* 5950 records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source.
+*Evidence:* 5950 records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source. After identity matching, 19911 people have two or more CRM records.
 
-**Handling (deferred to identity layer).** Not merged here. Curation never merges people. The identity layer (not yet built) is meant to link them (national-ID hash is its first exact rule) and assign one golden ID. Affected counts the records sitting in a duplicate group.
+**Handling (resolved by identity matching).** Curation never merges people. Identity matching links them: the national-ID hash and `duplicate_of_crm_id` are exact rules (checked against the DOB), then name + DOB + phone or postal, then Splink for CRM records with no hash. Each person gets one golden ID in `gold.customer_xref`. Affected counts the records sitting in a hash duplicate group (deleted records included).
 
 ### R11. CRM record marked deleted (change-data operation D)
 
 **Affected:** 2,115 of 1,020,000 (0.21%) · **Tables:** `customers` · **Severity:** low
 
 **Handling (excluded from current view).** Kept in `curated.customers`, excluded from `curated.customers_current`.
+
+### R12. A French document with no English version: the Quebec annex REG-SUM-001-QC
+
+**Affected:** 1 of 3 (33.3%) · **Tables:** `reference_documents` · **Severity:** medium
+
+*Evidence:* REG-SUM-001-QC (Québec Annex; applies to provinces ["QC"]).
+
+**Handling (documented).** Of the 3 French documents, two are summaries of an English document (POL-COLL-001 and POL-COLL-004). The Quebec annex is not: it holds rules that no English document states (no collection calls on Sundays in Quebec, while the English contact policy allows Sunday calls from 13:00 to 17:00 where Sunday contact is permitted, and French service by default). English is the reference language for answers, but this document is kept searchable and is always included when a question or a customer is in Quebec (province QC). Its quotes stay in French. An English version, or confirmation of the Quebec rule, should be requested from the organisers.
 
 ## 6. Missing values
 
@@ -381,6 +400,22 @@ Values that are blank where they should not be. None were imputed.
 **Affected:** 359,829 of 1,020,000 (35.3%) · **Tables:** `customers` · **Severity:** info
 
 **Handling (documented).** May be genuine (not employed). Not imputed.
+
+### M9. Reference documents that exist only in English (no French version)
+
+**Affected:** 14 of 16 (87.5%) · **Tables:** `reference_documents` · **Severity:** medium
+
+*Evidence:* languages: EN 16, FR 3; French versions exist only for POL-COLL-001 and POL-COLL-004.
+
+**Handling (documented).** Most of the policy, procedure, script, FAQ and incident documents are written in English only. English is therefore the reference language. A French question is translated to English only to search the documents; the answer is written in French, and the quoted evidence stays in English so it can still be checked word for word.
+
+### M10. French versions are condensed summaries: sections of the English document are missing from the French one
+
+**Affected:** 4 of 12 (33.3%) · **Tables:** `reference_documents` · **Severity:** medium
+
+*Evidence:* POL-COLL-001 §5.3, POL-COLL-001 §5.5, POL-COLL-004 §4.3, POL-COLL-004 §4.4.
+
+**Handling (documented).** Counted from the section list in the document metadata (total column is the English sections of the two translated documents). The French text is also about a third of the length and drops details inside the sections it keeps (the Sunday 13:00 to 17:00 window, the 30-day contact pause, the 90-day re-review). No number in a French section differs from its English counterpart, so nothing contradicts; the French is only less complete. The French POL-COLL-004 file also has no section 4.1 although its metadata lists one, so 5 sections are missing in practice, not the count above. Handling: English is the reference, and a French rendering of an English document is not searched, so an answer cannot be built from the shorter text. The organisers should confirm that the English version governs.
 
 ## 7. Values that contradict each other
 
@@ -446,51 +481,123 @@ Fields that cannot all be true at once. Neither value was changed; the rows are 
 
 **Handling (documented).** Not changed.
 
-### L11. Hardship offer, or the customer's answer to one, dated after the snapshot date
+## 8. Codes against the bank's reference lists
 
-**Affected:** 1,757 of 40,767 (4.31%) · **Tables:** `offers` · **Severity:** medium
+Columns that hold a code from a published list (`curated.code_lookups`) were checked for codes that are not on the list or are inactive. Columns with no list at all, and what the lists' effective dates can and cannot prove, are reported here too. Checks with nothing to report are in the clean list.
 
-*Evidence:* 688 offers are dated after 2026-09-28 (the latest 2026-10-22), and 1,645 answers (accepted, declined, considering) are dated after it.
+### V5. Codes in `case_assignment_history.routing_rule_id` missing from the `routing_rule` list, or inactive
 
-**Handling (documented).** Not changed. Treated as not yet known on the snapshot date: the NBA queue counts an offer only if it was made before the as-of date, and its answer and plan status only if the answer came before it (`nba/queue.py` `load_cases`). Otherwise a customer would look as if they had already been offered, or had already broken a plan, when on the as-of date neither had happened.
+**Affected:** 74,697 of 311,850 (24.0%) · **Tables:** `case_assignment_history` · **Severity:** medium
 
-## 8. Shifts and patterns that affect models
+*Evidence:* RR-EARLY-03 41264, RR-MID-03 27491, RR-LATE-03 5327, RR-REC-03 615.
 
-Not wrong values in single rows, but patterns across time or across records that change what a model or a baseline learns. Nothing was changed. None of these is explained by an event in the operations log.
+**Handling (documented).** The four unknown codes are a third version of listed rules (`RR-EARLY-03`, `RR-MID-03`, `RR-LATE-03`, `RR-REC-03`, next to the listed `-01` and `-02`): most likely new rules nobody added to the list. Nothing to repair, the routing still happened. Code that explains an assignment by its rule cannot describe these until the list's owner adds them.
 
-### T1. Collections cases change abruptly from April 2026: new cases surge, cures barely grow, and the 30-day cure rate falls
+### V0. Code used on a record dated before the code list's `effective_from`
 
-**Affected:** 147,733 of 367,229 (40.2%) · **Tables:** `collections_cases` · **Severity:** high
+**Affected:** 2,798,914 of 11,989,652 (23.3%) · **Tables:** `card_accounts`, `case_assignment_history`, `collections_cases`, `contact_history`, `external` · **Severity:** info
 
-*Evidence:* cases opened: 9,430 in Mar 2026, 13,479 in Apr, 33,001 in Aug. Cases paid up per month only move between 8,962 and 12,615 from Apr to Aug. Paid up within 30 days of opening: 60.8% of cases opened Oct 2025 to Mar 2026, 44.0% in Apr, 28.5% in Jul 2026. Cases opened in Apr 2026 that ended charged off, in legal, on insolvency hold or with an agency: 2,361, against 71 a month for Oct 2025 to Mar 2026. Before Apr 2026 the history looks fully settled: 0 of those cases are still open and 98.2% were paid up.
+*Evidence:* contact_history.outcome_code 832346, contact_history.strategy_code 571163, contact_history.script_id 284462, card_accounts.product_code 208982, collections_cases.contact_rule_set 197399, contact_history.email_template_id 122953, contact_history.sms_template_id 112186, collections_cases.strategy_code 94429, case_assignment_history.routing_rule_id 79266, external.score_reason_code_1 75897, external.score_reason_code_2 74220, external.score_reason_code_3 71938, external.score_reason_code_4 68821, contact_history.sub_outcome_code 4852.
 
-**Handling (documented).** Not changed: the values agree with each other, and no event in the operations log explains the break. Anything trained or measured across Apr 2026 must allow for it: split by time, calibrate on the most recent fully observed months, and do not compare cure or roll rates across the break without saying so. In P3's case model the not-cured rate is 41% in training, 62% in validation and 80% in the holdout, so a model calibrated on earlier months under-predicts; the bank's own `cure_30d` score is badly calibrated after the break too (calibration error 0.25, `reports/model_evaluation.md`). Affected column counts cases opened from Apr 2026.
+**Handling (documented).** Not a defect in the records. Every list's effective_from is recent (2019-2026) while the codes are used from 2016; 2016 cases even carry rule sets named `*-STD-2026`, because a case stores its current rule set. So effective_from is the date of the list's current version, not when a code started, and it cannot validate historical codes. Code history is not in the release.
 
-### T2. Promise break rate rises from May 2026, mostly because fewer promises are for the full overdue amount
+### V16. Code column with no published reference list (count of columns)
 
-**Affected:** 76,727 of 204,369 (37.5%) · **Tables:** `promises_to_pay` · **Severity:** high
+**Affected:** 6 of 6 (100.0%) · **Tables:** `agent_notes`, `collections_cases`, `contact_history`, `deposit_accounts`, `loan_accounts` · **Severity:** low
 
-*Evidence:* broken or partly kept: 36.4% of promises made Jan 2025 to Apr 2026, then 47.5% in May, 57.7% in Jun and 64.5% in Aug 2026. Promises for the full overdue amount: 49.4% of them before May, 15.2% in Aug. Within each kind the rate moves less: full amount 2.1% to 2.9%, part amount 69.9% to 75.5%. Average days past due when the promise was made: 29.4 before May, 45.8 in Aug.
+*Evidence:* loan_accounts.product_code (14 codes), deposit_accounts.product_code (8 codes), contact_history.letter_template_id (14 codes), contact_history.push_template_id (1 codes), agent_notes.template_id (16 codes), collections_cases.queue (6 codes).
 
-**Handling (documented).** Not changed. Most of the rise is a change in mix: promises for the full amount are almost never broken, and they become rarer. The rest comes with promises made later in delinquency. It starts a month after T1. Handle it as T1: time-based splits and calibration on recent months. The certified promise-kept rate for periods after Apr 2026 is not comparable with earlier periods without this note. Affected column counts resolved promises made from May 2026.
+**Handling (documented).** These columns hold codes (loan and deposit product codes, letter and push templates, note templates, case queues) that `code_lookups` does not list, so they cannot be validated. Each column is internally consistent (no case or spelling variants, F17). The reference list should gain them.
 
-### T3. Outcomes are recorded late: case cures stop before the snapshot date, and some promises stay open after their grace period
+## 9. Customer identity and the golden record
 
-**Affected:** 5,286 of 33,005 (16.0%) · **Tables:** `collections_cases`, `promises_to_pay` · **Severity:** medium
+What remains after identity matching joins the five customer keys into one person per golden ID (`gold.customer_xref`). These checks read the published gold tables. The rule is: when unsure, keep records separate. Details and measured precision: `docs/identity.md` and `reports/identity_report.md`.
 
-*Evidence:* last case cure recorded on 2026-09-15, while other case statuses run to 2026-09-28 and the snapshot is 2026-09-28; the open promises past their grace period were made in Sep 2026.
+### I1. Source customer that matched nobody (kept as its own person)
 
-**Handling (documented).** Not changed. Use the last fully recorded outcome date (the latest cure date), not the snapshot date, as the end of any outcome window: a case or promise whose window ends after it is unlabelled, not a failure. The P3 training sets already cut their labels there (`features/build_case_training_set.py`, `nba/actions.py`). Affected column counts open promises whose due date plus grace days is before the snapshot date.
+**Affected:** 12,595 of 3,487,885 (0.36%) · **Tables:** `customer_xref` · **Severity:** medium
 
-### T4. Every promise for 90% to 99.9% of the overdue amount was broken, while promises for the full amount almost never are
+*Evidence:* bureau 10106, card 1494, loan 914, crm 81.
 
-**Affected:** 11,277 of 204,369 (5.52%) · **Tables:** `promises_to_pay` · **Severity:** medium
+**Handling (documented).** Not linked: no rule matched and Splink scored below 0.80, or the record is too thin to compare (3.9% of bureau files have no name). Each keeps its own golden ID so no account is dropped (`gold.customer_xref.status = 'singleton'`). Some are probably missed links, which can be added later; a wrong merge could not be undone.
 
-*Evidence:* 11,277 of 11,277 resolved promises for 90% to 99.9% of the overdue amount were broken (typical shortfall $12.47); for exactly the full amount 1.9% were broken, for 50% to 90% 81.6%. The overdue amount on the promise matches the contact that created it for 96.0% of the 90% to 99.9% promises.
+### I2. Source customer waiting for a person to decide its match
 
-**Handling (documented).** Not changed. Nothing in the data explains why a promise a few dollars short of the full amount should always break, so this is most likely a rule of how the synthetic data was made, not customer behaviour. It is not outcome leakage: both amounts are on record when the promise is made (see evidence). Break-risk models learn it, and it carries much of the P3 promise model's lead over the bank's `ptp_break` (`reports/model_evaluation.md`). Do not present it as a finding about customers.
+**Affected:** 1,514 of 3,487,885 (0.04%) · **Tables:** `customer_xref`, `identity_review_queue` · **Severity:** medium
 
-## 9. Is the data uniform now?
+*Evidence:* in_review 1507, blocked_conflict 7.
+
+**Handling (sent to human review).** Kept separate until decided. The candidate pairs are in `gold.identity_review_queue`, both records side by side with the Splink and LLM reasons. Decisions go in `data/review/identity_decisions.csv` and are re-applied on every run. `c360_customer.dq_status = 'identity_in_review'` marks the people affected.
+
+### I3. Candidate match pair in the human review queue
+
+**Affected:** 4,154 of 3,035,608 (0.14%) · **Tables:** `identity_review_queue` · **Severity:** medium
+
+*Evidence:* grey_zone_no_llm 3343, ambiguous 638, splink_ambiguous 168, blocked_conflict 3, cluster_conflict 2.
+
+**Handling (sent to human review).** Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and the LLM second opinion has not been run (no credentials); with an LLM, only the pairs it disagrees with stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth.
+
+### I4. More people than the bank's stated 1,000,000 customers
+
+**Affected:** 13,152 of 1,013,152 (1.30%) · **Tables:** `c360_customer` · **Severity:** low
+
+*Evidence:* 15178 people have no CRM record (10171 of them bureau only); 997974 people have one.
+
+**Handling (documented).** The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as review decisions and the LLM second opinion link them.
+
+### I5. Collections case names a different customer than the holder of the accounts it lists
+
+**Affected:** 1,265 of 367,229 (0.34%) · **Tables:** `collections_cases`, `case_customer` · **Severity:** high
+
+*Evidence:* 439 of these cases have the two customers in different provinces; the case's own province matches the account holder in 433 and the named customer in 3.
+
+**Handling (resolved by identity matching).** Two different, real customers; they are never merged. The CRM IDs differ by one character in every such case and the province points to the account holder, so the case's CRM ID is almost certainly mistyped (an inference, not proven). `gold.case_customer` keeps both readings and resolves the case to the account holder; promises, contacts and notes on the case follow it, and the case's safety flags reach both people. Promises copy the same CRM ID, so joining on `crm_customer_id` alone attaches them to the wrong person.
+
+### I6. Collections case whose CRM ID does not exist, tied to a person through its accounts
+
+**Affected:** 11,125 of 367,229 (3.03%) · **Tables:** `collections_cases`, `case_customer` · **Severity:** medium
+
+**Handling (resolved by identity matching).** The missing CRM IDs (R1) cannot be repaired, but the case lists its accounts and the accounts have a matched holder, so the case gets that person's golden ID (`gold.case_customer.resolved_by = 'account_holder'`).
+
+### I7. Collections case that could not be tied to any person
+
+**Affected:** 12 of 367,229 (0.00%) · **Tables:** `collections_cases`, `case_customer` · **Severity:** low
+
+**Handling (flagged).** Its CRM ID does not exist and its accounts are not found. `gold.case_customer.golden_customer_id` is NULL; these cases appear in no customer view.
+
+### I8. Promise to pay with no owner
+
+**Affected:** 19 of 238,815 (0.01%) · **Tables:** `promises_to_pay`, `promises_enriched` · **Severity:** low
+
+**Handling (flagged).** Its case could not be tied to a person (I7) and its CRM ID does not exist. Kept in `gold.promises_enriched` with a NULL `golden_customer_id`; training and features should leave it out.
+
+## 10. Unusual days found by anomaly detection
+
+Every day of the last year, per series (contacts by channel, cases by product, payments, notes, bureau files...), was compared with its own normal: row counts against the same weekday of the previous weeks, every column's null rate likewise. Days far from normal are matched to the operations log and the calendar. Settings: `config/anomaly.yaml`; full list: `reports/anomaly_report.md`.
+
+### A1. Unusual day or run of days that nothing in the operations log or the calendar explains
+
+**Affected:** 182 of 516 (35.3%) · **Tables:** `contact_history`, `collections_cases`, `promises_to_pay`, `agent_notes`, `offers`, `transactions`, `external` · **Severity:** medium
+
+*Evidence:* payments government_benefit/direct_deposit row_count 2026-01-05 (+38706%); payments card_payment/online row_count 2025-09-27 to 2025-10-07 (+2576%); bureau_files all row_count 2026-09-16 (+16832%); cases_opened personal_loan null_rate:legal_status 2026-04-02 to 2026-04-29 (-49 pts); cases_opened personal_loan null_rate:escalation_reason 2026-04-02 to 2026-04-29 (-49 pts); cases_opened card null_rate:legal_status 2026-04-02 to 2026-04-19 (-37 pts).
+
+**Handling (documented).** Total is all episodes found. These are leads, not proven defects: the operations log does not list every issue (the release says finding them is part of the task), and some will be business changes the log does not record (a campaign, a new channel). Each needs a person to look before anything is changed. Counted per episode: consecutive flagged days of one metric moving the same way.
+
+### A2. Unusual days explained by a logged operations event
+
+**Affected:** 58 of 516 (11.2%) · **Tables:** `contact_history`, `collections_cases`, `external` · **Severity:** info
+
+*Evidence:* INC-0923, ECO-0715, REL-0926.
+
+**Handling (context, not a defect).** Detected automatically and matched to the operations log: the event lists the table and its dates overlap the episode (one day of lag allowed). Long events (layoffs, a policy) explain volume changes only. Section A checks each logged event directly.
+
+### A3. Unusual days explained by the calendar (statutory holidays, monthly billing and benefit cycles)
+
+**Affected:** 276 of 516 (53.5%) · **Tables:** `contact_history`, `collections_cases`, `transactions` · **Severity:** info
+
+**Handling (context, not a defect).** A holiday empties the outbound queues; card cases open on statement-cycle days and benefits arrive on fixed days every month. An episode on a statutory holiday, or repeating at the same point of the month in three or more other months, is labelled and not alerted.
+
+## 11. Is the data uniform now?
 
 Partly, and the difference matters.
 
@@ -504,20 +611,20 @@ Partly, and the difference matters.
 **Not uniform, on purpose or not yet:**
 
 - **The original columns are untouched.** `dob_raw`, `*_phone_raw`, `*_name_raw`, `src_customer_ref` and the rest still carry each system's own format. Use the `std_*` and derived columns, not the originals.
-- **Customer keys still differ by system** (CRM ID, card number, loan number, 10-digit CIF). Joining them into one customer is the identity layer's job; curation only repairs the CIF format.
+- **Customer keys still differ by system in `curated.*`** (CRM ID, card number, loan number, 10-digit CIF). Identity matching joins them into one golden ID per person in `gold.customer_xref`; what it left open is in section 9.
 - **The problems flagged above stay in the data.** Flagged rows are marked, not repaired (masked phones, shifted bureau columns, bucket and days-past-due disagreements, missing CRM customers).
 - **Currency is mixed** in deposit balances (flag `dq_non_cad`); no conversion is possible without a rate.
 - **Not examined:** free-text content (notes, transcripts), timezone differences between local and UTC timestamps, and enum values against reference lists beyond the contact codes in C20 and the case and spelling check that found F17.
 
-## 10. Method and limits
+## 12. Method and limits
 
 1. The six operations-log events were each searched for in the data, and the signature in the incident reports (a count, a drop in calls, a rate against baseline) was checked.
 2. For unlisted issues the data was profiled: formats per field per system, references between tables, missing values, contradictions between fields, reference codes, and case or spacing variants in all 192 enum columns.
 3. A rule finds the records it is written to find. Where the operations log gives a count and a rule finds fewer (K4), the rule is the lower bound, not the true number. Where the log cannot be matched to rows (K3), this report says so.
-4. **Not covered yet:** unmatched records and open review items. They come from the customer identity step, which is not built; this report will gain them when it is.
+4. Unmatched records and open review items come from identity matching and are reported in section 9, read from the published gold tables. If identity has not been run, those checks are listed as not runnable instead.
 5. Unlisted issues may remain. The checks cover what was thought of; new data re-runs them automatically but does not add new kinds of check.
 
-## 11. Checks that found nothing
+## 13. Checks that found nothing
 
 | ID | Check | Rows checked |
 |---|---|---:|
@@ -544,8 +651,22 @@ Partly, and the difference matters.
 | C18 | Bureau pull dated after the as-of date, or negative balances and counts | 1,000,000 |
 | C19 | Bureau score outside 300 to 900 | 1,000,000 |
 | C20 | Contact reference codes (strategy, outcome, templates, scripts) not in the reference table | 2,688,337 |
+| V1 | Codes in `card_accounts.block_code` missing from the `block_code` list, or inactive | 40,529 |
+| V2 | Codes in `card_accounts.product_code` missing from the `product_code` list, or inactive | 660,000 |
+| V3 | Codes in `collections_cases.strategy_code` missing from the `strategy_code` list, or inactive | 367,229 |
+| V4 | Codes in `collections_cases.contact_rule_set` missing from the `contact_rule_set` list, or inactive | 367,229 |
+| V6 | Codes in `contact_history.outcome_code` missing from the `outcome_code` list, or inactive | 2,688,337 |
+| V7 | Codes in `contact_history.sub_outcome_code` missing from the `outcome_code` list, or inactive | 39,774 |
+| V8 | Codes in `contact_history.strategy_code` missing from the `strategy_code` list, or inactive | 2,553,221 |
+| V9 | Codes in `contact_history.script_id` missing from the `script` list, or inactive | 605,464 |
+| V10 | Codes in `contact_history.sms_template_id` missing from the `sms_template` list, or inactive | 309,103 |
+| V11 | Codes in `contact_history.email_template_id` missing from the `email_template` list, or inactive | 326,774 |
+| V12 | Codes in `external.score_reason_code_1` missing from the `bureau_reason` list, or inactive | 969,908 |
+| V13 | Codes in `external.score_reason_code_2` missing from the `bureau_reason` list, or inactive | 950,016 |
+| V14 | Codes in `external.score_reason_code_3` missing from the `bureau_reason` list, or inactive | 919,823 |
+| V15 | Codes in `external.score_reason_code_4` missing from the `bureau_reason` list, or inactive | 880,395 |
 
-## 12. Reproduce
+## 14. Reproduce
 
 ```bash
 python -m trustissues.factory.quality.dq_report     # applies the flags and derived columns, rewrites this file
