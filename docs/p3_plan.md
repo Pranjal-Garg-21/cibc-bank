@@ -152,6 +152,7 @@ python -m trustissues.nba.train --case              # case model vs the bank's c
 python -m trustissues.nba.actions                   # step 7 + calibration from the randomised test
 python -m trustissues.nba.queue                     # NBA: one decision per open case (add --write-gold to write gold.nba_decisions)
 python -m trustissues.nba.fairness                  # reports/fairness_report.md (after train and queue)
+python -m trustissues.governance.monitoring         # reports/monitoring.md, and snapshot() for the Data Quality page
 python -m pytest tests -q
 ```
 
@@ -167,6 +168,7 @@ python -m pytest tests -q
 | NBA queue | `nba/actions.py` (values), `nba/allocate.py` (capacity), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`; every case has a case-model risk. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
 | Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and 36,020 hardship / vulnerability / high-balance cases each waiting for an approval before the hardship routing fix, **8,306 after it** (see below); 12,612 after the Do Not Call fix |
 | Fairness | `nba/fairness.py` → `reports/fairness_report.md`: both models (ours and the bank's, same holdout rows) and the morning queue compared across gender, age band, marital status, citizenship, newcomer programme, accessibility needs, dependants and preferred language, plus a proxy audit. Protected attributes are read only here (`sources.protected_attributes`, enforced by a test). See "Fairness check (3 Oct)" below |
+| Monitoring | `governance/monitoring.py` → `reports/monitoring.md` and `snapshot()` (a dict for the Data Quality page): realised AUC and calibration by month for ours and the bank's models, score and feature drift (PSI) against a like-for-like reference, the bank's own PSI, queue mix, override rate once review decisions exist, P1 identity reviews and P4 text-feature accuracy once those exist. Found a live-scoring bug on its first run, see "Monitoring (3 Oct)" |
 | Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.838 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):
@@ -372,3 +374,39 @@ Within a single quarter the features still reach 0.66–0.68, spread over ordina
 balances). Removing features cannot take that out without removing the model; the safeguard is the outcome check
 above, which shows both models calibrated for newcomers (no newcomer calibration flag for ours; the bank's promise
 score has one).
+
+### Monitoring (3 Oct)
+
+`python -m trustissues.governance.monitoring` (2 seconds) writes `reports/monitoring.md`; `snapshot(con)` returns the
+same content as a dict for the Data Quality page. Status per model is the worst of three checks: score drift (PSI
+of today's scores against a like-for-like reference: below 0.10 stable, 0.10–0.25 watch, 0.25+ act), the latest
+month's AUC against the holdout's (0.03 / 0.05 lower = watch / act), and its calibration gap (0.05 / 0.10). The
+queue now saves a feature snapshot for the promise model too (`FS-<date>-ptp_break_v0.parquet`; the one in the
+folder was stale, from an older queue), so monitoring reads exactly what the queue scored. Drift reference for the
+promise model: the 6,659 promises open on 30 Jun (the first holdout day), not all resolved holdout promises, which
+differ from today's open promises by construction.
+
+**Bug found on the first run, fixed.** Today's open cases all showed *no* open promise (0.0%, against 16.1% at every
+historical month-end). Promises still open carry `status_ts` = their creation time, and the case features and the
+case spine treated a promise as open only if `status_ts` was at or after the scoring time: right for history (every
+promise there has resolved since, so `status_ts` is its resolution), wrong for live scoring. Now a promise is resolved
+only once it has a final status recorded before the scoring time (`features/sql/case_state.sql`,
+`features/compute.py`). Training features are unchanged (only floating-point noise of 1e-16), so the models were not
+retrained. On the 28 Sep queue: 30,946 open cases (36%) now carry their open promise, mean case risk 0.674 → 0.716,
+408 decisions changed (mostly to a call), and 20,254 cards that told the agent "No open promise to pay" for a
+customer who had one are corrected. Test: `test_a_promise_still_open_counts_as_open_when_scoring_today` (fails on
+the old code). The hardship and Do Not Call tables above were measured before this fix; their totals move by a few
+cases (e.g. support calls 12,357 → 12,359).
+
+**Status on 28 Sep: act.**
+- `ptp_break_v0`: **act** for drift, and it is real. Today's open promises are almost all for part of the amount
+  (0.3% for the full amount, against 28.5% of the promises open on 30 Jun), so the mean predicted break risk is 0.90
+  against 0.57 (score PSI 2.2; `ptp_to_overdue_ratio` PSI 0.75). This is DQ check T2 at its extreme. Accuracy and
+  calibration on the months already resolved are fine (Aug: AUC 0.941, gap +0.023). Next: judge September once its
+  promises resolve.
+- `case_nocure_v0`: **watch** for calibration: it understates the not-cured rate by 0.084 in July (DQ check T1, the
+  April shift). Drift is ok (score PSI 0.042). The bank's `cure_30d` understates it by 0.271.
+- The bank's own records: `ptp_break` PSI 0.27 (act); its other nine models below 0.10. The bank writes PSI per row, with up to ~60 different values on one day for the same model, so monitoring uses that day's median (picking one row made the result change from run to run).
+- Override rate, identity reviews (P1) and text-feature accuracy (P4) show "not available yet" until
+  `gold.nba_overrides` has decisions, `gold.identity_review_queue` exists and `reports/text_feature_eval.md` is written.
+

@@ -206,8 +206,9 @@ def score_cases(con, snapshot_dir) -> tuple[dict, dict, dict, str]:
     return dict(zip(df.index, risk.tolist())), reasons, reach, snapshot_id
 
 
-def score_open_promises(con) -> dict[str, float]:
-    """ptp_id -> break risk, for open promises that are an open case's current promise."""
+def score_open_promises(con, snapshot_dir=None) -> dict[str, float]:
+    """ptp_id -> break risk, for open promises that are an open case's current promise. With snapshot_dir, the
+    features and scores are saved as FS-<date>-ptp_break_v0.parquet (read by governance/monitoring.py)."""
     from trustissues.nba.model import BreakModel
 
     compute.register_spine(con, """
@@ -216,7 +217,13 @@ def score_open_promises(con) -> dict[str, float]:
           AND p.ptp_id IN (SELECT current_ptp_id FROM src_cases WHERE case_status = 'open')""")
     cols = compute.compute(con)
     df = con.sql(compute.joined_sql(cols)).df().set_index("row_id").sort_index()
-    return dict(zip(df.index, BreakModel().predict(df).tolist()))
+    model = BreakModel()
+    risk = model.predict(df)
+    if snapshot_dir is not None:
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        df.assign(risk_score=risk).rename_axis("ptp_id").reset_index().to_parquet(
+            snapshot_dir / f"FS-{config.AS_OF_DATE:%Y%m%d}-{model.name}.parquet", index=False)
+    return dict(zip(df.index, risk.tolist()))
 
 
 def load_cases(con, as_of) -> list[dict]:
@@ -286,7 +293,7 @@ def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
 
     sources.register(con)
     risk, reasons, reach, snapshot_id = score_cases(con, config.p3_dir() / "snapshots")
-    promise_risk = score_open_promises(con)
+    promise_risk = score_open_promises(con, config.p3_dir() / "snapshots")
     cases = load_cases(con, config.AS_OF_DATE)
     flags = rules.load_case_flags(con, [c["case_id"] for c in cases])
     cal = actions.load_calibration()

@@ -195,6 +195,16 @@ SOURCES: dict[str, Source] = {
             "score": ("score", "DOUBLE"),
         },
     ),
+    # The bank's own view of its models' health (governance/monitoring.py): stated validation AUC and monthly PSI.
+    "bank_model_health": Source(
+        table="model_scores",
+        use="evaluation",
+        columns={
+            **_c("model_name", "model_version"),
+            "score_date": ("score_date", "DATE"),
+            **_c("psi_last_month", "auc_at_validation", type_="DOUBLE"),
+        },
+    ),
     # CRM safety flags: nba/rules.py ONLY (P3 plan §4 step 6). Never a model feature.
     "crm_safety_flags": Source(
         table="customers",
@@ -374,3 +384,8 @@ def deposit_opened(con):
 def protected_attributes(con):
     """nba/fairness.py ONLY: protected attributes for comparing outcomes across groups. Never a feature."""
     return relation(con, "protected_attributes")
+
+
+def bank_model_health(con):
+    """governance/monitoring.py: the bank's stated validation AUC and monthly PSI for each of its models."""
+    return relation(con, "bank_model_health")
