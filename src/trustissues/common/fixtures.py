@@ -9,6 +9,8 @@ database or a file whose name contains 'fixture' (e.g. warehouse/fixtures.duckdb
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from .interfaces import DecisionCard, Reason, BlockedAction, EvidenceQuote, apply_stubs
 
 _TABLES = ["customer_xref", "c360_customer", "c360_account", "decisioning_customer", "promises_enriched",
@@ -18,7 +20,7 @@ _TABLES = ["customer_xref", "c360_customer", "c360_account", "decisioning_custom
 
 def _is_fixture_db(con) -> bool:
     files = [row[2] for row in con.execute("PRAGMA database_list").fetchall() if row[0] != "system"]
-    return all(not f or "fixture" in f.lower() for f in files)  # empty path = in-memory
+    return all(not f or "fixture" in Path(f).name.lower() for f in files)  # empty path = in-memory
 
 
 def load_fixtures(con) -> None:
