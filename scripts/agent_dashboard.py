@@ -67,7 +67,12 @@ def open_db():
     try:
         return connect(read_only=False), True
     except Exception:
+        pass
+    try:
         return connect(read_only=True), False
+    except Exception as e:  # on Windows a writing process locks the file even for readers
+        raise SystemExit(f"The warehouse database is in use by another program, so the dashboard cannot open it.\n"
+                         f"Wait for it to finish (or close it) and start the dashboard again.\n\n{str(e).splitlines()[-1]}")
 
 
 def sign_in(con, agent_id: str) -> Session | None:
