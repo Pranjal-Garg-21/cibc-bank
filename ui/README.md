@@ -16,14 +16,19 @@ tests_ui/         API, security and integration tests
 ```
 pip install -r ui/requirements.txt          # fastapi, uvicorn (the backend's own deps are already installed)
 cd ui/web && npm ci && npm run build && cd ../..
-python ui/accounts.py add AG-1304            # create a sign-in account (prompts for a password)
+python ui/accounts.py add AG-1399            # a team lead account (prompts for a password)
 python ui/serve.py --demo                    # http://127.0.0.1:8000
 ```
 
-Staff sign in with their staff ID and password. Only an administrator can create accounts, and only for active
-staff: `python ui/accounts.py add <staff id>` (add `--generate` to create a random password, printed once),
-`remove <staff id>`, `list`. Passwords are stored as scrypt hashes in `warehouse/ui_accounts.json`, never in git.
-The sign-in page shows nothing about any member of staff.
+The sign-in page has two roles, **Team lead** and **Agent**.
+
+- **Team leads**: an administrator creates their account on the server: `python ui/accounts.py add <staff id>`
+  (team leads only; `--generate` makes a random password, printed once; also `remove`, `list`).
+- **Agents**: their team lead signs in, opens **Agent accounts**, and sets each agent's password. That password is
+  fixed: the agent cannot change it, and only their team lead can reset it or remove their access.
+
+Passwords are stored as scrypt hashes in `warehouse/ui_accounts.json`, never in git. The sign-in page shows nothing
+about any member of staff.
 
 `--demo` shows the DEMO ENVIRONMENT tag. Other switches: `--dev` (accepts the Vite dev server and serves
 `/api/docs`), `--ask-llm` (lets Ask use the language model and policy search), `--port`, `--accounts-file`.
@@ -41,7 +46,8 @@ failing.
 
 | Screen | Needs | On `main` today |
 |---|---|---|
-| Identity review | `factory.identity` (P1), `gold.identity_review_queue` | works |
+| Agent accounts (team leads) | `curated.agents` | works |
+| Identity review (team leads) | `factory.identity` (P1), `gold.identity_review_queue` | works |
 | Data status | `gold._publish_log`, `gold._contract_results`, `reports/` | works |
 | Ask | `trustissues.ask` (P2) | not connected |
 | My queue, Decision card, Team & approvals | `trustissues.nba`, `trustissues.features` (P3) | not connected |

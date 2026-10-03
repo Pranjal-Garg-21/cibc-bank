@@ -347,17 +347,22 @@ else in this section is built in v1.
 
 ### 9.1 Authentication and sessions
 
+Two roles use the app, chosen on the sign-in page: **Team lead** and **Agent** (agents and senior agents). Other
+staff roles have no access.
+
 | Aspect | v1 | Production path |
 |---|---|---|
-| Who you are | Staff ID + password. Accounts are created by an administrator on the server (`python ui/accounts.py add <staff id>`), only for active staff | The bank's SSO (OIDC) with MFA; only the login route changes |
+| Team lead accounts | Created by an administrator on the server (`python ui/accounts.py add <staff id>`), team leads only | The bank's SSO (OIDC) with MFA |
+| Agent accounts | The agent's own team lead sets the password on the *Agent accounts* page, for agents who report to them (`curated.agents.team_lead_id`). It is fixed: agents cannot change it; only their lead can reset it or remove access (which also signs them out) | SSO; the lead's page becomes access requests |
+| Sign-in check | Staff ID + password, and the staff ID's real role must match the chosen tab. A mismatch fails exactly like a wrong password | Same |
 | Before sign-in | Nothing about any member of staff is available: no directory, no search, no hints | Same |
-| Passwords | scrypt hashes (n=2^14, r=8, p=1, 16-byte salt) in `warehouse/ui_accounts.json`, outside git; 12–128 characters, not letters-only or digits-only | Held by the identity provider |
-| Failed sign-in | One message for every failure ("The staff ID or password is incorrect"), equal work whether or not the ID exists; account locks for 15 minutes after 5 failures; 5 attempts per minute per address | Identity provider's policy |
+| Passwords | scrypt hashes (n=2^14, r=8, p=1, 16-byte salt) in `warehouse/ui_accounts.json`, outside git, with when and by whom each was set; 12–128 characters, not letters-only or digits-only; never returned by the API or logged | Held by the identity provider |
+| Failed sign-in | One message for every failure, equal work whether or not the ID exists; account locks for 15 minutes after 5 failures; 5 attempts per minute per address | Identity provider's policy |
 | Session | Server-side store; browser holds only an opaque random id in an `HttpOnly; SameSite=Strict` cookie (`Secure` over HTTPS); new id on every sign-in | Same, shared store |
 | Timeouts | 15 min idle, 8 h absolute; logout deletes the server record | Same |
 
 The API never trusts a user id sent by the browser: every request re-reads the signed-in person from the session
-and re-checks them against `curated.agents`.
+and re-checks them against `curated.agents` (still active, still in the role they signed in with).
 
 ### 9.2 Authorisation
 
@@ -527,7 +532,7 @@ the first screen that shows customer data.
 | Q5 | Customer lookups: `ask()` takes a `resolver`; which function does the UI pass (P4's `customer_path`)? | P4 |
 | Q6 | Accent colour and product name on screen. | team |
 | Q7 | Is P2's `governance/masking.py` (with `config/masking.yaml`) the agreed masking rule set for the UI? | P2 |
-| Q8 | Which staff may use Identity Review? v1 default: `qa_analyst` (set `UI_IDENTITY_REVIEWER_ROLES` to change). | P1 |
+| Q8 | Which staff may use Identity Review? v1: team leads (QA analysts have no sign-in in the two-role design). | P1 |
 
 ---
 

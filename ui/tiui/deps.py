@@ -24,6 +24,10 @@ _WAREHOUSE_LOCK = threading.Lock()
 ASK_ROLE = {"agent": "agent", "senior_agent": "agent", "team_lead": "team_lead",
             "hardship_specialist": "team_lead", "qa_analyst": "analyst"}
 SUPERVISORS = ("team_lead", "hardship_specialist", "qa_analyst")
+# Who can sign in, by the role chosen on the sign-in page. Other roles have no access to this app.
+PORTALS = {"team_lead": ("team_lead",), "agent": ("agent", "senior_agent")}
+AGENT_ROLES = PORTALS["agent"]
+SIGN_IN_ROLES = PORTALS["team_lead"] + PORTALS["agent"]
 
 
 class WarehouseBusy(ApiError):
@@ -109,7 +113,7 @@ def current_user(request: Request, con) -> User:
     loses access at once)."""
     s = require_session(request)
     user = lookup_staff(con, s.user_id)
-    if user is None or user.status != "active":
+    if user is None or user.status != "active" or user.role not in SIGN_IN_ROLES or user.role != s.role:
         request.app.state.sessions.delete(s.sid)
         raise ApiError(401, "not_signed_in", "Your account is no longer active.")
     return user

@@ -8,10 +8,12 @@ from __future__ import annotations
 import importlib.util
 import sys
 
+from typing import Literal
+
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
-from ..deps import AS_OF, current_user, lookup_staff, require_session, warehouse
+from ..deps import AS_OF, PORTALS, current_user, lookup_staff, require_session, warehouse
 from ..errors import ApiError
 from ..security import SESSION_COOKIE
 
@@ -44,6 +46,7 @@ def options(request: Request):
 
 
 class Login(BaseModel):
+    role: Literal["team_lead", "agent"]  # the tab chosen on the sign-in page
     staff_id: str = Field(pattern=STAFF_ID)
     password: str = Field(min_length=1, max_length=128)
 
@@ -63,7 +66,8 @@ def login(body: Login, request: Request, response: Response):
     if ok:
         with warehouse(app.settings) as con:
             user = lookup_staff(con, staff_id)
-    if not ok or user is None or user.status != "active":
+    # Wrong role for the chosen tab fails exactly like a wrong password: nothing is revealed about the account.
+    if not ok or user is None or user.status != "active" or user.role not in PORTALS[body.role]:
         app.access_log.record(action="sign_in", outcome="refused", object_id=staff_id, request_id=request.state.request_id)
         raise ApiError(401, "sign_in_failed", FAILED)
     app.sessions.delete(request.cookies.get(SESSION_COOKIE))  # a new session id on every sign-in
@@ -102,6 +106,7 @@ def me(request: Request):
             "ask": True,
             "my_queue": not user.is_supervisor,
             "approvals": user.role in ("team_lead", "hardship_specialist"),
+            "manage_agents": user.role == "team_lead",
             "identity_review": user.role in s.identity_reviewer_roles,
             "status": True,
         },

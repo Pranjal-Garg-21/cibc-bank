@@ -21,16 +21,19 @@ def test_sign_in_page_reveals_no_staff(client):
 
 
 def test_me_lists_permissions(client):
-    sign_in(client, "Q1")
+    sign_in(client, "L1")
     me = client.get("/api/session/me").json()
-    assert me["role"] == "qa_analyst" and me["ask_role"] == "analyst"
-    assert me["site"] == "MTL" and me["languages"] == "fr" and me["signed_in_at"].endswith("+00:00")
-    assert me["can"]["identity_review"] is True and me["can"]["approvals"] is False
+    assert me["role"] == "team_lead" and me["ask_role"] == "team_lead"
+    assert me["site"] == "TOR" and me["signed_in_at"].endswith("+00:00")
+    assert me["can"]["identity_review"] is True and me["can"]["approvals"] is True and me["can"]["manage_agents"] is True
+    sign_in(client, "A1")
+    can = client.get("/api/session/me").json()["can"]
+    assert can["identity_review"] is False and can["manage_agents"] is False and can["my_queue"] is True
     assert set(me["features"]) == {"queue", "ask", "identity", "status"}
 
 
 def test_identity_queue_and_pair(client):
-    sign_in(client, "Q1")
+    sign_in(client, "L1")
     q = client.get("/api/identity/queue").json()
     assert q["total"] == 3 and q["counts_by_reason"] == {"ambiguous": 1, "grey_zone_no_llm": 1, "splink_ambiguous": 1}
     no_verdict = next(i for i in q["items"] if i["pair_id"] == PAIR_3)
@@ -49,13 +52,13 @@ def test_identity_needs_reviewer_role(client):
 
 
 def test_identity_decision_appends_csv(client, ui_settings):
-    csrf = sign_in(client, "Q1")
+    csrf = sign_in(client, "L1")
     r = client.post("/api/identity/decisions", json={"pair_id": PAIR_2, "decision": "no_match", "note": "=cmd|x\nhi"},
                     headers={"X-CSRF-Token": csrf})
     assert r.status_code == 200
     with open(ui_settings.decisions_csv, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    assert rows == [{"node_a": "-crm|2", "node_b": "card|3", "decision": "no_match", "reviewer": "Q1",
+    assert rows == [{"node_a": "-crm|2", "node_b": "card|3", "decision": "no_match", "reviewer": "L1",
                      "decided_ts": rows[0]["decided_ts"], "evidence_key": "=ek2", "note": "'=cmd|x hi"}]
     # the pair leaves the open queue until the next identity run
     assert PAIR_2 not in [i["pair_id"] for i in client.get("/api/identity/queue").json()["items"]]
@@ -65,7 +68,7 @@ def test_identity_decision_appends_csv(client, ui_settings):
 def test_identity_decision_matches_backend_format(client, ui_settings):
     """The CSV the UI writes has exactly the header the identity build reads (review_queue.FIELDS)."""
     from trustissues.factory.identity.review_queue import FIELDS
-    csrf = sign_in(client, "Q1")
+    csrf = sign_in(client, "L1")
     client.post("/api/identity/decisions", json={"pair_id": PAIR_1, "decision": "match"}, headers={"X-CSRF-Token": csrf})
     with open(ui_settings.decisions_csv, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -75,7 +78,7 @@ def test_identity_decision_matches_backend_format(client, ui_settings):
 
 
 def test_identity_decision_validates_input(client):
-    csrf = sign_in(client, "Q1")
+    csrf = sign_in(client, "L1")
     h = {"X-CSRF-Token": csrf}
     assert client.post("/api/identity/decisions", json={"pair_id": PAIR_1, "decision": "maybe"}, headers=h).status_code == 422
     assert client.post("/api/identity/decisions", json={"pair_id": "x", "decision": "match"}, headers=h).status_code == 422
@@ -229,11 +232,11 @@ def fake_ask(monkeypatch):
 
 
 def test_ask_maps_role_and_masks_rows(client, fake_ask):
-    csrf = sign_in(client, "Q1")
+    csrf = sign_in(client, "L1")
     r = client.post("/api/ask", json={"question": "How many cases by province?"}, headers={"X-CSRF-Token": csrf})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert fake_ask["user"].role == "analyst" and fake_ask["user"].user_id == "Q1"
+    assert fake_ask["user"].role == "team_lead" and fake_ask["user"].user_id == "L1"
     assert fake_ask["kw"] == {}  # no LLM unless UI_ASK_LLM=1
     assert "ANNA" not in str(body["rows"])
     assert body["path"] == "metric" and body["answer"] == "42 cases"

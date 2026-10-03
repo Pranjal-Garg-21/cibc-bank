@@ -40,7 +40,7 @@ export const ROLE_LABEL: Record<string, string> = {
 export const ROLE_DUTY: Record<string, string> = {
   agent: 'Works assigned collections cases; accepts or overrides recommended contacts.',
   senior_agent: 'Works complex collections cases; accepts or overrides recommended contacts.',
-  team_lead: 'Approves high-balance, hardship and vulnerability cases and the daily digital batch.',
+  team_lead: "Approves high-balance, hardship and vulnerability cases and the daily digital batch; manages the team's agent accounts and reviews customer identity matches.",
   hardship_specialist: 'Approves hardship and vulnerability cases; handles payment arrangements.',
   qa_analyst: 'Reviews decisions and data quality; resolves customer identity matches.',
 }

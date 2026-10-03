@@ -1,10 +1,12 @@
 """Local sign-in accounts: staff ID + password, hashed with scrypt (docs/ui_design.md §9.1).
 
 This stands in for the bank's single sign-on in the demo. There is no staff directory and nothing about a member of
-staff is shown before they sign in. Accounts live in a JSON file next to the warehouse (never in git), created by an
-administrator with `python ui/accounts.py add <staff id>`.
+staff is shown before they sign in. Accounts live in a JSON file next to the warehouse (never in git):
+team lead accounts are created by an administrator (`python ui/accounts.py add <staff id>`); an agent's password is
+set by their team lead in the app and the agent cannot change it.
 
-    {"AG-1304": {"hash": "<hex>", "salt": "<hex>", "n": 16384, "r": 8, "p": 1, "created": "2026-10-04T...Z"}}
+    {"AG-1304": {"hash": "<hex>", "salt": "<hex>", "n": 16384, "r": 8, "p": 1, "created": "2026-10-04T...Z",
+                 "set_by": "AG-1399" | "admin"}}
 
 Verification takes the same time whether or not the staff ID exists, and failures do not say which part was wrong.
 Repeated failures lock the account for a while.
@@ -67,13 +69,21 @@ class AccountStore:
     def ids(self) -> list[str]:
         return sorted(self._load())
 
-    def set_password(self, staff_id: str, password: str) -> None:
+    def info(self, staff_id: str) -> dict | None:
+        """When and by whom the password was set. Never the hash."""
+        rec = self._load().get(staff_id)
+        return {"set_at": rec.get("created"), "set_by": rec.get("set_by")} if rec else None
+
+    def all_info(self) -> dict[str, dict]:
+        return {sid: {"set_at": r.get("created"), "set_by": r.get("set_by")} for sid, r in self._load().items()}
+
+    def set_password(self, staff_id: str, password: str, set_by: str = "admin") -> None:
         problem = check_password_rules(password)
         if problem:
             raise ValueError(f"Password not accepted: {problem}.")
         salt = secrets.token_bytes(16)
         rec = {"hash": _hash(password, salt, **SCRYPT).hex(), "salt": salt.hex(), **SCRYPT,
-               "created": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+               "created": datetime.now(timezone.utc).isoformat(timespec="seconds"), "set_by": set_by}
         with self._lock:
             data = self._load()
             data[staff_id] = rec
@@ -84,6 +94,7 @@ class AccountStore:
             data = self._load()
             found = data.pop(staff_id, None) is not None
             self._save(data)
+            self._failures.pop(staff_id, None)
         return found
 
     # --- sign-in ---------------------------------------------------------------------------------------------

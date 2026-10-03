@@ -1,12 +1,13 @@
-"""Manage UI sign-in accounts (administrators only; run on the server machine).
+"""Manage team lead sign-in accounts (administrators only; run on the server machine).
 
-    python ui/accounts.py add AG-1304              # prompts for the password twice (not echoed)
-    python ui/accounts.py add AG-1304 --generate   # creates a random password and prints it once
-    python ui/accounts.py remove AG-1304
+    python ui/accounts.py add AG-1399              # prompts for the password twice (not echoed)
+    python ui/accounts.py add AG-1399 --generate   # creates a random password and prints it once
+    python ui/accounts.py remove AG-1399
     python ui/accounts.py list
 
-The staff ID must belong to an active member of staff in curated.agents. Passwords are stored only as scrypt
-hashes, in warehouse/ui_accounts.json (outside git). Share a generated password with its owner privately.
+Only active team leads get accounts here. Agents' passwords are set by their own team lead in the app
+(Agent accounts page). Passwords are stored only as scrypt hashes, in warehouse/ui_accounts.json (outside git).
+Share a generated password with its owner privately.
 """
 from __future__ import annotations
 
@@ -65,6 +66,10 @@ def main() -> int:
     if row is None or row[0] != "active":
         print(f"{a.staff_id} is not an active member of staff; no account created.", file=sys.stderr)
         return 1
+    if row[1] != "team_lead":
+        print(f"{a.staff_id} is a {row[1].replace('_', ' ')}. Only team leads are set up here; an agent's password is "
+              "set by their team lead in the app.", file=sys.stderr)
+        return 1
     if a.generate:
         password = _generate()
     else:
@@ -77,7 +82,7 @@ def main() -> int:
             print("The passwords do not match.", file=sys.stderr)
             return 1
     store.set_password(a.staff_id, password)
-    print(f"Account ready for {a.staff_id} ({row[1].replace('_', ' ')}).")
+    print(f"Team lead account ready for {a.staff_id}. They sign in with the Team lead option.")
     if a.generate:
         print(f"Password (shown once, share it privately): {password}")
     return 0

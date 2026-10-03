@@ -21,6 +21,7 @@ const IdentityQueuePage = lazy(() => import('@/pages/Identity').then((m) => ({ d
 const IdentityPairPage = lazy(() => import('@/pages/Identity').then((m) => ({ default: m.IdentityPairPage })))
 const StatusPage = lazy(() => import('@/pages/Status').then((m) => ({ default: m.StatusPage })))
 const ReportPage = lazy(() => import('@/pages/Status').then((m) => ({ default: m.ReportPage })))
+const TeamAccounts = lazy(() => import('@/pages/TeamAccounts').then((m) => ({ default: m.TeamAccounts })))
 
 // The server puts a fresh nonce in this meta tag on every page load and allows it in the Content Security Policy;
 // the dialog scroll-lock uses it for its one <style> element. Nothing else inline is allowed.
@@ -42,7 +43,7 @@ function Home() {
   if (!me) return null
   if (me.can.my_queue && me.features.queue) return <Navigate to="/queue" replace />
   if (me.can.approvals && me.features.queue) return <Navigate to="/approvals" replace />
-  if (me.can.identity_review) return <Navigate to="/identity" replace />
+  if (me.can.manage_agents) return <Navigate to="/team" replace />
   return <Navigate to="/ask" replace />
 }
 
@@ -65,7 +66,8 @@ function App() {
         <Route index element={<Home />} />
         <Route path="ask" element={<Ask />} />
         <Route path="queue" element={<Guard allow={me.can.my_queue}><Queue /></Guard>} />
-        <Route path="approvals" element={<Guard allow={me.can.approvals || me.role === 'qa_analyst'}><Approvals /></Guard>} />
+        <Route path="approvals" element={<Guard allow={me.can.approvals}><Approvals /></Guard>} />
+        <Route path="team" element={<Guard allow={me.can.manage_agents}><TeamAccounts /></Guard>} />
         <Route path="cases/:recId" element={<DecisionCard />} />
         <Route path="identity" element={<Guard allow={me.can.identity_review}><IdentityQueuePage /></Guard>} />
         <Route path="identity/:pairId" element={<Guard allow={me.can.identity_review}><IdentityPairPage /></Guard>} />

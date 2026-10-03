@@ -28,7 +28,8 @@ tiui.accounts.SCRYPT = {"n": 2 ** 10, "r": 8, "p": 1}
 
 # Generated per test run: never a real or reused credential.
 TEST_PASSWORD = "t3st-" + secrets.token_urlsafe(12)
-ACCOUNTS = ("A1", "A2", "L1", "Q1", "X1")  # X1 is a terminated member of staff
+ACCOUNTS = ("A1", "A2", "A3", "L1", "L2", "Q1", "X1")  # X1 is terminated; Q1 is a QA analyst (no sign-in role)
+ROLE_TAB = {"L1": "team_lead", "L2": "team_lead"}  # everyone else signs in on the Agent tab
 PAIR_1 = "a" * 32
 PAIR_2 = "b" * 32
 PAIR_3 = "d" * 32
@@ -45,6 +46,8 @@ def build_warehouse(path: Path) -> None:
         ('A1', 'Agent One', 'T1', 'agent', false, 'active', 'TOR', 'L1', 'en', 'full_time'),
         ('A2', 'Agent Two', 'T1', 'agent', true, 'active', 'TOR', 'L1', 'en|fr', 'full_time'),
         ('L1', 'Lead One', 'T1', 'team_lead', false, 'active', 'TOR', NULL, 'en', 'full_time'),
+        ('L2', 'Lead Two', 'T2', 'team_lead', false, 'active', 'MTL', NULL, 'fr', 'full_time'),
+        ('A3', 'Agent Three', 'T2', 'agent', false, 'active', 'MTL', 'L2', 'fr', 'full_time'),
         ('Q1', 'QA One', 'T9', 'qa_analyst', false, 'active', 'MTL', NULL, 'fr', 'part_time'),
         ('X1', 'Gone', 'T1', 'agent', false, 'terminated', 'TOR', 'L1', 'en', 'full_time')""")
     con.execute("""CREATE TABLE gold.identity_review_queue (pair_id VARCHAR, node_a VARCHAR, node_b VARCHAR,
@@ -100,8 +103,9 @@ def make_client(ui_settings):
 
 
 def sign_in(c: TestClient, agent_id: str) -> str:
-    """Sign in and return the CSRF token."""
-    r = c.post("/api/session/login", json={"staff_id": agent_id, "password": TEST_PASSWORD})
+    """Sign in on the right tab and return the CSRF token."""
+    r = c.post("/api/session/login",
+               json={"role": ROLE_TAB.get(agent_id, "agent"), "staff_id": agent_id, "password": TEST_PASSWORD})
     assert r.status_code == 200, r.text
     me = c.get("/api/session/me")
     assert me.status_code == 200, me.text

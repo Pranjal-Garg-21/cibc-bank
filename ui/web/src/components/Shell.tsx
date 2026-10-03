@@ -30,7 +30,8 @@ import { cn } from '@/lib/utils'
 function navFor(me: Me) {
   return [
     { to: '/queue', label: 'My work queue', show: me.can.my_queue },
-    { to: '/approvals', label: 'Team & approvals', show: me.can.approvals || me.role === 'qa_analyst' },
+    { to: '/approvals', label: 'Team & approvals', show: me.can.approvals },
+    { to: '/team', label: 'Agent accounts', show: me.can.manage_agents },
     { to: '/ask', label: 'Ask', show: me.can.ask },
     { to: '/identity', label: 'Identity review', show: me.can.identity_review },
     { to: '/status', label: 'Data quality', show: me.can.status },
@@ -41,7 +42,7 @@ function accessList(me: Me): string[] {
   const a: string[] = []
   if (me.can.my_queue) a.push('Own case queue')
   if (me.can.approvals) a.push('Approvals')
-  if (me.role === 'qa_analyst') a.push('Decision review')
+  if (me.can.manage_agents) a.push("Agent accounts: set your agents' passwords")
   if (me.can.identity_review) a.push('Identity review')
   a.push('Ask', 'Data quality')
   return a

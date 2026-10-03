@@ -20,8 +20,19 @@ export type Me = {
   signed_in_at: string
   max_hours: number
   features: { queue: boolean; ask: boolean; identity: boolean; status: boolean }
-  can: { ask: boolean; my_queue: boolean; approvals: boolean; identity_review: boolean; status: boolean }
+  can: { ask: boolean; my_queue: boolean; approvals: boolean; manage_agents: boolean; identity_review: boolean; status: boolean }
 }
+
+export type TeamAgent = {
+  agent_id: string
+  name: string | null
+  role: string
+  team_id: string | null
+  has_account: boolean
+  set_at: string | null
+  set_by: string | null
+}
+export type TeamAgents = { team_lead: string; agents: TeamAgent[] }
 
 export type Options = { sign_in_configured: boolean; demo: boolean; as_of_date: string; idle_minutes: number }
 

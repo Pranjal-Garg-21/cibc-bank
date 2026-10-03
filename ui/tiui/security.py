@@ -66,6 +66,14 @@ class SessionStore:
         with self._lock:
             self._s.pop(sid or "", None)
 
+    def delete_user(self, user_id: str) -> int:
+        """End every session of one member of staff (their access was removed)."""
+        with self._lock:
+            sids = [sid for sid, s in self._s.items() if s.user_id == user_id]
+            for sid in sids:
+                del self._s[sid]
+        return len(sids)
+
 
 def csrf_ok(session: Session, token: str | None) -> bool:
     return bool(token) and hmac.compare_digest(session.csrf, token)

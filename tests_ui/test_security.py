@@ -32,8 +32,8 @@ def test_every_route_is_guarded(client):
             assert r.status_code in (401, 501), (method, path, r.status_code)
 
 
-def login(c, staff_id, password=TEST_PASSWORD):
-    return c.post("/api/session/login", json={"staff_id": staff_id, "password": password})
+def login(c, staff_id, password=TEST_PASSWORD, role="agent"):
+    return c.post("/api/session/login", json={"role": role, "staff_id": staff_id, "password": password})
 
 
 def test_no_accounts_means_no_sign_in(make_client, tmp_path):
@@ -105,7 +105,7 @@ def test_headers_on_every_response(client):
 
 
 def test_writes_need_csrf_token(client):
-    csrf = sign_in(client, "Q1")
+    csrf = sign_in(client, "L1")
     body = {"pair_id": PAIR_1, "decision": "match"}
     assert client.post("/api/identity/decisions", json=body).status_code == 403
     assert client.post("/api/identity/decisions", json=body, headers={"X-CSRF-Token": "wrong"}).status_code == 403
@@ -113,14 +113,14 @@ def test_writes_need_csrf_token(client):
 
 
 def test_foreign_origin_refused(client):
-    csrf = sign_in(client, "Q1")
+    csrf = sign_in(client, "L1")
     r = client.post("/api/identity/decisions", json={"pair_id": PAIR_1, "decision": "match"},
                     headers={"X-CSRF-Token": csrf, "Origin": "https://evil.example"})
     assert r.status_code == 403 and r.json()["code"] == "bad_origin"
 
 
 def test_oversized_body_refused(client):
-    csrf = sign_in(client, "Q1")
+    csrf = sign_in(client, "L1")
     r = client.post("/api/identity/decisions", content=b"x" * 40000,
                     headers={"X-CSRF-Token": csrf, "Content-Type": "application/json"})
     assert r.status_code == 413
@@ -141,7 +141,7 @@ def test_deactivated_user_loses_access_at_once(client, ui_settings):
 
 
 def test_errors_do_not_leak_internals(client):
-    sign_in(client, "Q1")
+    sign_in(client, "L1")
     r = client.get("/api/identity/pairs/not-a-pair")
     assert r.status_code == 404
     assert "Traceback" not in r.text and "SELECT" not in r.text
@@ -162,7 +162,7 @@ def test_refusals_are_logged(client, ui_settings):
 
 def test_no_connection_left_open(client, ui_settings):
     """After a request the warehouse can be opened for writing: the UI never holds the lock (§3.1)."""
-    sign_in(client, "Q1")
+    sign_in(client, "L1")
     client.get("/api/identity/queue")
     con = duckdb.connect(str(ui_settings.warehouse))  # would fail if a connection were still open
     con.close()
