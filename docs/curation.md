@@ -1,6 +1,6 @@
 # Curation: raw to curated
 
-**Status: complete on the real data (2026-10-03).** All 31 tables are built, `scripts/verify_warehouse.py` passes every check, and the 35 unit tests pass. This file is the record of what the curated layer does, what the real data showed, and what is still open. Setup and run commands: [`../requirements.md`](../requirements.md). Component reference: [`documentation.md`](documentation.md).
+**Status: complete on the real data (2026-10-03).** All 31 tables are built, `scripts/verify_warehouse.py` passes every check, and the 35 unit tests pass. This file is the record of what the curated layer does, what the real data showed, and what is still open. Setup and run commands: [`../requirements.md`](../requirements.md). How values that cannot be read with certainty are handled: [`ambiguous_values.md`](ambiguous_values.md). Component reference: [`documentation.md`](documentation.md).
 
 **The data quality report** (`reports/data_quality_report.md`) is the full account of the issues in the data, how many records each affected and how each was handled. This file covers how curation works; that one covers what was wrong with the data. Curation findings that appear in both agree.
 
@@ -79,15 +79,15 @@ The standardise functions were checked against the real data, not just unit test
 
 **How full the columns are** (share of rows with a value):
 
-| Source | Name | DOB | DOB ambiguous (both readings kept) | Phone as full number | Phone masked | Postal |
+| Source | Name | DOB | DOB ambiguous in the text, then after resolution | Phone as full number | Phone masked | Postal |
 |---|---:|---:|---:|---:|---:|---:|
-| `customers` | 100% | 99.5% | 12.6% | 98.5% | 0% | 98.8% |
-| `card_accounts` | 100% | 100% | **36.3%** | 38.8% | **58.2%** | 99.0% |
+| `customers` | 100% | 99.5% | 12.6% then 0% | 98.5% | 0% | 98.8% |
+| `card_accounts` | 100% | 100% | **36.3%** then 0% | 38.8% | **58.2%** | 99.0% |
 | `loan_accounts` | 100% | 99.0% | 0% | 98.0% | 0% | 99.0% |
 | `deposit_accounts` | 100% | 98.0% | 0% | 96.0% | 0% | 99.0% |
 | `external` (bureau) | 96.1% | 96.0% | 0% | none | none | 95.1% |
 
-Consequences for matching: **card phone numbers are weak evidence** (58% are masked, keeping only a prefix and suffix), and **a third of card DOBs carry two readings**, so matching must test both.
+Consequences for matching: **card phone numbers are weak evidence** (58% are masked, keeping only a prefix and suffix). Date-of-birth ambiguity is settled before matching, so no identity table has an ambiguous date left: the CRM's 128,980 by its own cleaned `date_of_birth` (certain), the cards' 239,324 by the column's day-first convention (inferred from 398,847 day-first dates against 0 month-first). The reasoning and evidence are in [`ambiguous_values.md`](ambiguous_values.md).
 
 **Name parsing against ground truth.** `customers` has clean first and last name columns next to the raw name, so the parser could be scored: last name matches 99.5% of rows and first name 99.9%.
 
@@ -105,7 +105,7 @@ Both match the setting in `config/curate.yaml`. Two more findings: `deposit_acco
 | Field | Columns | Rule |
 |---|---|---|
 | Name | `std_name_first`, `_middle_initials`, `_last`, `_first_is_initial`, `_key` | Uppercase, accents stripped (the data is valid UTF-8; accents are real). A comma means last-first; trailing single letters mean last-first; ALL-CAPS two words follow the source's setting; otherwise left ambiguous. `_key` is the sorted token set, so word order does not matter |
-| Date of birth | `std_dob`, `std_dob_alt`, `std_dob_ambiguous` | Year-first and month-name forms are unambiguous. A day above 12 resolves the order. If both readings are valid both are kept (`/` ranked month-first, `-` and `.` day-first). Impossible dates give NULL |
+| Date of birth | `std_dob`, `std_dob_alt`, `std_dob_ambiguous`, `std_dob_was_ambiguous`, `std_dob_basis` | Decided by a ladder, strongest evidence first: (1) only one reading possible (a part above 12, year-first formats, month names); (2) the source's own cleaned column when one exists (CRM `date_of_birth`, `std_dob_basis` = `source_clean_column`); (3) the column's own convention inferred from its one-way dates, only if at least 1,000 exist and the minority order is under 0.1% (cards, day-first, `convention`); (4) otherwise both readings are kept (`ambiguous`, `std_dob_alt` holds the other). `std_dob_was_ambiguous` says the text alone was ambiguous. A mixed column is never guessed. Impossible dates give NULL. Evidence per column: `curated._date_conventions` |
 | Phone | `std_phone_<label>_e164`, `_masked`, `_prefix`, `_suffix` | `+1` plus ten digits. A masked phone has no full number, only its visible prefix and suffix. Phone alone never links records |
 | Postal | `std_postal`, `std_fsa` | `A1A1A1`, and the first three characters. `external` takes the postal code from the end of the address |
 | Employer | `std_employer` | Drops the `(City)` suffix and legal-form words so spelling variants collapse |

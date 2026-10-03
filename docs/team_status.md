@@ -32,7 +32,7 @@ The run also added columns to the curated tables. **Use these instead of the ori
 
 - **Duplicates are business-level**, not exact rows. 5,950 CRM records are flagged `duplicate_of_crm_id`.
 - **Card phones are weak evidence:** 58.2% are masked (only a prefix and suffix survive).
-- **36.3% of card dates of birth are ambiguous** (day and month could be swapped); both readings are kept in `std_dob` and `std_dob_alt`.
+- **Dates of birth are no longer ambiguous in any identity table.** 36.3% of card dates and 12.6% of CRM dates could be read two ways in the text; they are now settled (CRM by its own clean `date_of_birth`, cards by a day-first convention inferred from the data). `std_dob_basis` says how each one was decided. See `ambiguous_values.md`. The card rule is an inference and gets validated once identity matching links card holders to CRM people.
 - **Deposit names are surname plus initials only** (the first name is just an initial in 99.8% of rows).
 - 3.9% of bureau (`external`) rows have no name.
 
