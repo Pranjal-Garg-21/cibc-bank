@@ -7,6 +7,8 @@
 
 Stages, in order (each runs as its own process, so connections and memory do not carry over):
     pipeline       Layer 1: raw -> curated -> quality (factory/pipeline.py, P1)
+    policy_index   P4's policy chunks for the Ask page (ask/rag/policy_ingest.py -> warehouse/rag/policy_chunks.jsonl,
+                   seconds); reads the warehouse read-only
     text_features  P4's LLM text features for open-case customers, newest 20,000 not yet extracted
                    (features/text_extract.py --scope open_cases). Without an LLM key it stops itself at once
                    and the run goes on; the queue then works from the features already in gold.text_features
@@ -31,6 +33,7 @@ from trustissues.common import config
 
 STAGES = [
     ("pipeline", ["trustissues.factory.pipeline"]),
+    ("policy_index", ["trustissues.ask.rag.policy_ingest"]),
     ("text_features", ["trustissues.features.text_extract", "--scope", "open_cases", "--limit", "20000"]),
     ("queue", ["trustissues.nba.queue", "--write-gold"]),
     ("fairness", ["trustissues.nba.fairness"]),

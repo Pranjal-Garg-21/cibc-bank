@@ -153,6 +153,8 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
 
 
 def _rag_card(card, path, resp: RagResponse) -> AnswerCard:
+    if resp.answer is None and resp.coverage:  # the path could not run (no model, no index, no history connected)
+        return card(f"I could not answer this: {resp.coverage}.", path)
     if resp.not_found or not resp.answer:
         return card("The available sources do not contain an answer.", path,
                     notes=[resp.coverage] if resp.coverage else [])

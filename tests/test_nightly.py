@@ -13,9 +13,9 @@ def _names(**kw):
 
 
 def test_order_resume_and_skip():
-    assert _names() == ["pipeline", "text_features", "queue", "fairness", "monitoring"]
+    assert _names() == ["pipeline", "policy_index", "text_features", "queue", "fairness", "monitoring"]
     assert _names(start="queue") == ["queue", "fairness", "monitoring"]
-    assert _names(skip_pipeline=True) == ["text_features", "queue", "fairness", "monitoring"]
+    assert _names(skip_pipeline=True) == ["policy_index", "text_features", "queue", "fairness", "monitoring"]
     assert _names(only="fairness") == ["fairness"]
 
 

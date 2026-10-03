@@ -30,12 +30,24 @@ def test_corpus_goes_to_policy_path(monkeypatch):
     assert (seen["as_of"], seen["user_role"], seen["user_id"]) == (date(2026, 9, 28), "team_lead", "lead1")
 
 
+def test_corpus_reads_hardship_rows_through_the_handlers_connection(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(policy_answer, "answer_policy", lambda q, index, **kw: seen.update(kw) or RagResponse("ok"))
+    rag_handler.make_rag_handler("IDX", llm="LLM", con="CON")(req())
+    assert seen["con"] == "CON"  # the app's connection, never a second one to the same file
+
+
 def test_model_outage_is_not_found_not_invented(monkeypatch):
     def boom(*a, **k):
         raise LLMError("down")
     monkeypatch.setattr(policy_answer, "answer_policy", boom)
     out = rag_handler.make_rag_handler("IDX", llm="LLM")(req())
     assert out.not_found and out.answer is None and "unavailable" in out.coverage
+
+
+def test_policy_without_an_index_says_so():
+    out = rag_handler.make_rag_handler(None, llm="LLM")(req())
+    assert out.not_found and "policy_ingest" in out.coverage
 
 
 def test_customer_path_without_a_warehouse_says_so():
@@ -95,3 +107,11 @@ def test_case_customer_resolver_reads_the_assignment_on_the_as_of_date(con):
     assert (owner.golden_customer_id, owner.assigned_agent_id) == ("G-1", "AG-NOW")
     assert case_customer_resolver(con, date(2026, 9, 10))(CASE).assigned_agent_id == "AG-OLD"
     assert case_customer_resolver(con, AS_OF)("CS-2026-999999") is None
+
+
+def test_a_path_that_cannot_run_says_why_not_that_the_sources_lack_it():
+    def down(r):
+        return RagResponse(answer=None, not_found=True, coverage="language model unavailable: no key")
+    card = ask("What is the grace period before a promise to pay is considered broken?", UserContext("L1", "team_lead"),
+               as_of_date=AS_OF, rag=down)
+    assert card.path == "rag_corpus" and card.answer == "I could not answer this: language model unavailable: no key."

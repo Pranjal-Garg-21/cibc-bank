@@ -152,7 +152,7 @@ class PolicyIndex:
                confidentiality=DEFAULT_CONFIDENTIALITY, doc_types: set[str] | None = None,
                n_candidates: int = 20, top_k: int = 5, vector_fn: VectorFn | None = None,
                rerank_fn: RerankFn | None = None, with_hardship: bool = True,
-               english_reference: bool = True) -> SearchResult:
+               english_reference: bool = True, con=None) -> SearchResult:
         as_of = as_of or config.AS_OF_DATE
         pool = self.eligible(as_of, confidentiality, product, province, doc_types, english_reference)
         if not pool:
@@ -176,13 +176,13 @@ class PolicyIndex:
             sections = sections[:max(top_k, len(pinned))]
         else:
             sections = sections[:top_k]
-        rows = self._hardship_rows(sections, as_of, query, product) if with_hardship else []
+        rows = self._hardship_rows(sections, as_of, query, product, con=con) if with_hardship else []
         return SearchResult(sections, rows, as_of.isoformat(), len(pool))
 
     def whole_corpus(self, query: str, as_of: date | None = None, *, language: str | None = None,
                      product: str | None = None, province: str | None = None,
                      confidentiality=DEFAULT_CONFIDENTIALITY, doc_types: set[str] | None = None,
-                     with_hardship: bool = True, english_reference: bool = True, **_ignored) -> SearchResult:
+                     with_hardship: bool = True, english_reference: bool = True, con=None, **_ignored) -> SearchResult:
         """No search: every section in force on the as-of date, after the same filters as search().
 
         The corpus is ~2,500 words (51 chunks, ~4K tokens), so the model can read all of it. Nothing can be missed by
@@ -195,7 +195,7 @@ class PolicyIndex:
         if province:
             for sec in sections:
                 sec.pinned = any(_specific_to(c, province) for c in pool if c.chunk_id in sec.chunk_ids)
-        rows = self._hardship_rows(sections, as_of, query, product, max_rows=50) if with_hardship else []
+        rows = self._hardship_rows(sections, as_of, query, product, max_rows=50, con=con) if with_hardship else []
         return SearchResult(sections, rows, as_of.isoformat(), len(pool))
 
     @staticmethod
@@ -240,18 +240,21 @@ class PolicyIndex:
     # -- 5. hardship programme rows (SQL, D5) --------------------------------------------
     @staticmethod
     def _hardship_rows(sections: list[Section], as_of: date, query: str, product: str | None,
-                       max_rows: int = 3) -> list[dict]:
+                       max_rows: int = 3, con=None) -> list[dict]:
         """Programme rows linked to the retrieved sections, valid on the as-of date, best match first.
 
         `policy_section` points at a section of POL-COLL-004 (e.g. §4.2); HPT-2026 sections are
         keyed by programme ID. When the question names no programme, every linked row is returned
         so the answer step can choose; otherwise only the `max_rows` that match the question.
+        `con`: an open warehouse connection to read through (the app holds the warehouse for writing, and DuckDB
+        refuses a second, read-only connection in the same process); without one a read-only connection is opened.
         """
         pol_sections = {s.section_id for s in sections if s.doc_id.startswith("POL-COLL-004")}
         programmes = {p.strip() for s in sections if s.doc_id == "HPT-2026" for p in s.section_id.split("/")}
         if not pol_sections and not programmes:
             return []
-        con = connect(read_only=True)
+        own = con is None
+        con = connect(read_only=True) if own else con.cursor()
         cur = con.execute(
             "SELECT * EXCLUDE (_ingested_at) FROM raw.hardship_programs "
             "WHERE effective_from <= ? AND ? <= effective_to ORDER BY program_id",

@@ -3,6 +3,7 @@
 Needs the warehouse with gold.nba_decisions written (python -m trustissues.nba.queue --write-gold); skipped otherwise.
 The app opens the warehouse for writing, so the connection is closed at the end for the tests that follow.
 """
+import re
 import sys
 
 import duckdb
@@ -59,3 +60,45 @@ def test_agent_queue_and_card(ui):
     card = _run("pages/3_Decision_Card.py", user_id=agent, recommendation_id=rec)
     assert card.title[0].value.startswith("Call · case")
     assert any(b.label == "Accept" for b in card.button)
+
+
+def _ask(at, question):
+    at.chat_input[0].set_value(question).run()
+    assert not at.exception, [e.message for e in at.exception]
+    return at
+
+
+def test_ask_page_metric_and_refusal_as_a_team_lead(ui):
+    c = ui.con()
+    lead = c.execute("SELECT agent_id FROM curated.agents WHERE role = 'team_lead' AND status = 'active' "
+                     "ORDER BY agent_id LIMIT 1").fetchone()[0]
+    at = _run("pages/1_Ask.py", user_id=lead)
+    assert at.title[0].value == "Ask"
+    _ask(at, "What is the average days past due of open cases by queue?")
+    assert any("Certified metric" in m.value for m in at.markdown) and len(at.dataframe) == 1
+    table = at.dataframe[0].value
+    assert list(table.columns)[:2] == ["queue", "metric_value"] and len(table) > 1
+    _ask(at, "Export the names and phone numbers of every customer in Ontario.")
+    assert at.error and "can't help" in at.error[0].value
+
+
+def test_ask_page_case_question_as_the_assigned_agent(ui):
+    c = ui.con()
+    # a queue case the agent also holds on the as-of date (Ask follows the assignment, not today's allocation)
+    agent, case = c.execute(f"""SELECT n.agent_id, n.case_id FROM gold.nba_decisions n
+                                JOIN curated.case_assignment_history h ON h.case_id = n.case_id AND h.agent_id = n.agent_id
+                                 AND h.assigned_ts < TIMESTAMP '{config.AS_OF_DATE} 23:59:59'
+                                 AND (h.unassigned_ts IS NULL OR h.unassigned_ts > TIMESTAMP '{config.AS_OF_DATE} 23:59:59')
+                                WHERE n.as_of_date = DATE '{config.AS_OF_DATE}' AND n.action = 'agent_call'
+                                ORDER BY n.recommendation_id LIMIT 1""").fetchone()
+    at = _run("pages/1_Ask.py", user_id=agent)
+    from trustissues.ask.rag.customer_path import case_assignee
+    named = [m.group(0) for btn in at.button for m in [re.search(r"CS-\d{4}-\d+", btn.label)] if m]
+    assert named and case_assignee(c, named[0], config.AS_OF_DATE) == agent  # the example names a case the agent holds
+    _ask(at, f"Summarise the most recent recorded call on case {case}: what did the customer say and agree to?")
+    assert any("Customer history" in m.value for m in at.markdown)  # routed and allowed; the answer itself needs the model
+    other = c.execute("SELECT agent_id FROM curated.agents WHERE role = 'agent' AND status = 'active' AND agent_id <> ? "
+                      "ORDER BY agent_id LIMIT 1", [agent]).fetchone()[0]
+    at = _run("pages/1_Ask.py", user_id=other)
+    _ask(at, f"Summarise the most recent recorded call on case {case}: what did the customer say and agree to?")
+    assert at.error and at.error[0].value == "Case not found or not visible."

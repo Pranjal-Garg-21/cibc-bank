@@ -1,4 +1,6 @@
-"""Execute only validated queries on dedicated read-only or in-memory connections."""
+"""Execute only validated queries, never able to write: a path is opened read_only, an injected in-memory connection is
+used as is, and an injected file connection (the app's, which holds the warehouse) runs the query on its own cursor inside a READ ONLY
+transaction that is always rolled back, so DuckDB itself refuses any write."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -40,11 +42,12 @@ def execute(query: ValidatedQuery, parameters: Mapping[str, object] | None = Non
         if not path.is_file():
             raise FileNotFoundError(path)
         con = duckdb.connect(str(path), read_only=True)
-    elif any(row[2] for row in con.execute("PRAGMA database_list").fetchall()):
-        raise ValueError("Injected connections must be in-memory; files use read_only=True")
+    file_backed = not own and any(row[2] for row in con.execute("PRAGMA database_list").fetchall())
+    if file_backed:  # a cursor has its own transaction, so the caller's connection and any open transaction are untouched
+        con = con.cursor()
     args = dict(parameters or {})
     if set(args) & set(query.scope_parameters) or any(k.startswith("__ti_scope_") for k in args):
-        if own:
+        if own or file_backed:
             con.close()
         raise ValueError("Caller cannot override scope parameters")
     args.update(query.scope_parameters)
@@ -57,6 +60,8 @@ def execute(query: ValidatedQuery, parameters: Mapping[str, object] | None = Non
         start = monotonic()
         timer.start()
         try:
+            if file_backed:
+                con.execute("BEGIN TRANSACTION READ ONLY")
             cursor = con.execute(query.sql, args)
             columns = tuple(d[0] for d in cursor.description)
             rows = tuple(cursor.fetchmany(query.row_cap + 1))
@@ -72,5 +77,7 @@ def execute(query: ValidatedQuery, parameters: Mapping[str, object] | None = Non
         finally:
             timer.cancel()
             timer.join()
-            if own:
+            if file_backed:
+                con.execute("ROLLBACK")
+            if own or file_backed:
                 con.close()

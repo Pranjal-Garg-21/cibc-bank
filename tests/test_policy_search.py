@@ -111,6 +111,25 @@ def test_hardship_rows_come_from_the_table_for_the_as_of_date(warehouse_index):
     assert (red3["payment_reduction_pct"], red3["duration_months"], red3["effective_to"]) == ("0.5", "3", "9999-12-31")
 
 
+def test_hardship_rows_read_through_the_callers_connection(monkeypatch):
+    """The app holds the warehouse for writing; DuckDB refuses a second connection in that process, so the rows must
+    be read through the caller's connection when one is given (never by opening another)."""
+    import duckdb
+    from trustissues.ask.rag import policy_search
+
+    monkeypatch.setattr(policy_search, "connect", lambda **kw: pytest.fail("opened its own connection"))
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE SCHEMA raw")
+    con.execute("""CREATE TABLE raw.hardship_programs AS SELECT * FROM (VALUES
+        ('HP-1', 'Reduced payment', 'half for 3 months', '§4.2', '["card"]', '2026-01-01', '9999-12-31', now()),
+        ('HP-OLD', 'Old plan', 'ended', '§4.2', '["card"]', '2024-01-01', '2025-01-01', now()))
+        t(program_id, program_name, description, policy_section, product_types, effective_from, effective_to, _ingested_at)""")
+    ix = PolicyIndex([mk("POL-COLL-004", "1", "2026-01-01", "§4.2", "reduced payment programme")])
+    rows = ix.whole_corpus("reduced payment", date(2026, 9, 28), con=con).hardship_rows
+    assert [r["program_id"] for r in rows] == ["HP-1"]  # only the one in force on the as-of date
+    assert con.execute("SELECT 1").fetchone() == (1,)  # the caller's connection is still open
+
+
 # ---- English is the reference -------------------------------------------------------------------
 def test_french_translations_are_not_searched_but_french_only_documents_are():
     from trustissues.ask.rag.policy_search import translation_ids

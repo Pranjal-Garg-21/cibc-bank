@@ -70,7 +70,7 @@ def test_customer_rag_checks_assignment():
 
 def test_default_rag_is_honest_about_having_no_sources():
     a = ask("Is CASL express consent needed to send a collections payment reminder by email?", LEAD, as_of_date=AS_OF)
-    assert a.path == "rag_corpus" and "do not contain" in a.answer
+    assert a.path == "rag_corpus" and a.answer == "I could not answer this: RAG handler not connected."
 
 
 def test_grouped_rows_come_back_in_a_stable_natural_order():

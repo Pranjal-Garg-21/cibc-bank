@@ -21,7 +21,7 @@ from .rag import customer_path
 def make_rag_handler(index, llm: LLM | None = None, *, con=None):
     """-> callable(RagRequest) -> RagResponse for `ask(..., rag=...)`.
 
-    `index` is a `PolicyIndex` (load it once). `con` is an open warehouse connection holding gold.customer_timeline
+    `index` is a `PolicyIndex` (load it once); None (not built) makes policy questions say so. `con` is an open warehouse connection holding gold.customer_timeline
     and gold.case_customer; without it the customer path says plainly that it is not connected. A model outage
     returns `not_found` with the reason in `coverage`, never an invented answer.
     """
@@ -30,8 +30,12 @@ def make_rag_handler(index, llm: LLM | None = None, *, con=None):
     def handle(req: RagRequest) -> RagResponse:
         try:
             if req.question_type == "rag_corpus":
+                if index is None:
+                    return RagResponse(answer=None, not_found=True, coverage="policy index not built: run "
+                                       "`python -m trustissues.ask.rag.policy_ingest`")
                 return policy_answer.answer_policy(req.question, index, llm=llm, as_of=req.as_of_date,
-                                                   user_role=req.user_role, user_id=req.user_id)
+                                                   user_role=req.user_role, user_id=req.user_id,
+                                                   **({"con": con} if con is not None else {}))
             if req.question_type == "rag_customer":
                 if con is None:
                     return RagResponse(answer=None, not_found=True, coverage="customer history is not connected")
