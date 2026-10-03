@@ -1,6 +1,6 @@
 # Team status: Anushka's machine (P1)
 
-**Snapshot: 2026-10-03 about 13:50 IST.** Short-lived note so nobody repeats work. Ask Anushka before relying on it; delete it when it stops being useful.
+**Snapshot: 2026-10-03, evening IST.** Short-lived note so nobody repeats work. Ask Anushka before relying on it; delete it when it stops being useful.
 
 Details: [`curation.md`](curation.md) (results), [`documentation.md`](documentation.md) (what the code does), [`../requirements.md`](../requirements.md) (build on your own machine).
 
@@ -8,7 +8,7 @@ Details: [`curation.md`](curation.md) (results), [`documentation.md`](documentat
 
 ## 1. Running now
 
-**Nothing.** The curated build finished and no process is holding the database. Anushka's warehouse (`warehouse/trustissues.duckdb`) is complete and verified, but it is **not shared**: it lives only on that machine and is gitignored. Each teammate builds their own.
+**Nothing.** Curated, identity and gold builds have finished and no process is holding the database. Anushka's warehouse (`warehouse/trustissues.duckdb`) is complete and verified, but it is **not shared**: it lives only on that machine and is gitignored. Each teammate builds their own.
 
 ## 2. Done on Anushka's machine (do not repeat the investigation)
 
@@ -32,7 +32,7 @@ The run also added columns to the curated tables. **Use these instead of the ori
 
 - **Duplicates are business-level**, not exact rows. 5,950 CRM records are flagged `duplicate_of_crm_id`.
 - **Card phones are weak evidence:** 58.2% are masked (only a prefix and suffix survive).
-- **Dates of birth are no longer ambiguous in any identity table.** 36.3% of card dates and 12.6% of CRM dates could be read two ways in the text; they are now settled (CRM by its own clean `date_of_birth`, cards by a day-first convention inferred from the data). `std_dob_basis` says how each one was decided. See `ambiguous_values.md`. The card rule is an inference and gets validated once identity matching links card holders to CRM people.
+- **Dates of birth are no longer ambiguous in any identity table.** 36.3% of card dates and 12.6% of CRM dates could be read two ways in the text; they are now settled (CRM by its own clean `date_of_birth`, cards by a day-first convention inferred from the data). `std_dob_basis` says how each one was decided. See `ambiguous_values.md`. The card rule was an inference; identity matching has now confirmed it (99.6% of linked cards agree with the CRM DOB, see `identity.md` §3).
 - **Deposit names are surname plus initials only** (the first name is just an initial in 99.8% of rows).
 - 3.9% of bureau (`external`) rows have no name.
 
@@ -40,9 +40,21 @@ The run also added columns to the curated tables. **Use these instead of the ori
 
 Everything built is on `main` except `config/sensitivity.yaml` (generated; run `python -m trustissues.factory.ingest.dictionary` to make yours) and the data itself (gitignored).
 
-## 5. Not started (Layer 1, owned by P1)
+## 5. Identity and gold: built (new)
 
-Identity matching (nodes, exact rules, Splink, LLM second opinion, review queue, clusters), gold layer, data-quality checks, `contracts/c360_customer.yaml`, `text_controls.py`, `mapping_assistant.py`, enum validation against `code_lookups`, and the curated build speed-up. **Ask Anushka before starting any of them.** Splink is not installed anywhere yet.
+`gold.customer_xref` (every source customer once → 1,013,152 people), `gold.identity_review_queue`, `gold.customer_relationship`, `gold.c360_customer`, `gold.c360_account` are built on Anushka's machine. Rebuild yours with `python -m trustissues.factory.pipeline --from text_controls` (about 8 minutes after curated; needs `pip install splink scipy pyarrow`). Results, rules and measured precision: [`identity.md`](identity.md) and `reports/identity_report.md`.
+
+**For everyone joining collections data to customers:** in about 0.3% of collections cases the listed accounts belong to one customer while `coll_customer_ref` names a different, real customer (the IDs differ by one character, almost certainly a typo). Use `gold.case_customer`: it gives the account holder's golden ID, the named customer's, and a `case_customer_mismatch` flag.
+
+**P2:** the review queue (4,154 pairs, Splink and LLM reasons included) is ready for the Identity Review page; decisions go in `data/review/identity_decisions.csv`. **P4/whoever has an API key:** run `python -m trustissues.factory.identity.build --from second_opinion` to get LLM verdicts on the 3,343 grey-zone pairs.
+
+## 5b. Consumer views: published (new)
+
+`gold.promises_enriched`, `customer_safeguards`, `decisioning_customer` (point-in-time history), `customer_timeline`, `bucket_transitions` and `case_customer` are published through the contract gate. **Several defaults need your confirmation: see [`consumer_views.md`](consumer_views.md) §1** (P3: label, history grain, CRM dating; P4: which notes are used and our masking; P2: bucket grain). `semantic_*` views wait for P2 to name the metric shapes.
+
+## 5c. Not started (Layer 1, owned by P1)
+
+`mapping_assistant.py`, enum validation against `code_lookups`, `quality/anomaly.py`, identity outcomes in the data quality report, and a single end-to-end timed pipeline run. **Ask Anushka before starting any of them.**
 
 ## 6. Before you run anything
 

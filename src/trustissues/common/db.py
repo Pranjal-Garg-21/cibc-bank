@@ -1,11 +1,12 @@
-"""DuckDB connection factory. Schemas: raw -> curated -> gold. Consumers read only gold."""
+"""DuckDB connection factory. Schemas: raw -> curated -> identity (matching work tables) -> gold_stage (built, not yet checked)
+-> gold (published only after the quality gate passes). Consumers read only gold."""
 from __future__ import annotations
 
 import duckdb
 
 from .config import settings, warehouse_path
 
-SCHEMAS = ("raw", "curated", "gold")
+SCHEMAS = ("raw", "curated", "identity", "gold_stage", "gold")
 
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:

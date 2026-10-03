@@ -31,6 +31,8 @@ Proposed shapes, taken from `implementation_plan.md` §7.1 and the `p1`–`p4` d
 7. **`bucket_transitions` columns (P1, P2):** marked TBC in the P1 doc.
 8. **Timeline interface number:** the plan never gave it one.
 
+**Working defaults now in place (2026-10-03), to confirm:** questions 3, 6 and 7, and the `decisioning_customer` history grain, have defaults built and published; see [`consumer_views.md`](consumer_views.md) §1 (rows K, A, J, B–E). Question 1 (`semantic_*`) still needs P2.
+
 ## Changes after Codex review (proposals, to confirm)
 
 1. **RAG identity (P2, P4):** `RagRequest` now has `user_id`. The router authorises; RAG re-checks the customer against that user.
