@@ -30,6 +30,7 @@ AREAS = [
     ("reference", "C. Broken references and duplicate customers"),
     ("missing", "D. Missing values"),
     ("logic", "E. Values that contradict each other"),
+    ("identity", "F. Customer identity and the golden record"),
 ]
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 STATUS_TEXT = {
@@ -37,6 +38,8 @@ STATUS_TEXT = {
     "standardised": "Standardised",
     "flagged": "Flagged",
     "deferred": "Deferred to identity layer",
+    "resolved": "Resolved by identity matching",
+    "review": "Sent to human review",
     "documented": "Documented",
     "context": "Context, not a defect",
     "excluded": "Excluded from current view",
@@ -238,7 +241,8 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
     w("| Standardised | A clean `std_*` or derived column holds one format; the original is kept |")
     w("| Flagged | The problem cannot be repaired. A `dq_*` flag column marks the rows so downstream code can exclude or discount them |")
     w("| Documented | Not changed and not flaggable per row; downstream users are told what to do |")
-    w("| Deferred | Handled in a later layer (customer identity), not in curation |")
+    w("| Resolved | Settled by identity matching in the gold layer (curation never merges people) |")
+    w("| Review | Left undecided on purpose; a person decides from the identity review queue |")
     w("| Excluded | Kept in the full table, left out of the one-row-per-key `_current` table |")
     w("| Context | A real-world event, not a data defect |")
     w("")
@@ -258,6 +262,10 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
         "reference": "Records that point at something that is not there, and people stored more than once.",
         "missing": "Values that are blank where they should not be. None were imputed.",
         "logic": "Fields that cannot all be true at once. Neither value was changed; the rows are flagged.",
+        "identity": "What remains after identity matching joins the five customer keys into one person per golden ID "
+                    "(`gold.customer_xref`). These checks read the published gold tables. The rule is: when unsure, "
+                    "keep records separate. Details and measured precision: `docs/identity.md` and "
+                    "`reports/identity_report.md`.",
     }
     for key, label in AREAS:
         rows = [r for r in found if r.area == key]
@@ -306,8 +314,9 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
     w("")
     w("- **The original columns are untouched.** `dob_raw`, `*_phone_raw`, `*_name_raw`, `src_customer_ref` and the "
       "rest still carry each system's own format. Use the `std_*` and derived columns, not the originals.")
-    w("- **Customer keys still differ by system** (CRM ID, card number, loan number, 10-digit CIF). Joining them into "
-      "one customer is the identity layer's job; curation only repairs the CIF format.")
+    w("- **Customer keys still differ by system in `curated.*`** (CRM ID, card number, loan number, 10-digit CIF). "
+      "Identity matching joins them into one golden ID per person in `gold.customer_xref`; what it left open is in "
+      f"section {sec['identity']}.")
     w("- **The problems flagged above stay in the data.** Flagged rows are marked, not repaired (masked phones, shifted "
       "bureau columns, bucket and days-past-due disagreements, missing CRM customers).")
     w("- **Currency is mixed** in deposit balances (flag `dq_non_cad`); no conversion is possible without a rate.")
@@ -325,8 +334,9 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
     w("3. A rule finds the records it is written to find. Where the operations log gives a count and a rule finds "
       "fewer (K4), the rule is the lower bound, not the true number. Where the log cannot be matched to rows (K3), "
       "this report says so.")
-    w("4. **Not covered yet:** unmatched records and open review items. They come from the customer identity "
-      "step, which is not built; this report will gain them when it is.")
+    w(f"4. Unmatched records and open review items come from identity matching and are reported in section "
+      f"{sec['identity']}, read from the published gold tables. If identity has not been run, those checks are "
+      "listed as not runnable instead.")
     w("5. Unlisted issues may remain. The checks cover what was thought of; new data re-runs them automatically but "
       "does not add new kinds of check.")
     w("")

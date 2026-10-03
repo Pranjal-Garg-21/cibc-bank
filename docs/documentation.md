@@ -229,7 +229,7 @@ Facts learned from the real data, recorded as we find them.
 | D17 | Golden IDs are `G-` + 7 digits | 6 digits cannot hold 1M+ people |
 | D18 | Everything P1 builds goes to `gold_stage`; `publish.py` copies it to `gold` in one transaction only if every blocking contract rule passes | Consumers never read a build that failed its checks; a rule that cannot run counts as failed |
 | D19 | We mask personal data in every eligible note and transcript ourselves | The upstream `redaction_status` misses card numbers, even in `auto_redacted` notes |
-| D20 | A collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID (`gold.case_customer`, both readings kept) | Evidence in `identity.md` §3; also resolves 11,137 cases whose CRM ID does not exist |
+| D20 | A collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID (`gold.case_customer`, both readings kept) | Evidence in `identity.md` §3; also ties 11,125 of the 11,137 cases whose CRM ID does not exist to a person |
 | D7 | Ambiguous dates are resolved only by evidence (see D11); when none exists both readings are kept. Ambiguous ALL-CAPS names stay unparsed unless the source sets a convention | Never invent identity evidence; wrong merges are worse than missed ones |
 
 ## Changelog

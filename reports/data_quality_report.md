@@ -4,10 +4,10 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 
 ## 1. Summary
 
-- **54 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
-- **23 further checks found nothing** (section 10), so the coverage is visible.
+- **62 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
+- **23 further checks found nothing** (section 11), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **flagged** 19, **documented** 16, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
+- How each issue was handled: **flagged** 21, **documented** 18, **standardised** 12, **fixed** 5, **resolved by identity matching** 3, **sent to human review** 2, **excluded from current view** 1.
 - **Schema drift:** the loader recorded 6 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
@@ -19,7 +19,8 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | Standardised | A clean `std_*` or derived column holds one format; the original is kept |
 | Flagged | The problem cannot be repaired. A `dq_*` flag column marks the rows so downstream code can exclude or discount them |
 | Documented | Not changed and not flaggable per row; downstream users are told what to do |
-| Deferred | Handled in a later layer (customer identity), not in curation |
+| Resolved | Settled by identity matching in the gold layer (curation never merges people) |
+| Review | Left undecided on purpose; a person decides from the identity review queue |
 | Excluded | Kept in the full table, left out of the one-row-per-key `_current` table |
 | Context | A real-world event, not a data defect |
 
@@ -32,10 +33,11 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | R6 | Account snapshot points to a CRM customer that does not exist | 328,891 | 2.62% | high | Flagged |
 | F12 | Deposit customer key lost its leading zeros (7 or 8 digits instead of the 10-digit CIF) | 156,837 | 20.1% | high | Fixed |
 | R2 | Contact record points to a CRM customer that does not exist | 75,500 | 2.81% | high | Flagged |
-| R10 | Same person stored as more than one CRM record (identical national-ID hash) | 36,992 | 3.63% | high | Deferred to identity layer |
+| R10 | Same person stored as more than one CRM record (identical national-ID hash) | 36,992 | 3.63% | high | Resolved by identity matching |
 | K1 | Contact channel renamed upstream: `channel` is empty and the value is in `channel_v2` | 19,463 | 55.1% | high | Fixed |
 | R1 | Collections case points to a CRM customer that does not exist | 10,365 | 2.82% | high | Flagged |
 | R3 | Promise to pay points to a CRM customer that does not exist | 6,744 | 2.82% | high | Flagged |
+| I5 | Collections case names a different customer than the holder of the accounts it lists | 1,265 | 0.34% | high | Resolved by identity matching |
 | F14 | Deposit first name is only an initial (`DYER D C`) | 778,246 | 99.8% | medium | Standardised |
 | F3 | Card date of birth in DD-MM-YYYY (every filled value) | 660,000 | 100.0% | medium | Standardised |
 | F2 | CRM date of birth not in ISO format (`dob_raw`: ISO, MM/DD/YYYY, `Mon DD YYYY`) | 405,432 | 39.7% | medium | Standardised |
@@ -54,10 +56,14 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | R4 | Agent note points to a CRM customer that does not exist | 21,592 | 2.84% | medium | Flagged |
 | M5 | Bureau record says `hit` but has no risk score | 18,937 | 1.89% | medium | Flagged |
 | L2 | Loan delinquency bucket disagrees with days past due | 14,769 | 3.65% | medium | Flagged |
+| I1 | Source customer that matched nobody (kept as its own person) | 12,595 | 0.36% | medium | Documented |
+| I6 | Collections case whose CRM ID does not exist, tied to a person through its accounts | 11,125 | 3.03% | medium | Resolved by identity matching |
 | K4 | Bureau file converted with a shifted column for some rows: inquiry counts impossible (3 months above 6 months, or 6 above 12) | 9,918 | 0.99% | medium | Flagged |
 | F18 | Deposit balances in two currencies (7,780 USD accounts among CAD) with no exchange-rate field in the data | 7,780 | 1.00% | medium | Flagged |
+| I3 | Candidate match pair in the human review queue | 4,154 | 0.14% | medium | Sent to human review |
 | L3 | Case bucket disagrees with current days past due (one band higher than dpd implies) | 3,807 | 1.04% | medium | Flagged |
 | L7 | Promise marked kept but the amount paid is below the promised amount | 2,844 | 1.19% | medium | Flagged |
+| I2 | Source customer waiting for a person to decide its match | 1,514 | 0.04% | medium | Sent to human review |
 | R5 | Call transcript points to a CRM customer that does not exist | 695 | 2.78% | medium | Flagged |
 | K3 | App outage 14 Sep: payments not posted, late fees charged in error; late-fee disputes about 3x baseline 15-22 Sep | 31 | 4.29% | medium | Documented |
 | M9 | Reference documents that exist only in English (no French version) | 14 | 87.5% | medium | Documented |
@@ -71,6 +77,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | M4 | Bureau date of birth blank | 39,543 | 3.95% | low | Documented |
 | L5 | Right-party contacts exceed total contact attempts on a case | 27,680 | 7.54% | low | Flagged |
 | M3 | Deposit date of birth blank | 15,756 | 2.02% | low | Documented |
+| I4 | More people than the bank's stated 1,000,000 customers | 13,152 | 1.30% | low | Documented |
 | L6 | Case promise counts do not add up (kept + broken + open is not total) | 8,747 | 2.38% | low | Flagged |
 | L4 | Deposit overdraft used exceeds the overdraft limit | 6,343 | 0.81% | low | Flagged |
 | M1 | CRM date of birth blank | 5,026 | 0.49% | low | Documented |
@@ -78,7 +85,9 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | R11 | CRM record marked deleted (change-data operation D) | 2,115 | 0.21% | low | Excluded from current view |
 | F11 | CRM postal code typed with the letter O where the digit 0 belongs (`VOC2S8`, `L6X OZ4`) | 1,887 | 0.18% | low | Fixed |
 | L10 | Card utilisation outside 0 to 1.5 | 33 | 0.01% | low | Documented |
+| I8 | Promise to pay with no owner | 19 | 0.01% | low | Flagged |
 | L9 | Bureau: file-since date is after the pull date | 17 | 0.00% | low | Documented |
+| I7 | Collections case that could not be tied to any person | 12 | 0.00% | low | Flagged |
 | M8 | CRM employer name blank | 359,829 | 35.3% | info | Documented |
 | R8 | Collections case with no assignment history | 86,725 | 23.6% | info | Documented |
 
@@ -190,7 +199,7 @@ Every source system writes dates of birth, phones, postal codes and names in its
 
 **Affected:** 384,422 of 660,000 (58.2%) · **Tables:** `card_accounts` · **Severity:** high
 
-**Handling (flagged).** Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. To be treated as weak evidence in matching (the design rule is that a phone alone never links two records); the identity layer is not built yet.
+**Handling (flagged).** Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. Used as weak evidence in identity matching: Splink's phone comparison has a level for visible digits that fit a full phone, and a phone alone never links two records (see `docs/identity.md`).
 
 ### F10. CRM postal code written with and without a space, in lower case, or both
 
@@ -260,7 +269,7 @@ Records that point at something that is not there, and people stored more than o
 
 **Affected:** 10,365 of 367,229 (2.82%) · **Tables:** `collections_cases` · **Severity:** high
 
-**Handling (flagged).** Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a customer record. The identity layer (not yet built) is meant to treat them as unresolved, and customer-level features should leave them out. The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it.
+**Handling (flagged).** Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a CRM record, but identity matching ties almost all of these cases to a person through the accounts they list: see I6 (`gold.case_customer`). The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it.
 
 ### R2. Contact record points to a CRM customer that does not exist
 
@@ -316,9 +325,9 @@ Records that point at something that is not there, and people stored more than o
 
 **Affected:** 36,992 of 1,020,000 (3.63%) · **Tables:** `customers` · **Severity:** high
 
-*Evidence:* 5950 records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source.
+*Evidence:* 5950 records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source. After identity matching, 19911 people have two or more CRM records.
 
-**Handling (deferred to identity layer).** Not merged here. Curation never merges people. The identity layer (not yet built) is meant to link them (national-ID hash is its first exact rule) and assign one golden ID. Affected counts the records sitting in a duplicate group.
+**Handling (resolved by identity matching).** Curation never merges people. Identity matching links them: the national-ID hash and `duplicate_of_crm_id` are exact rules (checked against the DOB), then name + DOB + phone or postal, then Splink for CRM records with no hash. Each person gets one golden ID in `gold.customer_xref`. Affected counts the records sitting in a hash duplicate group (deleted records included).
 
 ### R11. CRM record marked deleted (change-data operation D)
 
@@ -468,7 +477,69 @@ Fields that cannot all be true at once. Neither value was changed; the rows are 
 
 **Handling (documented).** Not changed.
 
-## 8. Is the data uniform now?
+## 8. Customer identity and the golden record
+
+What remains after identity matching joins the five customer keys into one person per golden ID (`gold.customer_xref`). These checks read the published gold tables. The rule is: when unsure, keep records separate. Details and measured precision: `docs/identity.md` and `reports/identity_report.md`.
+
+### I1. Source customer that matched nobody (kept as its own person)
+
+**Affected:** 12,595 of 3,487,885 (0.36%) · **Tables:** `customer_xref` · **Severity:** medium
+
+*Evidence:* bureau 10106, card 1494, loan 914, crm 81.
+
+**Handling (documented).** Not linked: no rule matched and Splink scored below 0.80, or the record is too thin to compare (3.9% of bureau files have no name). Each keeps its own golden ID so no account is dropped (`gold.customer_xref.status = 'singleton'`). Some are probably missed links, which can be added later; a wrong merge could not be undone.
+
+### I2. Source customer waiting for a person to decide its match
+
+**Affected:** 1,514 of 3,487,885 (0.04%) · **Tables:** `customer_xref`, `identity_review_queue` · **Severity:** medium
+
+*Evidence:* in_review 1507, blocked_conflict 7.
+
+**Handling (sent to human review).** Kept separate until decided. The candidate pairs are in `gold.identity_review_queue`, both records side by side with the Splink and LLM reasons. Decisions go in `data/review/identity_decisions.csv` and are re-applied on every run. `c360_customer.dq_status = 'identity_in_review'` marks the people affected.
+
+### I3. Candidate match pair in the human review queue
+
+**Affected:** 4,154 of 3,035,608 (0.14%) · **Tables:** `identity_review_queue` · **Severity:** medium
+
+*Evidence:* grey_zone_no_llm 3343, ambiguous 638, splink_ambiguous 168, blocked_conflict 3, cluster_conflict 2.
+
+**Handling (sent to human review).** Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and the LLM second opinion has not been run (no credentials); with an LLM, only the pairs it disagrees with stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth.
+
+### I4. More people than the bank's stated 1,000,000 customers
+
+**Affected:** 13,152 of 1,013,152 (1.30%) · **Tables:** `c360_customer` · **Severity:** low
+
+*Evidence:* 15178 people have no CRM record (10171 of them bureau only); 997974 people have one.
+
+**Handling (documented).** The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as review decisions and the LLM second opinion link them.
+
+### I5. Collections case names a different customer than the holder of the accounts it lists
+
+**Affected:** 1,265 of 367,229 (0.34%) · **Tables:** `collections_cases`, `case_customer` · **Severity:** high
+
+*Evidence:* 439 of these cases have the two customers in different provinces; the case's own province matches the account holder in 433 and the named customer in 3.
+
+**Handling (resolved by identity matching).** Two different, real customers; they are never merged. The CRM IDs differ by one character in every such case and the province points to the account holder, so the case's CRM ID is almost certainly mistyped (an inference, not proven). `gold.case_customer` keeps both readings and resolves the case to the account holder; promises, contacts and notes on the case follow it, and the case's safety flags reach both people. Promises copy the same CRM ID, so joining on `crm_customer_id` alone attaches them to the wrong person.
+
+### I6. Collections case whose CRM ID does not exist, tied to a person through its accounts
+
+**Affected:** 11,125 of 367,229 (3.03%) · **Tables:** `collections_cases`, `case_customer` · **Severity:** medium
+
+**Handling (resolved by identity matching).** The missing CRM IDs (R1) cannot be repaired, but the case lists its accounts and the accounts have a matched holder, so the case gets that person's golden ID (`gold.case_customer.resolved_by = 'account_holder'`).
+
+### I7. Collections case that could not be tied to any person
+
+**Affected:** 12 of 367,229 (0.00%) · **Tables:** `collections_cases`, `case_customer` · **Severity:** low
+
+**Handling (flagged).** Its CRM ID does not exist and its accounts are not found. `gold.case_customer.golden_customer_id` is NULL; these cases appear in no customer view.
+
+### I8. Promise to pay with no owner
+
+**Affected:** 19 of 238,815 (0.01%) · **Tables:** `promises_to_pay`, `promises_enriched` · **Severity:** low
+
+**Handling (flagged).** Its case could not be tied to a person (I7) and its CRM ID does not exist. Kept in `gold.promises_enriched` with a NULL `golden_customer_id`; training and features should leave it out.
+
+## 9. Is the data uniform now?
 
 Partly, and the difference matters.
 
@@ -482,20 +553,20 @@ Partly, and the difference matters.
 **Not uniform, on purpose or not yet:**
 
 - **The original columns are untouched.** `dob_raw`, `*_phone_raw`, `*_name_raw`, `src_customer_ref` and the rest still carry each system's own format. Use the `std_*` and derived columns, not the originals.
-- **Customer keys still differ by system** (CRM ID, card number, loan number, 10-digit CIF). Joining them into one customer is the identity layer's job; curation only repairs the CIF format.
+- **Customer keys still differ by system in `curated.*`** (CRM ID, card number, loan number, 10-digit CIF). Identity matching joins them into one golden ID per person in `gold.customer_xref`; what it left open is in section 8.
 - **The problems flagged above stay in the data.** Flagged rows are marked, not repaired (masked phones, shifted bureau columns, bucket and days-past-due disagreements, missing CRM customers).
 - **Currency is mixed** in deposit balances (flag `dq_non_cad`); no conversion is possible without a rate.
 - **Not examined:** free-text content (notes, transcripts), timezone differences between local and UTC timestamps, and enum values against reference lists beyond the contact codes in C20 and the case and spelling check that found F17.
 
-## 9. Method and limits
+## 10. Method and limits
 
 1. The six operations-log events were each searched for in the data, and the signature in the incident reports (a count, a drop in calls, a rate against baseline) was checked.
 2. For unlisted issues the data was profiled: formats per field per system, references between tables, missing values, contradictions between fields, reference codes, and case or spacing variants in all 192 enum columns.
 3. A rule finds the records it is written to find. Where the operations log gives a count and a rule finds fewer (K4), the rule is the lower bound, not the true number. Where the log cannot be matched to rows (K3), this report says so.
-4. **Not covered yet:** unmatched records and open review items. They come from the customer identity step, which is not built; this report will gain them when it is.
+4. Unmatched records and open review items come from identity matching and are reported in section 8, read from the published gold tables. If identity has not been run, those checks are listed as not runnable instead.
 5. Unlisted issues may remain. The checks cover what was thought of; new data re-runs them automatically but does not add new kinds of check.
 
-## 10. Checks that found nothing
+## 11. Checks that found nothing
 
 | ID | Check | Rows checked |
 |---|---|---:|
@@ -523,7 +594,7 @@ Partly, and the difference matters.
 | C19 | Bureau score outside 300 to 900 | 1,000,000 |
 | C20 | Contact reference codes (strategy, outcome, templates, scripts) not in the reference table | 2,688,337 |
 
-## 11. Reproduce
+## 12. Reproduce
 
 ```bash
 python -m trustissues.factory.quality.dq_report     # applies the flags and derived columns, rewrites this file

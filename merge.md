@@ -77,6 +77,6 @@ Full list with reasons: `docs/consumer_views.md` §1. Summary:
 - [ ] P3: `label_broken`: `partially_kept` counts as not broken (follows the certified `broken_promise_rate`).
 - [ ] P3: `decisioning_customer` is a point-in-time history table; join on `available_from <= ptp_created_ts`.
 - [ ] P3: CRM attributes are NULL before the CRM version started (no back-filling); this leaves pre-2022 promises without CRM features.
-- [ ] Everyone: a collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID. Use `gold.case_customer` to join cases to people (1,265 cases disagree; 11,137 cases name a CRM ID that does not exist).
+- [ ] Everyone: a collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID. Use `gold.case_customer` to join cases to people (1,265 cases disagree; 11,137 cases name a CRM ID that does not exist, and 11,125 of those are tied to a person through their accounts).
 - [ ] P2: `bucket_transitions` is quarter to quarter; `semantic_*` views wait for P2 to name the metric shapes.
 - [ ] All: consent column names (`consent_phone` = CRM `consent_call`, `consent_mail` = CRM `consent_letter`).

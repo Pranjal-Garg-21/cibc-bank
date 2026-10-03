@@ -185,7 +185,7 @@ checks:
     status: flagged
     table: curated.card_accounts
     where: "std_phone_primary_masked"
-    how: "Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. To be treated as weak evidence in matching (the design rule is that a phone alone never links two records); the identity layer is not built yet."
+    how: "Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. Used as weak evidence in identity matching: Splink's phone comparison has a level for visible digits that fit a full phone, and a phone alone never links two records (see `docs/identity.md`)."
   - id: F10
     area: format
     title: "CRM postal code written with and without a space, in lower case, or both"
@@ -279,7 +279,7 @@ checks:
     severity: high
     status: flagged
     sql: "select count(*) filter (where coll_customer_ref is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.coll_customer_ref)), count(*) from curated.collections_cases c"
-    how: "Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a customer record. The identity layer (not yet built) is meant to treat them as unresolved, and customer-level features should leave them out. The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it."
+    how: "Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a CRM record, but identity matching ties almost all of these cases to a person through the accounts they list: see I6 (`gold.case_customer`). The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it."
   - id: R2
     area: reference
     title: "Contact record points to a CRM customer that does not exist"
@@ -350,10 +350,10 @@ checks:
     title: "Same person stored as more than one CRM record (identical national-ID hash)"
     tables: [customers]
     severity: high
-    status: deferred
+    status: resolved
     sql: "select count(*), (select count(*) from curated.customers) from curated.customers where national_id_hash in (select national_id_hash from curated.customers where national_id_hash is not null group by 1 having count(*) > 1)"
-    evidence: "select count(*) || ' records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source' from curated.customers where duplicate_of_crm_id is not null"
-    how: "Not merged here. Curation never merges people. The identity layer (not yet built) is meant to link them (national-ID hash is its first exact rule) and assign one golden ID. Affected counts the records sitting in a duplicate group."
+    evidence: "select (select count(*) from curated.customers where duplicate_of_crm_id is not null) || ' records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source. After identity matching, ' || count(*) || ' people have two or more CRM records' from (select golden_customer_id from gold.customer_xref where source_system = 'crm' group by 1 having count(*) > 1)"
+    how: "Curation never merges people. Identity matching links them: the national-ID hash and `duplicate_of_crm_id` are exact rules (checked against the DOB), then name + DOB + phone or postal, then Splink for CRM records with no hash. Each person gets one golden ID in `gold.customer_xref`. Affected counts the records sitting in a hash duplicate group (deleted records included)."
   - id: R11
     area: reference
     title: "CRM record marked deleted (change-data operation D)"
@@ -565,6 +565,79 @@ checks:
     table: curated.card_accounts
     where: "utilisation < 0 or utilisation > 1.5"
     how: "Not changed."
+
+  # ------------------------------------------------------------------ F. customer identity and the golden record
+  # These read the published gold tables, so they report what consumers actually see.
+  # Details: docs/identity.md, reports/identity_report.md, docs/consumer_views.md.
+  - id: I1
+    area: identity
+    title: "Source customer that matched nobody (kept as its own person)"
+    tables: [customer_xref]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where status = 'singleton'), count(*) from gold.customer_xref"
+    evidence: "select string_agg(source_system || ' ' || n, ', ' order by n desc) from (select source_system, count(*) n from gold.customer_xref where status = 'singleton' group by 1)"
+    how: "Not linked: no rule matched and Splink scored below 0.80, or the record is too thin to compare (3.9% of bureau files have no name). Each keeps its own golden ID so no account is dropped (`gold.customer_xref.status = 'singleton'`). Some are probably missed links, which can be added later; a wrong merge could not be undone."
+  - id: I2
+    area: identity
+    title: "Source customer waiting for a person to decide its match"
+    tables: [customer_xref, identity_review_queue]
+    severity: medium
+    status: review
+    sql: "select count(*) filter (where status in ('in_review', 'blocked_conflict', 'unresolved')), count(*) from gold.customer_xref"
+    evidence: "select string_agg(status || ' ' || n, ', ' order by n desc) from (select status, count(*) n from gold.customer_xref where status in ('in_review', 'blocked_conflict', 'unresolved') group by 1)"
+    how: "Kept separate until decided. The candidate pairs are in `gold.identity_review_queue`, both records side by side with the Splink and LLM reasons. Decisions go in `data/review/identity_decisions.csv` and are re-applied on every run. `c360_customer.dq_status = 'identity_in_review'` marks the people affected."
+  - id: I3
+    area: identity
+    title: "Candidate match pair in the human review queue"
+    tables: [identity_review_queue]
+    severity: medium
+    status: review
+    sql: "select (select count(*) from gold.identity_review_queue), (select count(*) from gold.identity_review_queue) + (select count(*) from identity.accepted_links)"
+    evidence: "select string_agg(reason || ' ' || n, ', ' order by n desc) from (select reason, count(*) n from gold.identity_review_queue group by 1)"
+    how: "Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and the LLM second opinion has not been run (no credentials); with an LLM, only the pairs it disagrees with stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth."
+  - id: I4
+    area: identity
+    title: "More people than the bank's stated 1,000,000 customers"
+    tables: [c360_customer]
+    severity: low
+    status: documented
+    sql: "select greatest(count(*) - 1000000, 0), count(*) from gold.c360_customer"
+    evidence: "select count(*) filter (where source_systems not like '%crm%') || ' people have no CRM record (' || count(*) filter (where source_systems = 'bureau') || ' of them bureau only); ' || count(*) filter (where source_systems like '%crm%') || ' people have one' from gold.c360_customer"
+    how: "The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as review decisions and the LLM second opinion link them."
+  - id: I5
+    area: identity
+    title: "Collections case names a different customer than the holder of the accounts it lists"
+    tables: [collections_cases, case_customer]
+    severity: high
+    status: resolved
+    sql: "select count(*) filter (where case_customer_mismatch), count(*) from gold.case_customer"
+    evidence: "select count(*) || ' of these cases have the two customers in different provinces; the case''s own province matches the account holder in ' || count(*) filter (where c.province_code = h.province) || ' and the named customer in ' || count(*) filter (where c.province_code = n.province_code) from gold.case_customer cc join curated.collections_cases c using (case_id) join curated.customers_current n on n.crm_customer_id = cc.named_crm_customer_id join gold.c360_customer h on h.golden_customer_id = cc.golden_customer_id where cc.case_customer_mismatch and n.province_code <> h.province"
+    how: "Two different, real customers; they are never merged. The CRM IDs differ by one character in every such case and the province points to the account holder, so the case's CRM ID is almost certainly mistyped (an inference, not proven). `gold.case_customer` keeps both readings and resolves the case to the account holder; promises, contacts and notes on the case follow it, and the case's safety flags reach both people. Promises copy the same CRM ID, so joining on `crm_customer_id` alone attaches them to the wrong person."
+  - id: I6
+    area: identity
+    title: "Collections case whose CRM ID does not exist, tied to a person through its accounts"
+    tables: [collections_cases, case_customer]
+    severity: medium
+    status: resolved
+    sql: "select count(*) filter (where named_customer_missing and golden_customer_id is not null), count(*) from gold.case_customer"
+    how: "The missing CRM IDs (R1) cannot be repaired, but the case lists its accounts and the accounts have a matched holder, so the case gets that person's golden ID (`gold.case_customer.resolved_by = 'account_holder'`)."
+  - id: I7
+    area: identity
+    title: "Collections case that could not be tied to any person"
+    tables: [collections_cases, case_customer]
+    severity: low
+    status: flagged
+    sql: "select count(*) filter (where golden_customer_id is null), count(*) from gold.case_customer"
+    how: "Its CRM ID does not exist and its accounts are not found. `gold.case_customer.golden_customer_id` is NULL; these cases appear in no customer view."
+  - id: I8
+    area: identity
+    title: "Promise to pay with no owner"
+    tables: [promises_to_pay, promises_enriched]
+    severity: low
+    status: flagged
+    sql: "select count(*) filter (where golden_customer_id is null), count(*) from gold.promises_enriched"
+    how: "Its case could not be tied to a person (I7) and its CRM ID does not exist. Kept in `gold.promises_enriched` with a NULL `golden_customer_id`; training and features should leave it out."
 
 clean_checks:   # checks that found nothing; listed so the coverage is visible
   - {id: C23, title: "Postal code still invalid after cleaning (customers, cards, loans, deposits)", sql: "select (select count(*) filter (where postal_code_raw is not null and trim(postal_code_raw) <> '' and std_postal is null) from curated.customers) + (select count(*) filter (where cardholder_postal_raw is not null and trim(cardholder_postal_raw) <> '' and std_postal is null) from curated.card_accounts) + (select count(*) filter (where borrower_postal_raw is not null and trim(borrower_postal_raw) <> '' and std_postal is null) from curated.loan_accounts) + (select count(*) filter (where holder_postal_raw is not null and trim(holder_postal_raw) <> '' and std_postal is null) from curated.deposit_accounts), (select count(*) from curated.customers) + (select count(*) from curated.card_accounts) + (select count(*) from curated.loan_accounts) + (select count(*) from curated.deposit_accounts)"}
