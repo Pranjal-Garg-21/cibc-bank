@@ -2,7 +2,7 @@
 
 This gets you from nothing to a populated `warehouse/trustissues.duckdb` (raw and curated schemas) using only the original dataset. Nothing here depends on another person's database file: every teammate builds their own from the source data, and `scripts/verify_warehouse.py` proves it came out the same.
 
-For what the code does and why, see [`docs/documentation.md`](docs/documentation.md). For what is running on P1's machine and what is already done, see [`docs/team_status.md`](docs/team_status.md).
+For what the code does and why, see [`docs/documentation.md`](docs/documentation.md) and, for the curated layer's results on the real data, [`docs/curation.md`](docs/curation.md). For what is running on P1's machine and what is already done, see [`docs/team_status.md`](docs/team_status.md).
 
 ## 1. What you need
 
@@ -79,7 +79,7 @@ The build is **re-runnable**. Running ingest again reads only new or changed fil
 
 ### 4a. The curated build is slow: read this before you run it
 
-Measured on the reference laptop (12 logical cores, 15.7 GB RAM): the first 16 of 31 tables took **1.7 hours** of build time, and the rest are still being measured. The big ones: `customers` 41 min, `deposit_accounts` 32 min, `contact_history` 14 min, `card_accounts` 9 min. Raw ingest, by contrast, is about 35 minutes for everything.
+Measured on the reference laptop (12 logical cores, 15.7 GB RAM): all 31 tables took **about 1.8 hours** of build time. The big ones: `customers` 41 min, `deposit_accounts` 32 min, `contact_history` 14 min, `card_accounts` 9 min. Strangely, `external` and `loan_accounts`, which are similar in size and width, took only 3 min and 1.4 min, and the cause is not understood. Raw ingest, by contrast, is about 35 minutes for everything.
 
 - **It uses about 1 core of 12.** Disk and memory were not the limit (disk 3% busy, 4 GB RAM free). So **more cores will not help right now**; a faster single core might. The cause has not been identified yet. A speed-up is planned and **not started**.
 - **You do not need to build everything.** Curated tables are independent, so build only what you need:
@@ -91,7 +91,7 @@ Measured on the reference laptop (12 logical cores, 15.7 GB RAM): the first 16 o
   Small and narrow tables take seconds to a few minutes. The slow ones are the wide identity tables: `customers`, `deposit_accounts`, `external`, `loan_accounts`, `card_accounts`. P3's training spine needs `promises_to_pay`, which is small.
 - **`<table>_current`** tables (one row per key) are built at the end of every run for whichever curated tables exist, so re-running with `--only` is safe.
 - Only one process may write to the database at a time, so run builds one after another, not in parallel.
-- **What the real data showed (so far):** no exact duplicate rows in any table and no failed type casts except one column in `account_monthly_snapshot`. Duplicate customers are business-level (the same person under two CRM IDs), which is the job of the identity step, not of this one.
+- **What the real data showed:** no exact duplicate rows in any table, and one real defect (mixed date formats in `account_monthly_snapshot.month_end_date`) that the build recovers automatically. Duplicate customers are business-level (the same person under two CRM IDs), which is the job of the identity step. Full report: [`docs/curation.md`](docs/curation.md).
 
 ## 5. Verify
 
