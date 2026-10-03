@@ -100,7 +100,7 @@ decision is logged and summarised for the weekly override review. Fairness is ch
 **P1 (decisioning view).** Exclude age and age band, `id_document_type`, `interpreter_used_flag`, voice acoustic features
 and benefit-type categories. P3 now reads the gold layer and keys everything by golden ID (`docs/p3_plan.md`, golden records
 Steps 0-7). P3's label is P1's `label_broken` (partially kept is not broken). `customer_safeguards` now carries
-the preferred contact window and time zone; `promises_enriched` still lacks the reminder flag (read from curated).
+the preferred contact window and time zone; `promises_enriched` the reminder flag.
 
 **P2.** Add `gold.nba_decisions` and `gold.nba_overrides` to the Ask schema graph. Use P3's feature definitions for the
 drivers dimensions. The Data Quality page can call `trustissues.governance.monitoring.snapshot()`.

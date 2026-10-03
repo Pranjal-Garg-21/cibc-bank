@@ -741,3 +741,8 @@ end; no person ends up with an empty window) and the time zone of their latest-u
 the agreed shape. Published through the contract gate (all blocking rules pass): 653,542 of 1,013,156 people have a
 window, 992,947 a time zone. `crm_safety_flags` now reads the window from gold; the curated join is gone. No card
 changes window (the rules already combined a person's records the same way).
+
+**Reminder flag (4 Oct).** `gold.promises_enriched` now also carries `reminder_scheduled_flag` (from
+`curated.promises_to_pay`, an extra column after the agreed shape; equal on all 238,815 promises), so the `promises`
+source reads only gold and P3 joins nothing from curated for the person-level data. Interface gaps from Step 0b: all
+closed except the agreements with P4 (text features).

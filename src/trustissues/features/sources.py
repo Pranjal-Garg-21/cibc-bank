@@ -3,9 +3,9 @@
 The person-level sources read P1's published gold layer: `promises` (gold.promises_enriched), `customer_xref`
 (CRM record -> golden customer), `account_owner` (gold.c360_account: account -> golden customer) and
 `crm_safety_flags` (gold.customer_safeguards, per CRM record); the two case sources carry the case's golden
-customer from gold.case_customer. Everything else reads the schema in config/settings.yaml (p3.source_schema):
-`curated` (typed, deduplicated, non-ISO dates recovered). Columns gold does not have yet are joined from curated
-(Step 0b of docs/p3_golden_runbook.md).
+customer from gold.case_customer, contacts and account snapshots the record's person. Everything else reads the
+schema in config/settings.yaml (p3.source_schema): `curated` (typed, deduplicated, non-ISO dates recovered). A column
+gold lacks can be joined from curated with a `Join` (none is needed now: Step 0b of docs/p3_golden_runbook.md).
 
 Rules for every spec:
 - explicit column allow-list, never `SELECT *`;
@@ -90,15 +90,13 @@ CRM_PERSON = Join("x", "customer_xref", "x.node_id = 'crm|' || t.crm_customer_id
 RECORD_PERSON = "coalesce(cc.golden_customer_id, x.golden_customer_id)"
 
 SOURCES: dict[str, Source] = {
-    # gold.promises_enriched is curated.promises_to_pay with the golden ID added; reminder_scheduled_flag is not in
-    # gold yet, so it comes from curated by ptp_id. The label (build_training_set.py) is broken = 1, kept or partially
+    # gold.promises_enriched is curated.promises_to_pay with the golden ID added. The label (build_training_set.py) is broken = 1, kept or partially
     # kept = 0, the same as P1's label_broken; it is built from ptp_status, which as_of can mask.
     "promises": Source(
         table="promises_enriched",
         schema="gold",
         use="features",
         event_ts="ptp_created_ts",
-        joins=(Join("r", "promises_to_pay", "r.ptp_id = t.ptp_id"),),
         label_table="promises_to_pay",
         label_as={"golden_customer_id": GOLDEN_ID_LABEL},
         columns={
@@ -109,7 +107,7 @@ SOURCES: dict[str, Source] = {
             **_c("ptp_amount", "overdue_at_creation", "ptp_to_overdue_ratio", type_="DOUBLE"),
             **_c("days_to_due_at_creation", "ptp_sequence_in_case", "prior_broken_ptp_count", "dpd_at_creation",
                  "grace_days", type_="INTEGER"),
-            "reminder_scheduled_flag": ("r.reminder_scheduled_flag", "BOOLEAN"),
+            "reminder_scheduled_flag": ("reminder_scheduled_flag", "BOOLEAN"),
             # outcome: for the label and for history features "resolved before the event time" only
             "ptp_status": ("ptp_status", "VARCHAR"),
         },

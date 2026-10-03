@@ -53,7 +53,8 @@ def promises_enriched(con) -> int:
                -- extras
                p.crm_customer_id, coalesce(cc_p.resolved_by, 'crm_customer_id') AS owner_resolved_by,
                coalesce(cc_p.case_customer_mismatch, false) AS case_customer_mismatch,
-               p.dq_kept_but_underpaid
+               p.dq_kept_but_underpaid,
+               p.reminder_scheduled_flag  -- known at creation: a reminder was booked with the promise
         FROM curated.promises_to_pay p {_owner_joins('p')}""")
     return con.execute("SELECT count(*) FROM gold_stage.promises_enriched").fetchone()[0]
 

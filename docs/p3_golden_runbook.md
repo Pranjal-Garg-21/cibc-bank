@@ -81,11 +81,11 @@ or `duckdb -readonly warehouse/trustissues.duckdb`.
 
 ## Step 0b. Interface gaps (agree with P1 / P4 before Step 1)
 
-- [ ] `gold.customer_safeguards` has, or P1 adds: `consent_push`, `internal_do_not_call`, `represented`, `insolvency`
+- [x] `gold.customer_safeguards` has, or P1 adds: `consent_push`, `internal_do_not_call`, `represented`, `insolvency`
       (bankruptcy **or** consumer proposal), `sunday_contact_permitted`, `permitted_call_start_local`,
       `permitted_call_end_local`, `preferred_contact_window_start`, `preferred_contact_window_end`, `time_zone`, and consent
       as booleans (or an agreed value list).
-- [ ] `gold.promises_enriched` has `reminder_scheduled_flag` and keeps `crm_customer_id` next to `golden_customer_id`.
+- [x] `gold.promises_enriched` has `reminder_scheduled_flag` and keeps `crm_customer_id` next to `golden_customer_id`.
 - [ ] P4 confirms the `ptp_intent_strength` values and the `confidence` range in `gold.text_features`.
 - [ ] Agreed: case-level flags (hardship, plan, vulnerable, test cell, contacts in 7 days) stay on the case.
 - [x] Any column not added yet: keep reading it from curated through `customer_xref` (note it in `p3_plan.md`).
