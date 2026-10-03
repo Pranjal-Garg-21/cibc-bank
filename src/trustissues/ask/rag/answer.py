@@ -71,6 +71,7 @@ class Source:
     section: str | None = None
     source_ts: str | None = None  # notes and transcripts
     authoritative: bool = False  # a system table row, which wins over document text (D5)
+    detail: str | None = None  # extra context shown to the model only, e.g. "case CS-2026-614370 | inbound call"
 
     def citation(self) -> Citation:
         return Citation(self.kind, self.source_id, self.version, self.section, self.source_ts)
@@ -83,6 +84,8 @@ class Source:
             parts.append(self.section)
         if self.source_ts:
             parts.append(self.source_ts)
+        if self.detail:
+            parts.append(self.detail)
         return " | ".join(parts) + (" | AUTHORITATIVE" if self.authoritative else "")
 
 
@@ -105,19 +108,26 @@ def policy_sources(result) -> list[Source]:
 
 def answer_question(question: str, sources: list[Source], *, llm: LLM, as_of: date, user_role: str,
                     user_id: str | None = None, language: str | None = None, coverage: str | None = None,
-                    kind: str = "rag", ask_owner: str | None = None) -> RagResponse:
-    """`language` is normally left unset: the answer follows the language the question was asked in."""
+                    kind: str = "rag", ask_owner: str | None = None, system: str = SYSTEM,
+                    prompt_version: str = PROMPT_VERSION, not_found_text: dict[str, str] = NOT_FOUND_TEXT,
+                    context: str | None = None) -> RagResponse:
+    """`language` is normally left unset: the answer follows the language the question was asked in.
+
+    The customer path passes its own `system` prompt, `prompt_version`, `not_found_text` and a `context` line
+    (whose history this is, which case was asked about); the checks on the reply are the same for both paths.
+    """
     lang = (language or detect_language(question)).upper()
-    nf_text = NOT_FOUND_TEXT.get(lang, NOT_FOUND_TEXT["EN"]) + (f" Ask: {ask_owner}." if ask_owner else "")
+    nf_text = not_found_text.get(lang, not_found_text["EN"]) + (f" Ask: {ask_owner}." if ask_owner else "")
     not_found = RagResponse(answer=nf_text, not_found=True, confidence=1.0, coverage=coverage)
     if not sources:
         return not_found  # nothing retrieved: no call, no chance to guess
 
     blocks = "\n\n".join(f"[S{i}] {s.label()}\n{s.text}" for i, s in enumerate(sources, 1))
-    user = (f"Today's date for this question: {as_of.isoformat()}\nQuestion: {question}\n\nSources:\n\n{blocks}")
+    user = (f"Today's date for this question: {as_of.isoformat()}\nQuestion: {question}\n\n"
+            + (f"{context}\n\n" if context else "") + f"Sources:\n\n{blocks}")
     res = llm.complete(
-        system=SYSTEM.format(language="French" if lang == "FR" else "English"), user=user,
-        prompt_version=PROMPT_VERSION, tier="answer", json_output=True, max_tokens=2500,
+        system=system.format(language="French" if lang == "FR" else "English"), user=user,
+        prompt_version=prompt_version, tier="answer", json_output=True, max_tokens=2500,
         audit_ctx={"kind": kind, "input_text": question, "user_role": user_role, "user_id": user_id,
                    "sources": [s.label() for s in sources]},
     )

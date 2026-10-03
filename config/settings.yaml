@@ -31,6 +31,15 @@ text_controls:
   note_redaction_statuses: [auto_redacted, none]
   scrub_pii: true      # regex-scrub phones, emails, card and account numbers from every text before it leaves the machine
 
+customer_path:
+  # Long context, no vector search (design D1). One customer's history is small: median 11 timeline events, 99th
+  # percentile 73, largest 149; a transcript is ~1,000 characters. So the budget is rarely reached.
+  token_budget: 20000          # D15: filled newest-first (the asked-about case first); the answer states the period covered
+  chars_per_token: 3.5         # rough estimate without a tokenizer; on the safe side for French and transcripts
+  # Which timeline events are given to the model. Notes and transcripts carry text; the others carry a one-line summary
+  # (e.g. "inbound | Promise to pay | promise made"), which is how an answer can say a payment arrived or a cease was asked.
+  event_types: [note, transcript, contact, promise, payment, offer]
+
 llm:
   # Every LLM call goes through common/llm.py. Provider, endpoint and models are set here and nowhere else.
   provider: openai_compatible                   # openai_compatible (OpenRouter, NVIDIA, a local server) | anthropic
