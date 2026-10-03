@@ -78,19 +78,15 @@ def test_only_the_internal_do_not_call_list_blocks_calls():
     from trustissues.features import sources
 
     con = duckdb.connect()
-    con.execute(f"CREATE SCHEMA {sources.SCHEMA}")
-    tables: dict[str, set] = {"customers": {"is_deleted", "effective_to_ts", "national_dncl_flag"},
-                              "model_scores": {"model_name"}}  # + columns the sources filter on
-    for s in sources.SOURCES.values():  # every source, all VARCHAR, as load_raw makes them
-        tables.setdefault(s.table, set()).update(c for c, _ in s.columns.values())
-    for table, cols in tables.items():
-        con.execute(f"CREATE TABLE {sources.SCHEMA}.{table} ({', '.join(f'{c} VARCHAR' for c in sorted(cols))})")
+    sources.create_empty_tables(con)  # every source, all VARCHAR, as load_raw makes them
+    con.execute('ALTER TABLE gold.customer_safeguards ADD COLUMN national_dncl VARCHAR')  # in gold, never read by P3
     for case, cust, national, internal in (("CS-N", "C-N", "true", "false"), ("CS-I", "C-I", "false", "true")):
         con.execute(f"INSERT INTO {sources.SCHEMA}.collections_cases (case_id, coll_customer_ref) VALUES (?, ?)",
                     [case, cust])
-        con.execute(f"""INSERT INTO {sources.SCHEMA}.customers (crm_customer_id, is_deleted, effective_to_ts,
-                        consent_call, national_dncl_flag, internal_do_not_call_flag)
-                        VALUES (?, 'false', '9999-12-31', 'true', ?, ?)""", [cust, national, internal])
+        con.execute("INSERT INTO gold.customer_xref (golden_customer_id, source_system, source_key) VALUES (?, 'crm', ?)",
+                    [f"G-{cust}", cust])
+        con.execute("""INSERT INTO gold.customer_safeguards (golden_customer_id, consent_phone, national_dncl,
+                       internal_do_not_call) VALUES (?, 'true', ?, ?)""", [f"G-{cust}", national, internal])
     flags = rules.load_case_flags(con)
     assert not flags["CS-N"].do_not_call and "agent_call" in rules.allowed_actions(flags["CS-N"]).allowed
     assert flags["CS-I"].do_not_call and rules.allowed_actions(flags["CS-I"]).blocked["agent_call"] == "do_not_call"

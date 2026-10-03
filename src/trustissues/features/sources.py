@@ -1,17 +1,20 @@
 """Typed source relations for P3. The ONLY module in features/ and nba/ that names a warehouse table.
 
-Every source reads the schema in config/settings.yaml (p3.source_schema): `curated` now (typed,
-deduplicated, non-ISO dates recovered); `raw` also works, since everything is cast here, once (but raw
-loses ~10% of account_monthly_snapshot.month_end_date, written in non-ISO formats). When P1 publishes
-gold, the specs below point at `gold.promises_enriched` / `gold.decisioning_customer` /
-`gold.customer_safeguards` and nothing else in P3 changes.
+The person-level sources read P1's published gold layer: `promises` (gold.promises_enriched), `customer_xref`
+(CRM record -> golden customer), `account_owner` (gold.c360_account: account -> golden customer) and
+`crm_safety_flags` (gold.customer_safeguards, per CRM record); the two case sources carry the case's golden
+customer from gold.case_customer. Everything else reads the schema in config/settings.yaml (p3.source_schema):
+`curated` (typed, deduplicated, non-ISO dates recovered). Columns gold does not have yet are joined from curated
+(Step 0b of docs/p3_golden_runbook.md).
 
 Rules for every spec:
 - explicit column allow-list, never `SELECT *`;
 - every source column must be labelled `none` in config/sensitivity.yaml (tests enforce it), except the one
-  `use="fairness"` source, `protected_attributes`, which only nba/fairness.py may read (tests enforce that too);
-- `customers` is read only by `crm_safety_flags` (nba/rules.py) and `protected_attributes` (nba/fairness.py),
-  never as a feature.
+  `use="fairness"` source, `protected_attributes`, which only nba/fairness.py may read (tests enforce that too).
+  Gold tables are not labelled, so a gold column names the source column it is built from (`label_table`,
+  `label_as`) and is checked against that;
+- customer attributes (`customers`, `customer_safeguards`) are read only by `crm_safety_flags` (nba/rules.py) and
+  `protected_attributes` (nba/fairness.py), never as a feature.
 
 `as_of` truncates a source to what was known strictly before that timestamp. Used for live
 ("latest") values and by the point-in-time leakage test.
@@ -19,6 +22,7 @@ Rules for every spec:
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -35,39 +39,100 @@ CASE_DAYS = (7, 14, 21, 30, 45, 60, 90)  # collections_cases.dpd_at_day_<k> / ov
 
 
 @dataclass(frozen=True)
+class Join:
+    """A LEFT JOIN onto the main table (alias `t`). Columns from it are named `alias.column` in Source.columns."""
+    alias: str
+    table: str
+    on: str
+    schema: str = SCHEMA
+
+
+@dataclass(frozen=True)
 class Source:
     table: str
     # output column -> (source column, type). Type is a DuckDB type, or JSON_LIST for a JSON array of strings.
+    # A source column is a column of the main table, or `alias.column` of one of the joins.
     columns: dict[str, tuple[str, str]]
     use: str  # features | label | rules | evaluation | actions | fairness
     event_ts: str | None = None  # output column: when the row became known (for as_of)
     where: str | None = None  # filter on source columns
     # output column -> (SQL for when it became known, value before that). The SQL may name output columns.
     known_at: dict[str, tuple[str, str]] = field(default_factory=dict)
+    schema: str = SCHEMA  # gold sources set "gold"
+    joins: tuple[Join, ...] = ()
+    # Lineage for the sensitivity check. config/sensitivity.yaml labels the source tables (curated / raw) only, so a
+    # gold column is checked against the column it is built from: source column -> "table.column". Columns not
+    # listed use the label of the same name in `label_table` (default: `table`).
+    label_table: str | None = None
+    label_as: dict[str, str] = field(default_factory=dict)
+
+    def label_ref(self, src_col: str) -> str:
+        """The `table.column` whose label in config/sensitivity.yaml applies to a source column."""
+        if src_col in self.label_as:
+            return self.label_as[src_col]
+        if "." in src_col:
+            alias, col = src_col.split(".", 1)
+            return f"{next(j.table for j in self.joins if j.alias == alias)}.{col}"
+        return f"{self.label_table or self.table}.{src_col}"
 
 
 def _c(*names: str, type_: str = "VARCHAR") -> dict[str, tuple[str, str]]:
     return {n: (n, type_) for n in names}
 
 
+# The golden customer ID is P1's surrogate key for a person (gold.customer_xref): labelled like the CRM ID it replaces.
+GOLDEN_ID_LABEL = "customers.crm_customer_id"
+# A case's person: P1 resolves it from the account holders, so cases whose CRM ID does not exist still get one.
+CASE_PERSON = Join("cc", "case_customer", "cc.case_id = t.case_id", schema="gold")
+
 SOURCES: dict[str, Source] = {
+    # gold.promises_enriched is curated.promises_to_pay with the golden ID added; reminder_scheduled_flag is not in
+    # gold yet, so it comes from curated by ptp_id. The label is P3's own, from ptp_status (partially kept = 1); P1's
+    # label_broken (partially kept = 0) is never read (p3_plan.md, golden records Step 0).
     "promises": Source(
-        table="promises_to_pay",
+        table="promises_enriched",
+        schema="gold",
         use="features",
         event_ts="ptp_created_ts",
+        joins=(Join("r", "promises_to_pay", "r.ptp_id = t.ptp_id"),),
+        label_table="promises_to_pay",
+        label_as={"golden_customer_id": GOLDEN_ID_LABEL},
         columns={
-            **_c("ptp_id", "case_id", "crm_customer_id", "account_id", "product", "ptp_channel", "ptp_type",
-                 "payment_method_promised"),
+            **_c("ptp_id", "case_id", "crm_customer_id", "golden_customer_id", "account_id", "product", "ptp_channel",
+                 "ptp_type", "payment_method_promised"),
             **_c("ptp_created_ts", "status_ts", type_="TIMESTAMP"),
             **_c("ptp_due_date", "customer_stated_income_date", type_="DATE"),
             **_c("ptp_amount", "overdue_at_creation", "ptp_to_overdue_ratio", type_="DOUBLE"),
             **_c("days_to_due_at_creation", "ptp_sequence_in_case", "prior_broken_ptp_count", "dpd_at_creation",
                  "grace_days", type_="INTEGER"),
-            "reminder_scheduled_flag": ("reminder_scheduled_flag", "BOOLEAN"),
+            "reminder_scheduled_flag": ("r.reminder_scheduled_flag", "BOOLEAN"),
             # outcome: for the label and for history features "resolved before the event time" only
             "ptp_status": ("ptp_status", "VARCHAR"),
         },
         known_at={"ptp_status": ('"status_ts"', "'open'"), "status_ts": ('"status_ts"', "NULL")},
+    ),
+    # Source record -> person. CRM records only: the other systems' keys (card numbers, CIFs) are PII.
+    "customer_xref": Source(
+        table="customer_xref",
+        schema="gold",
+        use="features",
+        where="source_system = 'crm'",
+        label_table="customers",
+        # status is P1's matching outcome (linked / singleton / in_review ...), metadata about the key
+        label_as={"golden_customer_id": GOLDEN_ID_LABEL, "source_key": "customers.crm_customer_id",
+                  "status": GOLDEN_ID_LABEL},
+        columns={"golden_customer_id": ("golden_customer_id", "VARCHAR"),
+                 "crm_customer_id": ("source_key", "VARCHAR"),
+                 "xref_status": ("status", "VARCHAR")},
+    ),
+    # Account -> person, for every product system (static: which person holds an account does not change).
+    "account_owner": Source(
+        table="c360_account",
+        schema="gold",
+        use="features",
+        label_table="account_monthly_snapshot",
+        label_as={"golden_customer_id": GOLDEN_ID_LABEL, "product": "account_monthly_snapshot.product_type"},
+        columns={**_c("account_id", "golden_customer_id", "product")},
     ),
     "account_snapshots": Source(
         table="account_monthly_snapshot",
@@ -107,9 +172,12 @@ SOURCES: dict[str, Source] = {
         table="collections_cases",
         use="features",
         event_ts="case_open_ts",
+        joins=(CASE_PERSON,),
+        label_as={"cc.golden_customer_id": GOLDEN_ID_LABEL},
         columns={
             **_c("case_id", "primary_account_id", "primary_product", "case_open_reason"),
             "crm_customer_id": ("coll_customer_ref", "VARCHAR"),
+            "golden_customer_id": ("cc.golden_customer_id", "VARCHAR"),
             "case_open_ts": ("case_open_date", "TIMESTAMP"),
             **_c("entry_dpd", "accounts_in_case_count", "prior_cases_12m", type_="INTEGER"),
             "entry_overdue": ("entry_overdue", "DOUBLE"),
@@ -131,11 +199,14 @@ SOURCES: dict[str, Source] = {
         table="collections_cases",
         use="rules",
         event_ts="case_open_date",
+        joins=(CASE_PERSON,),
+        label_as={"cc.golden_customer_id": GOLDEN_ID_LABEL},
         columns={
             **_c("case_id", "case_status", "primary_account_id", "primary_product", "test_cell", "strategy_code",
                  "assignment_method", "dispute_status", "current_bucket", "current_ptp_id", "assigned_agent_id",
                  "assigned_team"),
             "crm_customer_id": ("coll_customer_ref", "VARCHAR"),
+            "golden_customer_id": ("cc.golden_customer_id", "VARCHAR"),
             **_c("case_open_date", "outcome_date", type_="DATE"),
             **_c("entry_dpd", "current_dpd", "contact_cap_7d", "contacts_last_7d", type_="INTEGER"),
             **_c("total_overdue", "entry_overdue", "payments_since_open_amount", type_="DOUBLE"),
@@ -208,19 +279,53 @@ SOURCES: dict[str, Source] = {
             **_c("psi_last_month", "auc_at_validation", type_="DOUBLE"),
         },
     ),
-    # CRM safety flags: nba/rules.py ONLY (P3 plan §4 step 6). Never a model feature.
+    # Safety flags: nba/rules.py ONLY (P3 plan §4 step 6). Never a model feature. One row per CRM record, carrying
+    # its PERSON's safeguards (gold.customer_safeguards: most restrictive across all their records, and P1 adds
+    # case insolvency holds and vulnerability disclosed on contacts). Not in gold yet, so from the CRM record itself:
+    # the preferred contact window. Consents are 'true' / 'false' text in gold.
     "crm_safety_flags": Source(
-        table="customers",
+        table="customer_xref",
+        schema="gold",
         use="rules",
-        where="CAST(is_deleted AS VARCHAR) = 'false' AND CAST(effective_to_ts AS VARCHAR) LIKE '9999%'",
+        where="t.source_system = 'crm'",
+        joins=(Join("s", "customer_safeguards", "s.golden_customer_id = t.golden_customer_id", schema="gold"),
+               Join("c", "customers_current", "c.crm_customer_id = t.source_key")),
+        label_as={
+            "source_key": "customers.crm_customer_id", "golden_customer_id": GOLDEN_ID_LABEL,
+            "s.consent_phone": "customers.consent_call", "s.consent_sms": "customers.consent_sms",
+            "s.consent_email": "customers.consent_email", "s.consent_push": "customers.consent_push",
+            "s.consent_mail": "customers.consent_letter", "s.cease_contact": "customers.cease_communication_flag",
+            "s.deceased": "customers.deceased_flag", "s.bankruptcy": "customers.bankruptcy_flag",
+            "s.insolvency": "customers.consumer_proposal_flag", "s.vulnerability_flag": "customers.vulnerability_flag",
+            "s.internal_do_not_call": "customers.internal_do_not_call_flag",
+            "s.legal_representative": "customers.legal_representative_flag",
+            "s.sunday_contact_permitted": "customers.sunday_contact_permitted",
+            "s.permitted_call_start_local": "customers.permitted_call_start_local",
+            "s.permitted_call_end_local": "customers.permitted_call_end_local",
+            "c.preferred_contact_window_start": "customers.preferred_contact_window_start",
+            "c.preferred_contact_window_end": "customers.preferred_contact_window_end",
+        },
         columns={
-            "crm_customer_id": ("crm_customer_id", "VARCHAR"),
-            **_c("consent_call", "consent_sms", "consent_email", "consent_push", "consent_letter",
-                 "cease_communication_flag", "deceased_flag", "bankruptcy_flag", "consumer_proposal_flag",
-                 "vulnerability_flag", "internal_do_not_call_flag", "legal_representative_flag",
-                 "sunday_contact_permitted", type_="BOOLEAN"),
-            **_c("preferred_contact_window_start", "preferred_contact_window_end", "permitted_call_start_local",
-                 "permitted_call_end_local"),
+            "crm_customer_id": ("source_key", "VARCHAR"),
+            "golden_customer_id": ("golden_customer_id", "VARCHAR"),
+            "consent_call": ("s.consent_phone", "BOOLEAN"),
+            "consent_sms": ("s.consent_sms", "BOOLEAN"),
+            "consent_email": ("s.consent_email", "BOOLEAN"),
+            "consent_push": ("s.consent_push", "BOOLEAN"),
+            "consent_letter": ("s.consent_mail", "BOOLEAN"),
+            "cease_communication_flag": ("s.cease_contact", "BOOLEAN"),
+            "deceased_flag": ("s.deceased", "BOOLEAN"),
+            "bankruptcy_flag": ("s.bankruptcy", "BOOLEAN"),
+            # consumer proposal, or an insolvency hold on any of the person's cases
+            "consumer_proposal_flag": ("s.insolvency", "BOOLEAN"),
+            "vulnerability_flag": ("s.vulnerability_flag", "BOOLEAN"),
+            "internal_do_not_call_flag": ("s.internal_do_not_call", "BOOLEAN"),
+            "legal_representative_flag": ("s.legal_representative", "BOOLEAN"),
+            "sunday_contact_permitted": ("s.sunday_contact_permitted", "BOOLEAN"),
+            "preferred_contact_window_start": ("c.preferred_contact_window_start", "VARCHAR"),
+            "preferred_contact_window_end": ("c.preferred_contact_window_end", "VARCHAR"),
+            "permitted_call_start_local": ("s.permitted_call_start_local", "VARCHAR"),
+            "permitted_call_end_local": ("s.permitted_call_end_local", "VARCHAR"),
         },
     ),
     # Protected attributes, joined back ONLY in nba/fairness.py to compare outcomes across groups (testing only).
@@ -281,7 +386,8 @@ SOURCES: dict[str, Source] = {
 
 
 def _expr(src_col: str, type_: str) -> str:
-    col = f'"{src_col}"'
+    alias, _, name = src_col.rpartition(".")
+    col = f'{alias or "t"}."{name}"'
     if type_ == "JSON_LIST":
         return f"CAST(from_json({col}, '[\"VARCHAR\"]') AS VARCHAR[])"
     if type_ == "VARCHAR":
@@ -293,7 +399,8 @@ def sql(name: str, as_of: datetime | str | None = None) -> str:
     """SELECT for one source. With as_of, only what was known strictly before it."""
     s = SOURCES[name]
     typed = ", ".join(f'{_expr(c, t)} AS "{out}"' for out, (c, t) in s.columns.items())
-    inner = f'SELECT {typed} FROM {SCHEMA}."{s.table}"' + (f" WHERE {s.where}" if s.where else "")
+    joins = "".join(f' LEFT JOIN {j.schema}."{j.table}" {j.alias} ON {j.on}' for j in s.joins)
+    inner = f'SELECT {typed} FROM {s.schema}."{s.table}" t{joins}' + (f" WHERE {s.where}" if s.where else "")
     if as_of is None or s.event_ts is None:
         return inner
     ts = f"TIMESTAMP '{as_of}'"
@@ -305,6 +412,34 @@ def sql(name: str, as_of: datetime | str | None = None) -> str:
         else:
             outs.append(f'"{out}"')
     return f'SELECT {", ".join(outs)} FROM ({inner}) WHERE "{s.event_ts}" < {ts}'
+
+
+def source_tables() -> dict[tuple[str, str], set[str]]:
+    """Every (schema, table) the sources read, with the columns they name: select list, join keys and filters."""
+    tables: dict[tuple[str, str], set[str]] = {}
+    for s in SOURCES.values():
+        aliases = {"t": (s.schema, s.table), **{j.alias: (j.schema, j.table) for j in s.joins}}
+        tables.setdefault(aliases["t"], set()).update(
+            c for c in re.findall(r"(?:CAST\(|\bt\.)?\b(\w+)\s*(?:AS VARCHAR\)\s*)?(?:=|LIKE)", s.where or "")
+            if c not in ("t", "VARCHAR"))
+        for src_col, _ in s.columns.values():
+            alias, _, col = src_col.rpartition(".")
+            tables.setdefault(aliases[alias or "t"], set()).add(col)
+        for j in s.joins:
+            for alias, col in re.findall(r"\b(\w+)\.(\w+)", j.on):
+                tables.setdefault(aliases[alias], set()).add(col)
+    return tables
+
+
+def create_empty_tables(con: duckdb.DuckDBPyConnection) -> None:
+    """For test fixtures: every source table as all-VARCHAR columns, like load_raw makes them. Tables that already
+    exist (the gold interface stubs) get any missing column added."""
+    for (schema, table), cols in source_tables().items():
+        con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        ddl = ", ".join(f'"{c}" VARCHAR' for c in sorted(cols))
+        con.execute(f'CREATE TABLE IF NOT EXISTS {schema}."{table}" ({ddl})')
+        for c in cols:
+            con.execute(f'ALTER TABLE {schema}."{table}" ADD COLUMN IF NOT EXISTS "{c}" VARCHAR')
 
 
 def relation(con: duckdb.DuckDBPyConnection, name: str, as_of=None) -> duckdb.DuckDBPyRelation:
@@ -339,6 +474,14 @@ def hardship_programs(con):
 
 def incumbent_ptp_scores(con):
     return relation(con, "incumbent_ptp_scores")
+
+
+def customer_xref(con):
+    return relation(con, "customer_xref")
+
+
+def account_owner(con):
+    return relation(con, "account_owner")
 
 
 def crm_safety_flags(con):

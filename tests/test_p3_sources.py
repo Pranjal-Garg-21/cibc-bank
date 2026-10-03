@@ -16,11 +16,6 @@ def sensitivity():
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def _where_columns(where: str | None) -> list[str]:
-    return re.findall(r"CAST\((\w+) AS", where or "") + [
-        c for c in re.findall(r"(\w+)\s*(?:=|LIKE)", where or "") if c != "VARCHAR"]
-
-
 def test_every_source_column_is_labelled_none(sensitivity):
     """Default-deny: only columns explicitly labelled `none` may be read (not protected, PII, quasi, unclassified).
     The one exception is the fairness source, checked by the tests below."""
@@ -29,12 +24,22 @@ def test_every_source_column_is_labelled_none(sensitivity):
     for name, s in sources.SOURCES.items():
         if s.use == "fairness":
             continue
-        labels = sensitivity["tables"][s.table]
         for src_col, _ in s.columns.values():
-            label = labels.get(src_col, "unclassified")
-            if label != "none" or f"{s.table}.{src_col}" in proxies:
-                bad.append(f"{name}: {s.table}.{src_col} is {label}")
+            ref = s.label_ref(src_col)
+            table, col = ref.split(".")
+            label = sensitivity["tables"].get(table, {}).get(col, "unclassified")
+            if label != "none" or ref in proxies:
+                bad.append(f"{name}: {src_col} ({ref}) is {label}")
     assert not bad, bad
+
+
+def test_gold_columns_have_lineage(sensitivity):
+    """Gold tables are not in sensitivity.yaml: every column read from one must name the source column it comes from
+    (label_table or label_as), never fall back to a table the labels do not cover."""
+    for name, s in sources.SOURCES.items():
+        for src_col, _ in s.columns.values():
+            table = s.label_ref(src_col).split(".")[0]
+            assert table in sensitivity["tables"], f"{name}: {src_col} has no lineage to a labelled table ({table})"
 
 
 def test_no_protected_or_pii_column_is_selected(sensitivity):
@@ -43,14 +48,20 @@ def test_no_protected_or_pii_column_is_selected(sensitivity):
         if s.use == "fairness":
             continue
         for src_col, _ in s.columns.values():
-            assert f"{s.table}.{src_col}" not in protected
-            assert sensitivity["tables"][s.table].get(src_col) not in ("protected", "direct_pii")
+            ref = s.label_ref(src_col)
+            table, col = ref.split(".")
+            assert ref not in protected
+            assert sensitivity["tables"][table].get(col) not in ("protected", "direct_pii")
 
 
 def test_customers_is_read_only_for_rules_and_fairness():
+    """No feature reads customer attributes. Keys are the exception: the golden and CRM IDs are labelled like
+    customers.crm_customer_id, and a feature may carry them to join on."""
     for name, s in sources.SOURCES.items():
-        if s.table == "customers":
-            assert s.use in ("rules", "fairness"), f"{name} reads customers for {s.use}"
+        tables = {s.table, *(j.table for j in s.joins)} | {
+            s.label_ref(c).split(".")[0] for c, _ in s.columns.values() if s.label_ref(c) != sources.GOLDEN_ID_LABEL}
+        if tables & {"customers", "customers_current", "customer_safeguards"}:
+            assert s.use in ("rules", "fairness"), f"{name} reads customer attributes for {s.use}"
 
 
 def test_protected_attributes_are_read_only_by_the_fairness_check(sensitivity):
@@ -77,15 +88,9 @@ def test_feature_sources_carry_no_outcome_columns_except_the_label():
 
 @pytest.fixture
 def empty_raw():
-    """An in-memory raw schema with the source tables as all-VARCHAR, like load_raw makes them."""
+    """An in-memory warehouse with every source and joined table as all-VARCHAR, like load_raw makes them."""
     con = duckdb.connect()
-    con.execute(f"CREATE SCHEMA {sources.SCHEMA}")
-    tables: dict[str, set] = {}
-    for s in sources.SOURCES.values():
-        tables.setdefault(s.table, set()).update({c for c, _ in s.columns.values()}, _where_columns(s.where))
-    for table, cols in tables.items():
-        ddl = ", ".join(f'"{c}" VARCHAR' for c in sorted(cols))
-        con.execute(f'CREATE TABLE {sources.SCHEMA}."{table}" ({ddl})')
+    sources.create_empty_tables(con)
     return con
 
 
@@ -107,7 +112,8 @@ def test_no_select_star():
 
 
 def test_as_of_hides_outcomes_not_yet_known(empty_raw):
-    empty_raw.execute(f"""INSERT INTO {sources.SCHEMA}.promises_to_pay (ptp_id, ptp_created_ts, status_ts, ptp_status)
+    s = sources.SOURCES["promises"]
+    empty_raw.execute(f"""INSERT INTO {s.schema}.{s.table} (ptp_id, ptp_created_ts, status_ts, ptp_status)
         VALUES ('A', '2026-01-01 10:00:00', '2026-01-20 12:00:00', 'broken'),
                ('B', '2026-01-01 10:00:00', '2026-01-05 12:00:00', 'kept'),
                ('C', '2026-02-01 10:00:00', '2026-02-02 12:00:00', 'kept')""")

@@ -23,12 +23,7 @@ RECS = [  # recommendation_id, case, agent, action, value, requires_approval, ap
 def con():
     c = duckdb.connect()
     apply_stubs(c)
-    c.execute(f"CREATE SCHEMA IF NOT EXISTS {sources.SCHEMA}")
-    tables: dict[str, set] = {"customers": {"is_deleted", "effective_to_ts"}, "model_scores": {"model_name"}}
-    for s in sources.SOURCES.values():
-        tables.setdefault(s.table, set()).update(col for col, _ in s.columns.values())
-    for table, cols in tables.items():
-        c.execute(f"CREATE TABLE {sources.SCHEMA}.{table} ({', '.join(f'{x} VARCHAR' for x in sorted(cols))})")
+    sources.create_empty_tables(c)
     for a, role in (("AG-1", "agent"), ("AG-2", "agent"), ("TL-1", "team_lead")):
         c.execute(f"INSERT INTO {sources.SCHEMA}.agents (agent_id, role, status, team_id) VALUES (?, ?, 'active', 'T1')",
                   [a, role])

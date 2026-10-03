@@ -527,3 +527,31 @@ window and `time_zone`: those three stay read from `curated.customers` through `
 `'false'` text, NULL for the 15,182 people with no CRM record (treated as no consent). `gold.promises_enriched` keeps
 `crm_customer_id` but has no `reminder_scheduled_flag`: read from curated by `ptp_id`. `gold.text_features` has the
 agreed columns, no rows.
+
+### Golden records, Step 1: sources read gold (3 Oct)
+
+`features/sources.py` now reads P1's gold layer for everything about a person. A source can name its schema and
+LEFT JOINs (`Join`, columns as `alias.column`), so a column gold does not have yet is joined from curated.
+
+| Source | Now reads | Notes |
+|---|---|---|
+| `promises` | `gold.promises_enriched` + `curated.promises_to_pay.reminder_scheduled_flag` by `ptp_id` | adds `golden_customer_id` (238,796 of 238,815 promises; 231,517 through the CRM key). Label still from `ptp_status` |
+| `customer_xref` (new) | `gold.customer_xref`, CRM records only | other systems' keys (card numbers, CIFs) are PII |
+| `account_owner` (new) | `gold.c360_account` | account -> person, 1,844,500 accounts, for Step 2's customer joins |
+| `crm_safety_flags` | `gold.customer_xref` -> `gold.customer_safeguards` + `curated.customers_current` (preferred window) | one row per CRM record carrying its person's safeguards. Same output columns, so `nba/rules.py` is unchanged until Step 3. `consumer_proposal_flag` now reads gold `insolvency` (consumer proposal or an insolvency hold on any of the person's cases) |
+| `cases`, `case_history` | + `gold.case_customer` | add the case's `golden_customer_id` (367,217 of 367,229 cases) |
+
+**Sensitivity.** `sensitivity.yaml` labels source tables only, so each gold column names the curated column it is
+built from (`label_table`, `label_as`; the golden ID is labelled like `customers.crm_customer_id`), and the tests check
+that label: `tests/test_p3_sources.py` adds `test_gold_columns_have_lineage`, and the customer-attribute rule now covers
+`customer_safeguards` and joined tables. `sources.create_empty_tables` builds the all-VARCHAR fixture warehouse for
+the tests that need one.
+
+**Safety flags compared with the CRM-only version**, per CRM record (1,017,885): no protection lost (0 consents
+gained, 0 cease-contact or vulnerability flags dropped, 0 Sunday permissions gained, 0 call hours widened). Gained,
+because P1 combines all of a person's records, cases and contacts: 2,389 cease contact, 7,928 vulnerable, 2,703
+insolvency.
+
+**Result.** 191 tests pass. `make features`: training spine 172,651 and case spine 246,673 rows, as before; every
+feature value equal to the curated run within 1e-9 (the 4,020 promise and 7,451 case rows an exact comparison flags
+differ by float summation order only).
