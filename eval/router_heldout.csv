@@ -29,8 +29,8 @@ How many accounts that were late at the end of March 2026 had returned to curren
 Cure percentage for accounts 30 to 59 days past due at the end of May 2026,metric,cure_rate
 What does each contact cost us on average by channel in September 2026?,metric,cost_per_contact
 Cost per outbound contact in August 2026,metric,cost_per_contact
-Number of outbound calls placed on each day of September 2026,metric,contact_volume
-Total contacts made in August 2026 by channel,metric,contact_volume
+Number of outbound calls placed on each day of September 2026,sql,
+Total contacts made in August 2026 by channel,sql,
 Expense for each right party contact in September 2026,metric,cost_per_rpc
 Why did the right-party contact rate move in August 2026?,drivers,rpc_rate
 What explains the shift in broken promises for promises due in September 2026?,drivers,broken_promise_rate

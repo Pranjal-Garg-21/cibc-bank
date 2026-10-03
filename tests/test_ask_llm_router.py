@@ -37,3 +37,9 @@ def test_rule_matches_and_refusals_never_reach_the_model():
     assert classify("Which religious groups default the most?", llm)[0] == "refused"
     assert classify("Promise kept rate in July 2026", llm)[0] == "metric"
     assert llm.calls == []
+
+
+def test_wrongly_typed_fields_do_not_crash():
+    for bad in ({"path": "metric", "metric_id": ["ptp_rate"]}, {"path": "metric", "metric_id": {"a": 1}},
+                {"path": ["sql"], "metric_id": None}, {"path": {"x": 1}}, {"path": 3, "metric_id": 4}):
+        assert classify(UNRULED, FakeLLM(bad))[0] == "cannot_answer"

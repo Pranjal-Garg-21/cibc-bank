@@ -52,8 +52,8 @@ def llm_route(question: str, llm) -> Route | None:
         return None
     d = res.data if isinstance(res.data, dict) else {}
     path, metric = d.get("path"), d.get("metric_id")
-    if path == "metric" and metric in _metrics():
+    if path == "metric" and isinstance(metric, str) and metric in _metrics():
         return Route("metric", metric_id=metric, why="model fallback")
-    if path in ("rag_corpus", "sql"):
+    if isinstance(path, str) and path in ("rag_corpus", "sql"):
         return Route(path, why="model fallback")
     return None
