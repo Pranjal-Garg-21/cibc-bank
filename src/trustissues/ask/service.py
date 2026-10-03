@@ -15,6 +15,7 @@ from .data.execute import QueryTimeout, execute
 from .data.metric_templates import render_metric
 from .data.validator import ValidationError, validate
 from .router import route
+from .sql_fallback import run_fallback
 from .types import AnswerCard, UserContext
 
 RagHandler = Callable[[RagRequest], RagResponse]
@@ -35,7 +36,7 @@ def _csv(columns, rows) -> str:
 
 
 def ask(question: str, user: UserContext, *, as_of_date: date, con=None, database=None,
-        rag: RagHandler = fake_rag, resolver: CaseResolver | None = None) -> AnswerCard:
+        rag: RagHandler = fake_rag, resolver: CaseResolver | None = None, llm=None) -> AnswerCard:
     def card(answer, path, **kw) -> AnswerCard:
         return AnswerCard(question, answer, path, as_of_date, **kw)
 
@@ -64,8 +65,23 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
             return _rag_card(card, "rag_corpus", resp)
         if r.path == "sql":
             check_path(user, "sql")
-            return card("This needs a query outside the certified metrics, and generated SQL is not enabled yet.",
-                        "cannot_answer", notes=["uncertified path not available"])
+            if llm is None:
+                return card("This needs a query outside the certified metrics, and no language model is connected.",
+                            "cannot_answer", notes=["uncertified path not available"])
+            fb = run_fallback(question, llm=llm, policy=query_policy(user), as_of=as_of_date, con=con,
+                              database=database, user_id=user.user_id)
+            if fb.result is None:
+                return card(f"I could not answer this reliably: {fb.reason}.", "cannot_answer", sql=fb.sql,
+                            notes=["uncertified query rejected"])
+            return card(_csv(fb.result.columns, fb.result.rows), "sql", sql=fb.sql, certified=False,
+                        columns=fb.result.columns, rows=fb.result.rows, sources=["gold.semantic_*"],
+                        notes=["Uncertified: this query was generated for this question and checked by the validator, "
+                               "not by a reviewed metric definition."] + (["The first query needed one repair."] if fb.attempts > 1 else []))
+        if r.path == "incident":
+            check_path(user, "sql")
+            return card("Explaining why a number changed needs incident and operations records, which are not "
+                        "connected yet. A plain count by day can be requested instead.", "cannot_answer",
+                        notes=["incident evidence unavailable"])
         return card("I can't tell what is being asked. Try naming a metric, a period, or a policy topic.", "cannot_answer")
     except AccessDenied as e:
         return card(str(e), "refused", refused=True, refusal_reason="access")
@@ -102,5 +118,5 @@ def _metric(question, user, as_of, r, con, database, card) -> AnswerCard:
     if not res.rows:
         return card("No rows matched.", "metric", metric_id=r.metric_id, sql=q.sql, certified=True,
                     columns=res.columns, notes=call.notes)
-    return card(_csv(res.columns, res.rows), "metric", metric_id=r.metric_id, sql=q.sql, certified=True,
+    return card(_csv(res.columns, res.rows), "metric", metric_id=r.metric_id, sql=q.sql, parameters=q.parameters, certified=True,
                 columns=res.columns, rows=res.rows, notes=call.notes, sources=["gold.semantic_*"])

@@ -22,7 +22,7 @@ COUNT_WORDS = r"\b(how many|number of|count|share|rate|average|total|percentage|
 
 @dataclass(frozen=True)
 class Route:
-    path: str  # metric | rag_customer | rag_corpus | sql | cannot_answer
+    path: str  # metric | rag_customer | rag_corpus | sql | incident | cannot_answer
     metric_id: str | None = None
     case_id: str | None = None
     why: str = ""
@@ -38,7 +38,7 @@ def route(question: str) -> Route:
     if metric:
         return Route("metric", metric_id=metric, why=f"trigger for {metric}")
     if re.search(r"\bwhy did\b.{0,60}\b(drop|fall|fell|dip|spike|rise|increase|decrease)\w*", q, re.I):
-        return Route("sql", why="incident explanation: metric evidence plus cited incident sources")
+        return Route("incident", why="explanation needs metric evidence plus cited incident records")
     policy = re.search(POLICY_WORDS, q, re.I)
     if policy and (re.search(POLICY_ASK, q, re.I) or not re.search(ANALYTIC, q, re.I)):
         return Route("rag_corpus", why="policy wording")

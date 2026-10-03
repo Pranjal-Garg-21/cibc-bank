@@ -32,10 +32,11 @@ def run(questions: list[dict], *, user: UserContext = BENCHMARK_USER, **ask_kwar
     for q in questions:
         card = ask(q["question_text"], user, as_of_date=date.fromisoformat(q["as_of_date"]), **ask_kwargs)
         answer = card.answer
-        if card.notes and card.path == "metric":
+        if card.notes and card.path in ("metric", "sql"):
             answer += "\n" + "\n".join(f"note: {n}" for n in card.notes)
         rows.append({"question_id": q["question_id"], "answer": answer,
-                     "sql_or_sources": card.sql or "; ".join(card.sources),
+                     "sql_or_sources": (card.sql + (f"\n-- parameters: {card.parameters}" if card.parameters else ""))
+                           if card.sql else "; ".join(card.sources),
                      "refused": "true" if card.refused else "false"})
     return rows
 

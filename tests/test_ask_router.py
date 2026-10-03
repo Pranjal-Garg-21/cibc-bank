@@ -86,7 +86,7 @@ EXPECTED_NON_METRIC = {
     "BQ-001": "rag_corpus", "BQ-002": "rag_corpus", "BQ-005": "rag_corpus", "BQ-009": "rag_corpus",
     "BQ-019": "rag_corpus", "BQ-020": "rag_corpus", "BQ-026": "rag_corpus", "BQ-033": "rag_corpus",
     "BQ-016": "rag_customer", "BQ-021": "rag_customer", "BQ-022": "rag_customer",
-    "BQ-006": "sql", "BQ-010": "sql", "BQ-030": "sql", "BQ-035": "sql",
+    "BQ-030": "incident", "BQ-035": "sql",
 }
 REFUSED = {"BQ-018", "BQ-023", "BQ-024", "BQ-029", "BQ-031"}
 
@@ -104,3 +104,25 @@ def test_every_released_question_takes_the_expected_path():
             assert route(text).path == EXPECTED_NON_METRIC[qid], qid
         else:
             assert route(text).path == "metric", qid
+
+
+def test_bq006_dispute_comparison_params():
+    c = call("How many late-fee disputes were raised between 15 and 22 September 2026, compared with the 8 days before?")
+    assert c.metric_id == "dispute_count"
+    assert c.parameters == {"start": date(2026, 9, 15), "end": date(2026, 9, 23),
+                            "comparison_start": date(2026, 9, 7), "comparison_end": date(2026, 9, 15)}
+
+
+def test_bq010_out_of_hours_by_province():
+    c = call("What share of outbound calls in September 2026 were outside permitted calling hours, by customer province?")
+    assert c.metric_id == "out_of_hours_share" and c.dimensions == ("province",)
+    assert c.parameters == {"start": date(2026, 9, 1)}
+
+
+def test_certification_pilot_is_not_answered_with_generic_cure_rate():
+    c = call("In the randomised pilot, do agents certified for vulnerable customers achieve a higher 30-day cure rate on hardship cases?")
+    assert isinstance(c, Unsupported) and "pilot" in c.reason.lower()
+
+
+def test_dispute_without_comparison_asks():
+    assert isinstance(call("How many disputes were raised in September 2026?"), Unsupported)

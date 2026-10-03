@@ -9,11 +9,13 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from .asof import Period, parse_periods
+from .asof import Period, days_before, parse_periods
 from .data.metric_templates import DIMENSIONS, FAMILIES
 
 # (metric_id, trigger regex). First match wins, so more specific phrases come first.
 TRIGGERS: list[tuple[str, str]] = [
+    ("dispute_count", r"disputes?\b.{0,40}\b(?:raised|filed|logged)|\b(?:raised|filed)\b.{0,30}\bdisputes?"),
+    ("out_of_hours_share", r"outside (?:of )?permitted (?:calling )?hours|out[- ]of[- ]hours"),
     ("broken_promise_rate", r"broken[- ]promise|promises? (?:were |was )?broken|broke a promise"),
     ("promise_kept_rate", r"promise[- ]kept|kept rate|promises? kept"),
     ("cost_per_rpc", r"cost per (?:right[- ]party|rpc)"),
@@ -98,6 +100,32 @@ def build_call(question: str, metric_id: str, as_of: date) -> MetricCall | Unsup
     observation_end = (as_of + timedelta(days=1)).isoformat()
     call = MetricCall(metric_id, {}, dims)
     random_only = bool(re.search(r"randomi[sz]ed|champion|challenger", q))
+
+    # Shapes no reviewed template expresses: say so rather than answer with a nearby formula.
+    if metric_id == "cure_rate" and re.search(r"certified|certification|pilot|vulnerable", q):
+        return Unsupported("A certification-pilot comparison needs a reviewed variant (assignment-time certification, "
+                           "randomised hardship cases); the generic cure rate would not answer it.")
+    if re.search(r"\bhistor(?:y|ical)\b|\btrend over time\b", q) and metric_id not in ("roll_rate",):
+        return Unsupported("Historical state cannot be rebuilt from current-only data for this metric.")
+
+    if metric_id == "dispute_count":
+        if not periods:
+            return Unsupported("Which period? e.g. 'between 15 and 22 September 2026'.")
+        before = re.search(r"(\d+)\s+days?\s+before", q)
+        if not before:
+            return Unsupported("Disputes are counted for two periods; name the comparison, e.g. 'compared with the 8 days before'.")
+        s, e = _clamp(periods[0], as_of)
+        prev = days_before(Period(s, e, periods[0].label), int(before[1]))
+        call.parameters = {"start": s, "end": e, "comparison_start": prev.start, "comparison_end": prev.end}
+        return call
+    if metric_id == "out_of_hours_share":
+        if not periods:
+            return Unsupported("Which period? e.g. 'in September 2026'.")
+        if dims != ("province",):
+            return Unsupported("Out-of-hours share is reported by customer province.")
+        call.parameters = {"start": _clamp(periods[0], as_of)[0]}
+        call.notes.append("Outbound calls from the start date; permitted-hours flag as supplied by the source.")
+        return call
 
     if metric_id in ("broken_promise_rate", "promise_kept_rate"):
         if not periods:

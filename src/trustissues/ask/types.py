@@ -27,6 +27,7 @@ class AnswerCard:
     refusal_reason: str | None = None
     metric_id: str | None = None
     sql: str | None = None  # executed SQL (certified template or labelled generated SQL)
+    parameters: dict = field(default_factory=dict)  # bound values for a certified template
     certified: bool = False
     columns: tuple[str, ...] = ()
     rows: tuple[tuple, ...] = ()
