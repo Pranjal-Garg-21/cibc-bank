@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 import duckdb
 
 from trustissues.common.fixtures import load_fixtures
-from trustissues.factory.quality.anomaly import Observation, OpsEvent, detect, load_history, record_observation
+from trustissues.factory.quality.ops_anomaly import Observation, OpsEvent, detect, load_history, record_observation
 from trustissues.factory.quality.contract_checks import publish_allowed, run_checks
 from trustissues.factory.quality.check_report import render_report
 

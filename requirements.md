@@ -1,6 +1,6 @@
 # Requirements and Setup: build the warehouse on your own machine
 
-This gets you from nothing to a populated `warehouse/trustissues.duckdb` (raw and curated schemas) using only the original dataset. Nothing here depends on another person's database file: every teammate builds their own from the source data, and `scripts/verify_warehouse.py` proves it came out the same.
+This gets you from nothing to a populated `warehouse/trustissues.duckdb` (raw, curated, identity and gold schemas) using only the original dataset. Nothing here depends on another person's database file: every teammate builds their own from the source data, and `scripts/verify_warehouse.py` proves it came out the same.
 
 For what the code does and why, see [`docs/documentation.md`](docs/documentation.md) and, for the curated layer's results on the real data, [`docs/curation.md`](docs/curation.md). For what is running on P1's machine and what is already done, see [`docs/team_status.md`](docs/team_status.md).
 
@@ -13,7 +13,7 @@ For what the code does and why, see [`docs/documentation.md`](docs/documentation
 | Disk | **about 30 GB free** | Both zips 4.7 GB + extracted data about 9.5 GB + warehouse (raw 5.7 GB, curated adds a similar amount; the final size is not measured yet) |
 | RAM | **16 GB recommended** | Built on a 15.7 GB machine. The raw load peaked around 1.8 GB for the Python process and DuckDB spills to disk when it needs more. 8 GB should work but is untested |
 | Network | one-off ~4.7 GB download | Both zips: the release (2.2 GB) and the voice pack (about 2.5 GB, 2,000 WAV files). The voice pack is needed by the plan (recordings are checksum-verified) but **nothing in the current raw/curated build reads the audio**, so the build works without it for now |
-| Packages | see [`requirements.txt`](requirements.txt) | `duckdb`, `pyyaml`, `openpyxl`, `pytest`, `huggingface_hub` |
+| Packages | see [`requirements.txt`](requirements.txt) | `duckdb`, `pyyaml`, `openpyxl`, `pytest`, `splink`, `scipy`, `pyarrow`, `anthropic`, `huggingface_hub` (pandas comes with splink) |
 
 **Do not put the repo inside a OneDrive / Dropbox / iCloud synced folder** if you can avoid it. The data folder is about 7 GB and the database 10 GB or more; the sync client competes with the build for disk and makes it noticeably slower. If you must, set `WAREHOUSE_DIR` to a folder outside the synced area (section 5).
 
@@ -58,7 +58,7 @@ Check you have `maple_data/maple_collections_release/data/customers.csv` and `ma
 
 ## 4. Build
 
-One command runs ingest, dictionary, curate, data quality and labels, and prints a timing for each stage:
+One command runs every Layer 1 stage in order (ingest, dictionary, curate, anomaly detection, data quality, labels, text controls, identity, gold, views, publish, identity report) and prints a timing for each stage. The stages after curate take about 10 minutes together; the full single-command run has not yet been timed end to end:
 
 ```bash
 python -m trustissues.factory.pipeline
@@ -72,7 +72,10 @@ python -m trustissues.factory.ingest.dictionary      # data dictionary -> raw._d
 python -m trustissues.factory.curate.build_curated   # raw.* -> curated.*        (SLOW: see section 4a)
 python -m trustissues.factory.quality.dq_report      # flags + derived columns + reports/data_quality_report.md (about 20 seconds)
 python -m trustissues.factory.ingest.dictionary      # again, so derived std_* columns get sensitivity labels
+python -m trustissues.factory.pipeline --from text_controls   # text controls, identity, gold, views, publish, report (~10 min)
 ```
+
+Resume points for the later stages: `--from identity`, `--from gold`, `--from publish`. Identity needs `splink` and `scipy`; its optional LLM step and the mapping assistant need API keys (`docs/identity.md`, `docs/documentation.md`).
 
 Useful options: `python -m trustissues.factory.pipeline --from curate` (resume), `--only ingest`, `load_raw --only customers agents` (a subset).
 

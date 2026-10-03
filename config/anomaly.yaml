@@ -1,0 +1,48 @@
+# Anomaly detection (src/trustissues/factory/quality/anomaly.py, plan §3.5).
+# Flags days whose row count, or a column's null rate, is far from normal; then explains each one by the operations
+# log (curated.ops_events) or the calendar (statutory holidays), and alerts on the rest.
+
+window_days: 365          # analyse the last year before AS_OF_DATE (the ops log covers 2026; older years are small)
+end_offset_days: 1        # stop the day before AS_OF_DATE: the snapshot day itself is only partly loaded
+z_threshold: 3            # "more than 3 standard deviations" (robust: median and MAD)
+counts:
+  baseline_weeks: 8       # daily series: compare with the same weekday over the previous 8 weeks (Fridays are busy)
+  baseline_loads: 6       # load series: compare with the previous 6 loads
+  min_baseline: 30        # ignore slices too small to judge
+  min_relative_change: 0.30
+nulls:
+  baseline_weeks: 8       # daily series: the same weekday over the previous 8 weeks (the contact mix changes by weekday)
+  baseline_loads: 6
+  min_rows: 50            # a day needs this many rows for its null rate to count
+  min_change: 0.20        # and must move by at least 20 percentage points
+event_lag_days: 1         # an effect may show up the day after an event ends (late posting, next-day loads)
+long_event_days: 14       # an event longer than this (layoffs, a policy) explains volume changes only, never null rates
+episode_gap_days: 3       # flagged days moving the same way with gaps up to this many days form one episode
+
+# mode: daily (one point per calendar day, missing days count as zero) | loads (one point per day that has rows: files
+# that arrive monthly or quarterly).
+# slice: optional SQL expression; each value is its own series, for null rates too, so a change in the mix of channels
+#   does not look like a change in a column.
+# ignore_columns: regex of columns whose null rate depends on how old the record is (the day-30 outcome of a case
+#   opened last week is empty by design), not on data quality.
+# count_exclude_slices: slices left out of the volume check (bursty internal batch events).
+# nulls_min_age_days: judge null rates only for records at least this old (a case gets its treatment, agent, legal
+#   status over its first weeks, so a young case looks "empty" without anything being wrong).
+series:
+  - {name: contacts, table: curated.contact_history, ts: contact_ts_utc, mode: daily, slice: "channel_resolved || '/' || direction",
+     null_rates: true, count_exclude_slices: [system/internal]}
+  - {name: promises, table: curated.promises_to_pay, ts: ptp_created_ts, mode: daily, slice: ptp_channel, null_rates: true,
+     ignore_columns: "^(ptp_status|status_ts|amount_paid_against|paid_date|broken_reason_agent_coded)$"}
+  - {name: notes, table: curated.agent_notes, ts: note_ts, mode: daily, null_rates: true}
+  - {name: transcripts, table: curated.call_transcripts, ts: call_start_ts, mode: daily, null_rates: true}
+  - {name: offers, table: curated.offers, ts: offer_ts, mode: daily, null_rates: true,
+     ignore_columns: "^(response_ts|customer_response|decline_reason|plan_start_date|plan_status|plan_payments_due|plan_payments_made)$"}
+  - {name: cases_opened, table: curated.collections_cases, ts: case_open_date, mode: daily, slice: primary_product, null_rates: true,
+     nulls_min_age_days: 90,
+     ignore_columns: "^((dpd|overdue)_at_day_[0-9]+|outcome|outcome_date|cure_flag|cure_date|days_to_cure|next_action_ts|next_scheduled_action|chargeoff_.*|recovered_post_chargeoff|current_ptp_.*|last_.*)$"}
+  - {name: assignments, table: curated.case_assignment_history, ts: assigned_ts, mode: daily, slice: queue}
+  - {name: payments, table: curated.transactions, ts: posting_date, mode: daily, slice: "txn_type || '/' || coalesce(channel, '?')",
+     where: "txn_type IN ('card_payment', 'loan_payment', 'payroll', 'government_benefit')"}
+  - {name: bureau_files, table: curated.external, ts: file_received_ts, mode: loads, null_rates: true}
+  - {name: bureau_pulls, table: curated.bureau_history, ts: pull_date, mode: loads, null_rates: true}
+  - {name: account_snapshots, table: curated.account_monthly_snapshot, ts: month_end_date, mode: loads, slice: product_type, null_rates: true}

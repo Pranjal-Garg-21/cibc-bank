@@ -57,6 +57,7 @@ Both are known to be changed on the P4 branch as well as on `main`.
 - [ ] Once `common/llm.py` is on `main`, change `second_opinion._ask()` to call it, and drop the `identity.llm_model` / `llm_effort` settings in favour of the shared `llm:` section.
 - [ ] **Team decision:** identity pairs contain unmasked names, dates of birth, phone numbers and postal codes, because those are what the matcher compares. Agree which LLM provider may receive them before running it (3,343 pairs waiting).
 - [ ] Keep the safe default: if the call fails or no key is configured, pairs go to the human review queue and records stay separate.
+- [ ] Same for `src/trustissues/factory/curate/mapping_assistant.py`: it calls OpenRouter (Nemotron 3 Super) itself through `_post()` with its own `mapping_assistant:` section in `config/settings.yaml`. Replace `_post()` with `common/llm.py` and move `base_url`, `api_key_env`, `model`, `extra_body` into the shared `llm:` section (P4's section already uses the same provider, model and `OPENROUTER_API_KEY`). Keep its cost guard, cache and `--call` safety switch, or confirm `llm.py` provides the same.
 
 ---
 
@@ -77,6 +78,6 @@ Full list with reasons: `docs/consumer_views.md` §1. Summary:
 - [ ] P3: `label_broken`: `partially_kept` counts as not broken (follows the certified `broken_promise_rate`).
 - [ ] P3: `decisioning_customer` is a point-in-time history table; join on `available_from <= ptp_created_ts`.
 - [ ] P3: CRM attributes are NULL before the CRM version started (no back-filling); this leaves pre-2022 promises without CRM features.
-- [ ] Everyone: a collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID. Use `gold.case_customer` to join cases to people (1,265 cases disagree; 11,137 cases name a CRM ID that does not exist).
+- [ ] Everyone: a collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID. Use `gold.case_customer` to join cases to people (1,265 cases disagree; 11,137 cases name a CRM ID that does not exist, and 11,125 of those are tied to a person through their accounts).
 - [ ] P2: `bucket_transitions` is quarter to quarter; `semantic_*` views wait for P2 to name the metric shapes.
 - [ ] All: consent column names (`consent_phone` = CRM `consent_call`, `consent_mail` = CRM `consent_letter`).

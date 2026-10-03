@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
-from .anomaly import Anomaly
+from .ops_anomaly import Anomaly
 from .contract_checks import CheckResult, publish_allowed
 
 
