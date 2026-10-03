@@ -68,3 +68,21 @@ def test_unregistered_table_passes_through_as_text(con):
     r = B.curate_table(con, "newthing", {}, {})
     assert r["curated"] == 1
     assert con.execute("SELECT a, b FROM curated.newthing").fetchone() == ("1", None)  # blank -> NULL, no type guessed
+
+
+def test_identity_column_typed_as_date_still_standardises(con):
+    """Regression: external.subject_dob_reported is a DATE in schema.json; the build crashed on it
+    ('No function matches std_dob(DATE)') because the standardise functions only accept text."""
+    schema = {"bureau": {"columns": [
+        {"name": "ref", "type": "string"}, {"name": "subject_name_reported", "type": "string"},
+        {"name": "subject_dob_reported", "type": "date"}, {"name": "subject_address_reported", "type": "string"}]}}
+    cfg = {"identity_fields": {"bureau": {
+        "name": {"col": "subject_name_reported", "order": "auto", "caps_default": "last_first"},
+        "dob": "subject_dob_reported", "postal_from_address": "subject_address_reported"}}}
+    con.execute("CREATE TABLE raw.bureau (ref VARCHAR, subject_name_reported VARCHAR, subject_dob_reported VARCHAR, "
+                "subject_address_reported VARCHAR, _ingested_at TIMESTAMP, _source_file VARCHAR, _batch_id VARCHAR, _row_hash VARCHAR)")
+    con.execute("INSERT INTO raw.bureau VALUES ('0027621481', 'NOWAK, OKSANA ZOFIA', '1996-01-17', "
+                "'8625 KINGSWAY RD, SURREY BC V3X0K6', now(), 'f', 'B1', 'h1')")
+    B.curate_table(con, "bureau", schema, cfg)
+    r = con.execute("SELECT std_dob, std_dob_ambiguous, std_name_last, std_postal, std_fsa FROM curated.bureau").fetchone()
+    assert r == ("1996-01-17", False, "NOWAK", "V3X0K6", "V3X")

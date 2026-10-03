@@ -179,7 +179,8 @@ def curate_table(con, name: str, schema: dict, curate_cfg: dict) -> dict:
     dedup = f"SELECT * FROM ({body}) QUALIFY row_number() OVER (PARTITION BY _row_hash ORDER BY _ingested_at) = 1"
 
     if ident:
-        pre = ", ".join([f"{q(c)} AS raw_{c}" for c in sorted(ident_src) if c in data_cols] + ["*"])
+        # the standardise functions take text; a source column may be typed (external.subject_dob_reported is a DATE)
+        pre = ", ".join([f"CAST({q(c)} AS VARCHAR) AS raw_{c}" for c in sorted(ident_src) if c in data_cols] + ["*"])
         final = (f"SELECT * EXCLUDE ({', '.join('raw_' + c for c in sorted(ident_src) if c in data_cols)}), "
                  f"{', '.join(identity_select(name, ident))} FROM (SELECT {pre} FROM ({dedup}))")
         # raw_<col> must hold the typed (trimmed) text: identity cols are text kind so q(c) is already clean
