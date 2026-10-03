@@ -4,7 +4,13 @@ Build plan for the 36-hour build phase (3 Oct 09:00 → 4 Oct 21:00 IST). Source
 
 This is a skeleton, not an exhaustive list. Add files when a new purpose comes up, but keep them inside the layer packages below so ownership stays clear.
 
-**Owners:** P1 = Layer 1 (Data Product Factory) · P2 = Layer 2 structured path (Ask, NL-to-SQL) · P3 = Layers 3–4 (features, model, NBA) · P4 = RAG paths, LLM text features, app screens, governance and submission.
+**Owners (balanced):**
+- **P1**: Layer 1 core. Ingest, curate, identity, gold build, decisioning views, publish, pipeline, contract YAML.
+- **P2**: Layer 2 structured path (Ask, NL-to-SQL), plus data quality (`factory/quality/`), `semantic_*` views, benchmark runner, Team Lead, Identity Review and Data Quality pages, `masking.py`.
+- **P3**: Layers 3–4 (features, model, NBA), plus the Agent Queue and Decision Card pages, `monitoring.py`.
+- **P4**: RAG paths, LLM text features, `llm.py` / `audit.py`, Home and Ask pages, `roles.py`, architecture, README, demo and submission.
+
+**Why this split:** P1 had identity resolution (the riskiest piece) plus all of quality and views; P4 had RAG plus every screen. P2's later hours were light, so P2 absorbs P1's quality work and the less NBA-coupled screens. P3 takes the screens that show its own output. Rewording and allocation moved to stretch to protect P3.
 
 ---
 
@@ -122,7 +128,7 @@ Matching passes, cheapest and surest first. When unsure, records stay separate.
 | `cluster.py` | Connected components over trusted links only. Conflict checks: two DOBs, two hashes, or more than 5 CRM records means no merge, and the cluster goes to review. Stable `G-000000` IDs reuse the oldest CRM record's ID. Unmatched records become singletons. Writes `gold.customer_xref` with method, confidence and status (`linked`, `in_review`, `unresolved`, `blocked_conflict`, `singleton`). |
 | `relationships.py` | Joint holders and co-borrowers go into `gold.customer_relationship`. Never merged, never used as identity evidence. |
 
-### 3.4 Gold and consumer views: `factory/gold/`
+### 3.4 Gold and consumer views: `factory/gold/` (P1; `semantic_*` views are P2)
 
 | File | Intention |
 |---|---|
@@ -135,7 +141,7 @@ Matching passes, cheapest and surest first. When unsure, records stay separate.
 | `views/semantic_*.sql` | One view per certified-metric shape for Ask, plus `bucket_transitions` for roll rate and a salary summary. |
 | `publish.py` | Builds into a staging schema, runs the quality gate, then swaps it into `gold` only if every blocking rule passes. |
 
-### 3.5 Quality: `factory/quality/`
+### 3.5 Quality: `factory/quality/` (P2; P1 supplies the contract YAML)
 
 | File | Intention |
 |---|---|
@@ -222,9 +228,9 @@ Rules first, then model, then action choice, then explanation, then human review
 | `nba/evaluate.py` | Compares with the incumbent `model_scores` ptp_break score on the same promises: AUC, calibration, share of broken promises caught in the riskiest 20%. Writes `reports/model_evaluation.md`. |
 | `nba/fairness.py` | Compares outcomes across protected groups, joined back **only here**, for testing. Writes `reports/fairness_report.md`. |
 | `nba/actions.py` | Action catalogue, including wait. Values each allowed action as expected payment minus contact cost, using the bank's past test-cell results and `channel_capacity.unit_cost_cad`. Hardship can only make treatment gentler. |
-| `nba/allocate.py` | Fits the chosen actions to the day's agent capacity (`agents`, `agent_shifts`) and channel capacity (`channel_capacity`). |
+| `nba/allocate.py` | **Stretch (first cut).** Fits the chosen actions to the day's agent capacity (`agents`, `agent_shifts`) and channel capacity (`channel_capacity`). |
 | `nba/explain.py` | SHAP top 3 reasons, why the action beat the runner-up, which rules ruled out others, and the evidence note or call behind any text signal. Template text, e.g. "High risk of breaking (0.81): …". |
-| `nba/reword.py` | Optional LLM rewording, then a fact check (numbers, reasons and dates must match the template). Falls back to the template on mismatch. |
+| `nba/reword.py` | **Stretch (cut first).** Optional LLM rewording, then a fact check (numbers, reasons and dates must match the template). Falls back to the template on mismatch. |
 | `nba/queue.py` | Nightly morning queue into `gold.nba_decisions` (decision card JSON, model version, feature snapshot ID). |
 | `nba/review.py` | Accept or override with a reason code (I7). Team-lead approval of the daily digital-reminder batch. Mandatory approval for hardship, vulnerability and high-balance cases. Writes `gold.nba_overrides`. |
 | `nba/promise_coach.py` | **Stretch.** Break risk for alternative dates and amounts during a call, from Redis plus the model, no LLM, under 100 ms. |
@@ -250,25 +256,25 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 
 | File | Intention |
 |---|---|
-| `roles.py` | Resolves a demo user (agent ID / team lead / analyst) to a scope. Shared by Ask, RAG and the app. |
-| `masking.py` | Masks PII by default in any dataframe shown in the UI unless the role allows it. |
-| `monitoring.py` | Summaries for the DQ page: override rate, model AUC/PSI, LLM feature accuracy, open identity reviews. |
+| `roles.py` (P4) | Resolves a demo user (agent ID / team lead / analyst) to a scope. Shared by Ask, RAG and the app. |
+| `masking.py` (P2) | Masks PII by default in any dataframe shown in the UI unless the role allows it. |
+| `monitoring.py` (P3) | Summaries for the DQ page: override rate, model AUC/PSI, LLM feature accuracy, open identity reviews. |
 
 ---
 
 ## 8. App, scripts, tests
 
-**`app/`** (Streamlit, P4)
+**`app/`** (Streamlit; owner per page in the Owner column)
 
-| File | Intention |
-|---|---|
-| `Home.py` | Role picker (agent / team lead / analyst) and a short pipeline status. |
-| `pages/1_Ask.py` | Question box, answer card with editable filter chips, a "show the working" drawer (SQL or sources), summary, follow-ups, refusal display. |
-| `pages/2_Agent_Queue.py` | Morning queue for the selected agent, sorted by value. |
-| `pages/3_Decision_Card.py` | C360 summary, timeline, recommendation, top reasons, blocked actions, evidence quotes, and accept/override with a reason code. |
-| `pages/4_Team_Lead.py` | Approve the digital-reminder batch and the mandatory-approval cases; weekly override review. |
-| `pages/5_Identity_Review.py` | Grey-zone and conflict pairs side by side with Splink and LLM reasons. Decisions append to `identity_decisions.csv`. |
-| `pages/6_Data_Quality.py` | Contract rule results, anomalies, match-status counts. |
+| File | Owner | Intention |
+|---|---|---|
+| `Home.py` | P4 | Role picker (agent / team lead / analyst) and a short pipeline status. |
+| `pages/1_Ask.py` | P4 | Question box, answer card with editable filter chips, a "show the working" drawer (SQL or sources), summary, follow-ups, refusal display. |
+| `pages/2_Agent_Queue.py` | P3 | Morning queue for the selected agent, sorted by value. |
+| `pages/3_Decision_Card.py` | P3 | C360 summary, timeline, recommendation, top reasons, blocked actions, evidence quotes, and accept/override with a reason code. |
+| `pages/4_Team_Lead.py` | P2 | Approve the digital-reminder batch and the mandatory-approval cases; weekly override review. |
+| `pages/5_Identity_Review.py` | P2 | Grey-zone and conflict pairs side by side with Splink and LLM reasons. Decisions append to `identity_decisions.csv`. |
+| `pages/6_Data_Quality.py` | P2 | Contract rule results, anomalies, match-status counts. |
 
 **`scripts/`**
 
@@ -318,13 +324,17 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 
 ## 10. Schedule (maps the design doc's build plan to files)
 
+**Hours 0–4 are shared.** All four agree the stub tables (§7.1), get `load_raw` and `llm.py` working, and share one DuckDB. P1 delivers `curated.promises` and related tables first, ahead of identity, so P3 is not blocked.
+
 | Hours | P1 | P2 | P3 | P4 |
 |---|---|---|---|---|
-| 0–4 | `load_raw`, `dictionary`, `sensitivity.yaml`, interface stub tables | `metric_catalog`, `metric_sql/*`, `refusal_gate`, `run_benchmark.py` skeleton | `build_training_set` (point-in-time spine on curated data) | `text_extract` prompt, `label_notes.py` + ~200 labels, `llm.py`, `audit.py` |
-| 4–12 | `standardise`, `build_curated`, `rules`, `splink_model` | `params`, `execute`, `access`, `asof` | `features/sql/*`, Feast repo | `policy_ingest`, `policy_search` |
-| 12–20 | `second_opinion`, `cluster`, `build_c360`, views, `publish` | `validator`, `drivers`, `schema_graph`, `uncertified_sql` | `train`, `evaluate` | `customer_path`, `answer`, Ask + Decision Card pages |
-| 20–28 | `contract_checks`, `anomaly`, `dq_report`, `c360_customer.yaml` | Benchmark runs and fixes | `rules`, `hardship`, `actions`, `allocate`, `explain`, `queue`, `review` | Agent Queue / Team Lead / Identity Review pages, I7 wiring |
-| 28–36 | Timings, README "what changed" | Run extra questions at 19:00 on 4 Oct, final CSV | `fairness`, `reword` | Architecture diagram, demo video, deck, submit by 21:00 |
+| 0–4 | `load_raw`, `dictionary`, `sensitivity.yaml`, interface stubs, then curated promises/accounts first | `metric_catalog`, `metric_sql/*`, `refusal_gate`, `run_benchmark.py` skeleton | `build_training_set` on curated promises, Feast repo skeleton | `llm.py`, `audit.py`, `text_extract` prompt, `label_notes.py` + ~200 labels |
+| 4–12 | `standardise`, `build_curated`, `rules`, `splink_model` | `params`, `execute`, `access`, `asof`, `semantic_*` views | `features/sql/*`, Feast repo | `policy_ingest`, `policy_search`, `text_extract` run |
+| 12–20 | `second_opinion`, `cluster`, `build_c360`, `decisioning_customer`, `publish` | `validator`, `drivers`, `schema_graph`, `uncertified_sql`; start `contract_checks` | `train`, `evaluate`, `text_eval` hookup | `customer_path`, `answer`, Home + Ask pages, `roles.py` |
+| 20–28 | `review_queue`, `c360_customer.yaml`, `pipeline.py`, fix identity issues | `anomaly`, `dq_report`, benchmark runs and fixes, Identity Review page | `rules`, `hardship`, `actions`, `explain`, `queue`, `review`, Agent Queue + Decision Card pages | `text_eval`, RAG fixes, benchmark RAG questions, architecture diagram |
+| 28–36 | Timings, README "what changed", help P2/P4 | Team Lead + Data Quality pages, `masking.py`, extra questions at 19:00 on 4 Oct, final CSV | `fairness`, `monitoring.py`, then `allocate` / `reword` only if time | Demo video, deck, README, submit by 21:00 |
+
+**Cross-help rule:** whoever finishes a block early takes the next unowned item from the slowest owner. Expect P1 (identity) to need it most.
 
 **Stretch, in order:** promise coach → event re-scoring → French policy answers.
 
