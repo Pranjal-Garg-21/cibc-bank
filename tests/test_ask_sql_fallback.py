@@ -117,3 +117,35 @@ def test_repair_prompt_does_not_carry_quoted_values(con):
     llm = ScriptedLLM(bad, GOOD)
     ask(Q, LEAD, as_of_date=AS_OF, con=con, llm=llm)
     assert "C0" not in llm.calls[1]["user"]
+
+
+# ---- implied filters and column hints -------------------------------------------------------------------------
+
+from trustissues.ask.sql_fallback import column_hint, implied_filter_problem  # noqa: E402
+
+CALLS_SQL = "SELECT agent_site, COUNT(*) FROM gold.semantic_contacts WHERE direction = 'outbound' GROUP BY 1"
+
+
+def test_calls_without_channel_filter_is_rejected():
+    msg = implied_filter_problem("How many outbound calls by agent site?", CALLS_SQL)
+    assert msg and "channel = 'call'" in msg
+
+
+def test_filter_present_passes_in_both_spellings():
+    q = "How many outbound calls by agent site?"
+    ok = "SELECT 1 FROM gold.semantic_contacts WHERE channel = 'call' AND direction = 'outbound'"
+    assert implied_filter_problem(q, ok) is None
+    assert implied_filter_problem(q, ok.replace("channel = 'call'", "channel IN ('call')")) is None
+
+
+def test_outbound_without_direction_and_other_tables_unaffected():
+    assert "direction" in implied_filter_problem("How many outbound contacts?", "SELECT COUNT(*) FROM gold.semantic_contacts")
+    assert implied_filter_problem("How many calls did cases get?", "SELECT COUNT(*) FROM gold.semantic_cases") is None
+    assert implied_filter_problem("Calls to the call centre", "SELECT COUNT(*) FROM gold.semantic_contacts WHERE channel = 'call'") is None
+
+
+def test_unknown_column_hint_names_the_owning_table():
+    assert "gold.semantic_cases" in column_hint("ValidationError: Unknown, ambiguous or sensitive column: Unknown column: queue")
+    assert "gold.semantic_cases" in column_hint("ValidationError: Column 'queue' could not be resolved. Line: 1, Col: 12")
+    assert column_hint("ValidationError: something else") == ""
+    assert column_hint("Unknown column: not_a_column") == ""

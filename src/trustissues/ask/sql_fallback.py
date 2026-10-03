@@ -85,6 +85,41 @@ def _redact(message: str) -> str:
     return re.sub(r"'[^']*'", "'?'", message.splitlines()[0])[:200]
 
 
+# Words in a question that imply a filter on gold.semantic_contacts. A query that reads the table without it counts
+# the wrong thing and still looks plausible, so it is sent back for repair instead of being run.
+IMPLIED_FILTERS = (
+    (r"\bcalls?\b(?!\s*cent)", "channel", "call", "calls"),
+    (r"\b(?:sms|text messages?)\b", "channel", "sms", "SMS or text messages"),
+    (r"\bemails?\b", "channel", "email", "emails"),
+    (r"\boutbound\b", "direction", "outbound", "outbound"),
+    (r"\binbound\b", "direction", "inbound", "inbound"),
+)
+
+
+def implied_filter_problem(question: str, sql: str) -> str | None:
+    """A repair message when the question names a channel or direction that the query on contacts never filters on."""
+    if "semantic_contacts" not in sql.lower():
+        return None
+    for pattern, column, value, word in IMPLIED_FILTERS:
+        if re.search(pattern, question, re.I) and not re.search(
+                rf"\b{column}\b[\"\s]*(?:=\s*'{value}'|in\s*\([^)]*'{value}')", sql, re.I):
+            return f"The question asks about {word} but the query does not filter {column} = '{value}'"
+    return None
+
+
+def column_hint(err: str) -> str:
+    """When a column was not found, say which approved table has it, so the repair can join instead of guessing."""
+    m = re.search(r"Unknown column: (\w+)|Column '(\w+)' could not be resolved", err)
+    if not m:
+        return ""
+    name = m[1] or m[2]
+    owners = [t for t, cols in SCHEMAS.items() if name in cols]
+    if not owners:
+        return ""
+    return (f"Hint: column {name} is not on the table you used; it is on {', '.join(owners)}. "
+            "Join that table on a key both tables have (case_id, golden_customer_id or account_id).\n")
+
+
 @dataclass
 class FallbackResult:
     sql: str | None
@@ -116,6 +151,9 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
         if sql is None:
             return FallbackResult(last_sql, None, reason or "the model could not express this question over the approved tables", attempts)
         try:
+            problem = implied_filter_problem(question, sql)
+            if problem:
+                raise ValueError(problem)
             checked = validate(sql, policy)
             return FallbackResult(checked.sql, execute(checked, None, con=con, database=database), "", attempts)
         except (ValidationError, QueryTimeout, ValueError) as e:
@@ -130,6 +168,7 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
         if "aggregates only" in err or "subqueries" in err:
             hint = ("Hint: write ONE flat SELECT with GROUP BY and ORDER BY in the same statement. "
                     "No outer SELECT, no FROM (SELECT ...), no UNION.\n")
+        hint += column_hint(err)
         try:
             sql, reason = _generate(llm, system, f"Question: {question}\n\nYour previous SQL failed.\nSQL: {sql}\nError: {err}\n"
                                     f"{hint}Return a corrected query in the same JSON shape.", ctx)
