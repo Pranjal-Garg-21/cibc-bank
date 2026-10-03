@@ -15,6 +15,8 @@ Keys are join/scope fields, not personal details for display. The validator rest
 
 Adapters must preserve row grain: unique CRM crosswalk, case keys and agent IDs before joining. Unmatched site is `self_serve` via a LEFT JOIN. An unresolved customer remains NULL; never invent an identity or use a many-to-many crosswalk join. Channel is `coalesce(channel_v2, channel)`. Reported buckets remain as received; canonical buckets derive from observed DPD with the release ranges. Negative/missing DPD has no canonical bucket. Source dates use the current curated recovery logic, retaining historical snapshots.
 
+The inspected release development build has exactly one retained row per account (1,064,500 rows and distinct account IDs). Closed/charged-off accounts can retain older snapshot dates. Write-off therefore includes all rows with `snapshot_date <=` the as-of date, producing an account denominator of 1,064,500 rather than 861,596 exact-date rows. If multiple historical rows per account are introduced into this view, select one eligible lifecycle row before calculating this metric; historical observations belong in `semantic_snapshots`. Current delinquency continues to require the exact snapshot date, active/blocked status and observed DPD. See [the write-off correction and validation](p2_write_off_fix.md).
+
 Creation and outcome fields coexist in promises for reporting, not for model features. Dates and labels must be observed by the caller's explicit cutoff. Current case/account fields cannot reconstruct historical states; unsupported historical questions must be rejected by the service. Local contact timestamps are not converted again. The timestamp/date boundary convention is supplied by Claude's date resolver, not inferred from the metric ID.
 
 ## Template parameters
@@ -31,7 +33,7 @@ Creation and outcome fields coexist in promises for reporting, not for model fea
 | `hardship_rate` | `start`, `end` | case-open cohort; STRUCTURED recorded flag, no text numerator substitution |
 | `average_dpd` | none | open cases (`outcome IS NULL`), observed current DPD; release snapshot only |
 | `delinquency_rate` | `snapshot_date` | active/blocked accounts, observed DPD; product-specific card variant supported |
-| `write_off_rate` | `start`, `end`, `snapshot_date` | charge-off count / snapshot accounts; also emits charge-off count and amount |
+| `write_off_rate` | `start`, `end`, `snapshot_date` | charge-off date `[start,end)` count / all account rows observed on or before `snapshot_date`; also emits charge-off count and amount; retains older closed/charged-off snapshots |
 | `contact_attempts_per_case` | `start`, `end` | open cases LEFT JOIN outbound contacts; include zero-contact cases |
 | `payroll_delay_share` | `snapshot_date` | customers with payroll; delay >7 / eligible customers |
 | `roll_rate` | `start_snapshot`, `end_snapshot`, `start_dpd_min`, `start_dpd_max`, `exclude_holds` | paired observed DPD; worse canonical rank; catalogue exclusions optional and disclosed (benchmark reference differs) |

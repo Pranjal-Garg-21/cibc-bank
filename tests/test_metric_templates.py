@@ -112,6 +112,45 @@ def test_identifier_and_variant_injection_rejected():
     with pytest.raises(ValueError):render_metric('rpc_rate',parameters={'start': START})
 
 
+def test_write_off_includes_older_snapshots_and_full_as_of_denominator(con):
+    con.execute('DELETE FROM gold.semantic_accounts')
+    for key, snapshot, chargeoff, amount in [
+        ('current', date(2026,9,28), None, None),
+        ('closed', date(2024,11,1), None, None),
+        ('first', date(2025,9,29), date(2025,9,29), 100),
+        ('last', date(2026,9,28), date(2026,9,28), 50),
+        ('before', date(2025,9,28), date(2025,9,28), 200),
+        ('future', date(2026,9,29), date(2026,9,29), 400),
+    ]:
+        insert(con,'accounts',account_id=key,product='card',snapshot_date=snapshot,
+               chargeoff_date=chargeoff,chargeoff_amount=amount)
+    q=render_metric('write_off_rate',parameters=dict(start=date(2025,9,29),end=date(2026,9,29),
+                    snapshot_date=date(2026,9,28)),dimensions=('product',))
+    result=execute(validate(q.sql,QueryPolicy('team_lead',SCHEMAS)),q.parameters,con=con)
+    # Old closed and pre-window charged-off accounts also belong in the population.
+    assert result.rows == (('card',40.0,2,150.0,5),)
+    q=render_metric('write_off_rate',parameters=dict(start=date(2025,9,29),end=date(2026,9,28),
+                    snapshot_date=date(2026,9,28)))
+    result=execute(validate(q.sql,QueryPolicy('team_lead',SCHEMAS)),q.parameters,con=con)
+    assert result.rows == ((20.0,1,100.0,5),)  # exclusive charge-off end, same population
+
+
+def test_delinquency_excludes_noncurrent_closed_and_charged_off_accounts(con):
+    for key, snapshot, status in [
+        ('old_active',date(2026,9,27),'active'),
+        ('future_active',date(2026,9,29),'active'),
+        ('closed',date(2026,9,28),'closed'),
+        ('charged',date(2026,9,28),'charged_off'),
+        ('unknown',date(2026,9,28),'unknown'),
+    ]:
+        insert(con,'accounts',account_id=key,product='card',snapshot_date=snapshot,
+               account_status=status,dpd=100)
+    q=render_metric('delinquency_rate',parameters=parameters('delinquency_rate'))
+    result=execute(validate(q.sql,QueryPolicy('team_lead',SCHEMAS)),q.parameters,con=con)
+    # Existing fixture retains current active + blocked observed DPD, excludes NULL DPD.
+    assert result.rows == ((50.0,1,2),)
+
+
 def test_out_of_hours_supplied_flag_inner_join_and_filters(con):
     con.execute("DELETE FROM gold.semantic_contacts")
     con.execute("UPDATE gold.semantic_cases SET province='ON' WHERE case_id='A'")
