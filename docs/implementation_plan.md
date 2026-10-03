@@ -100,9 +100,9 @@ cibc-trustissues/
 | File | Intention |
 |---|---|
 | `load_raw.py` | Loads all 31 tables (CSV, Parquet by year, transcript JSON) into `raw.<table>` exactly as received. Stamps `_ingested_at`, `_source_file`, `_batch_id`, `_row_hash`. Skips unchanged rows by hash. |
-| `manifest.py` | Per-file row count, column list and checksum, written to `raw._load_manifest`. |
+| `manifest.py` | Per-file row count, column list and checksum, written to `raw._load_manifest`. Also checks every `voice_samples` file for existence, size and sha256 against the table; mismatches go to the DQ report. |
 | `schema_drift.py` | Compares columns, types and enums with the contract and dictionary. A removed or retyped column stops the load. The LLM suggests a likely rename (e.g. `channel_v2`). |
-| `dictionary.py` | Parses the data dictionary xlsx into `raw._dictionary`. Generates `config/sensitivity.yaml`. |
+| `dictionary.py` | Parses the data dictionary xlsx into `raw._dictionary`. Generates `config/sensitivity.yaml`, including the voice columns `customer_accent_region`, `agent_accent_region`, `agent_voice_id` and `customer_voice_id` as protected or proxy (kept out of the decisioning view and features). |
 
 ### 3.2 Curated: `factory/curate/`
 
@@ -111,7 +111,7 @@ cibc-trustissues/
 | `standardise.py` | Pure functions, unit-tested: DOB → ISO (ambiguous day/month keeps both readings), phone → E.164 (masked phones keep their visible digits), name → uppercase tokens without accents, parsed with initials kept, postal → `A1A1A1` + FSA, employer normalisation. |
 | `build_curated.py` | Runs the per-table SQL. Casts types (a failed cast becomes null, is flagged, and keeps its raw text). Dedupes on `_row_hash`. Picks the current CRM version and the latest `snapshot_date` per account (history kept separately). Validates enums against `code_lookups`. |
 | `sql/<table>.sql` | One curated transform per source table. LLM-drafted from approved mappings, then reviewed. |
-| `text_controls.py` | Marks notes and transcripts eligible for downstream LLM use: notes with `redaction_status = auto_redacted` that are within `retention_until`; transcripts with PII and PCI redaction applied. |
+| `text_controls.py` | Marks notes and transcripts eligible for downstream LLM use: notes with `redaction_status = auto_redacted` that are within `retention_until`; transcripts with PII and PCI redaction applied. Recordings past their retention date are not treated as usable. |
 | `mapping_assistant.py` | AI helper: proposes target field and transform per source column into `data/mappings/column_mappings.csv`, lowest confidence first, for the engineer to approve. |
 
 ### 3.3 Identity: `factory/identity/`
@@ -134,7 +134,7 @@ Matching passes, cheapest and surest first. When unsure, records stay separate.
 |---|---|
 | `survivorship.py` | Precedence: verified value, then CRM, then most recent source. Bureau data is evidence only and never overwrites bank data. Each field gets `<field>_source` and `<field>_as_of`. |
 | `build_c360.py` | Builds `gold.c360_customer` to the contract schema (§3.6). Safety flags are on if any source raises them. Consent takes the most restrictive value. Roll-ups come from accounts. Lineage is recorded. Also builds `gold.c360_account` (one row per account per snapshot, all products in one shape). |
-| `views/customer_timeline.sql` | Contacts, promises, eligible redacted notes, transcripts, offers and payments per golden ID, in time order. Used by customer RAG and the agent screen. |
+| `views/customer_timeline.sql` | Contacts, promises, eligible redacted notes, transcripts (with `voice_sample_id` where a recording exists), offers and payments per golden ID, in time order. Used by customer RAG and the agent screen. |
 | `views/decisioning_customer.sql` | **Allow-list** model view. Leaves out all 12 protected attributes, direct PII, geo coordinates, **age**, and the proxies accent and interpreter use. The feature store reads only this view. |
 | `views/customer_safeguards.sql` | Hardship, vulnerability, accessibility and safety flags. Used by the rules engine, never for scoring. |
 | `views/promises_enriched.sql` | One row per promise with golden ID and `ptp_created_ts`, as the point-in-time spine. |
@@ -211,6 +211,7 @@ One definition per feature. The same code serves training (point-in-time at `ptp
 | `features/sql/channel_response.sql` | Response rate by channel, last 30 days. |
 | `features/text_extract.py` | LLM over redacted notes and transcripts. Outputs hardship signal, stated reason for paying late, promise strength, dispute mentioned. **Each signal is stored with its evidence sentence**, `source_id`, `source_ts`, `prompt_version`. Extracted once per note and cached. Scope it to customers in the training window and open cases to keep LLM cost bounded. |
 | `features/text_eval.py` | Scores extraction against `data/labels/hand_labelled_notes.csv` (~200) and the release's public labels. Writes `reports/text_feature_eval.md`. Text features are gated on passing this. |
+| `features/asr_check.py` | **Stretch (P4).** Transcribes ~50 recordings with local Whisper and writes the word error rate against the JSON transcripts into `reports/text_feature_eval.md`. |
 | `features/build_training_set.py` | Point-in-time join on `gold.promises_enriched` using Feast historical retrieval. Label = promise broken (status `broken`, or `partially_kept` per metric definition). |
 | `features/materialize.py` | After the nightly batch, writes the latest values to Redis. Stretch: re-push on a payment or new-promise event. |
 
@@ -271,7 +272,7 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 | `Home.py` | P4 | Role picker (agent / team lead / analyst) and a short pipeline status. |
 | `pages/1_Ask.py` | P4 | Question box, answer card with editable filter chips, a "show the working" drawer (SQL or sources), summary, follow-ups, refusal display. |
 | `pages/2_Agent_Queue.py` | P3 | Morning queue for the selected agent, sorted by value. |
-| `pages/3_Decision_Card.py` | P3 | C360 summary, timeline, recommendation, top reasons, blocked actions, evidence quotes, and accept/override with a reason code. |
+| `pages/3_Decision_Card.py` | P3 | C360 summary, timeline, recommendation, top reasons, blocked actions, evidence quotes, and accept/override with a reason code. Optional audio player for the call recording (polish). |
 | `pages/4_Team_Lead.py` | P2 | Approve the digital-reminder batch and the mandatory-approval cases; weekly override review. |
 | `pages/5_Identity_Review.py` | P2 | Grey-zone and conflict pairs side by side with Splink and LLM reasons. Decisions append to `identity_decisions.csv`. |
 | `pages/6_Data_Quality.py` | P2 | Contract rule results, anomalies, match-status counts. |
@@ -280,7 +281,7 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 
 | File | Intention |
 |---|---|
-| `download_data.sh` | `hf download nuxsh/maple-collections-hackathon` and unzip into `maple_data/` (voice zip not needed). |
+| `download_data.sh` | `hf download nuxsh/maple-collections-hackathon` and unzip both zips into `maple_data/`, then move the voice pack's `files/voice/` into `maple_collections_release/files/` so `voice_samples.file_path` resolves. |
 | `run_benchmark.py` | Runs `ask.service.ask` on every benchmark question (plus the 7 PM extras) at each question's `as_of_date`. Writes `submission/benchmark_answers.csv` (`question_id, answer, sql_or_sources, refused`) in the template format. Reports a dev score against the dev answers file. Run it after every Ask change. |
 | `label_notes.py` | Small CLI for hand-labelling ~200 notes. |
 | `nightly.py` | Pipeline, then text features, then feature materialisation, then scoring, then queue. Used for the demo "morning" run. |
@@ -318,7 +319,7 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 | Hard stops | P3: + third-party representation, statutory holidays, language | Cease contact, deceased, bankruptcy, open dispute, consent, contact limits, permitted hours. P3 extras only if time allows. |
 | Mandatory approval | P3: + near-threshold cases | Hardship, vulnerability, high-balance |
 | Lift estimate | P3: off-policy evaluation on test cells | Not in design; skip unless time allows |
-| Voice | WAV files available | Transcripts only; no speech-to-text |
+| Voice | WAV files available | Recordings are loaded and checksum-verified as data. No transcription in the core build. A speech-to-text agreement check is a stretch item. |
 
 ---
 
@@ -336,7 +337,7 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 
 **Cross-help rule:** whoever finishes a block early takes the next unowned item from the slowest owner. Expect P1 (identity) to need it most.
 
-**Stretch, in order:** promise coach → event re-scoring → French policy answers.
+**Stretch, in order:** promise coach → event re-scoring → French policy answers → voice speech-to-text check.
 
 ---
 
@@ -347,4 +348,5 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 - Transcript retention source (`contact_history.recording_retention_until` via `contact_id`?).
 - How `hardship_programs.policy_section` joins to document sections.
 - Where the bank's past test-cell results live, for action valuation (champion/challenger fields in cases, contacts or `offers`).
+- All 2,000 voice recordings match their `voice_samples` checksums, and every `voice_samples.transcript_id` exists in `call_transcripts`.
 - Release README: file conventions, answers template, dev answers, the `DC-COLL-001` contract example, the public note and transcript labels.
