@@ -15,3 +15,28 @@ ingest:
   # A removed or retyped column stops the load for that source unless listed here.
   allow_missing_columns: {}
   transcript_glob: files/transcripts/*/*/*.json
+
+duckdb:
+  # Without a cap DuckDB takes ~80% of RAM and the kernel killed the curated build (transactions, 12M rows) on a
+  # 16 GB machine. Beyond the cap DuckDB spills to disk instead of dying. Raise it on a bigger machine.
+  memory_limit: 9GB
+  threads: 4
+  preserve_insertion_order: false   # lets a big CREATE TABLE AS stream and spill instead of buffering the whole result
+
+llm:
+  # Every LLM call goes through common/llm.py. Provider, endpoint and models are set here and nowhere else.
+  provider: openai_compatible                   # openai_compatible (OpenRouter, NVIDIA, a local server) | anthropic
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY               # name of the environment variable (or .env entry) holding the key
+  models:
+    # NVIDIA Nemotron 3 Super on OpenRouter. ":free" is the free variant (rate-limited); drop it for the paid one.
+    answer: nvidia/nemotron-3-super-120b-a12b    # answers a user reads (policy / customer answers)
+    bulk: nvidia/nemotron-3-super-120b-a12b      # bulk jobs (per-note text features); a smaller model can go here later
+  # Nemotron Super "thinks" before it answers. With thinking on, answers took 40-120 s and often ran out of tokens
+  # (broken JSON). With it off the same answer took ~10 s. Measured 2026-10-03; "effort: low" was worse.
+  extra_body:
+    reasoning: {enabled: false}
+  max_tokens_cap: 8000                          # a reply cut off at the limit is retried with a doubled limit up to this
+  timeout_secs: 120
+  max_retries: 3
+  cache_file: cache/llm_cache.sqlite            # relative to the warehouse folder; keyed by a hash of the whole request
