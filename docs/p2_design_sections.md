@@ -62,6 +62,8 @@ The record holds what a screen needs: parsed parameters, the executed SQL, the s
 - **Model-backed stages need the provider key at run time** (the configured model is the free tier of Nemotron 3 Super on OpenRouter, which is rate-limited), and the embedding matcher needs its model files (`fastembed` is in the main requirements; run `scripts/setup_router.py` once to download them).
 - **Not built:** the Ask screens, small-group disclosure limits for tiny breakdowns, the DeBERTa classifier, a compressed Radix Trie and a learned schema pruner that earlier drafts described.
 
+Small-group disclosure, listed above, is now implemented for grouped metric, drivers and SQL cards with usable count columns. `config/disclosure.yaml` defaults to a note for counts below five; optional suppression nulls numeric cells in affected rows. Single-row totals and results without counts are not checked, and check failures leave answers unchanged. Note mode warns; it does not prevent disclosure.
+
 ---
 
 ## Heading: Scalability, Part 2: Real-Time / Query Serving (merge with P1's part under one "Scalability" heading)

@@ -9,7 +9,7 @@ from typing import Callable
 
 from trustissues.common.interfaces import RagRequest, RagResponse
 
-from . import injection, refusal
+from . import disclosure, injection, refusal
 from .access import AccessDenied, CaseResolver, check_case, check_path, query_policy
 from .catalog import Unsupported, build_call
 from . import drivers as drivers_mod
@@ -90,7 +90,8 @@ def _csv(columns, rows) -> str:
 def ask(question: str, user: UserContext, *, as_of_date: date, con=None, database=None,
         rag: RagHandler = fake_rag, resolver: CaseResolver | None = None, llm=None) -> AnswerCard:
     def card(answer, path, **kw) -> AnswerCard:
-        return AnswerCard(question, answer, path, as_of_date, **kw)
+        result = AnswerCard(question, answer, path, as_of_date, **kw)
+        return disclosure.apply(result, format_rows=_csv) if path in {"metric", "drivers", "sql"} else result
 
     flag = injection.screen(question)
     if flag:
