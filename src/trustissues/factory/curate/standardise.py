@@ -26,31 +26,50 @@ def _valid(y: int, m: int, d: int) -> str | None:
         return None
 
 
-def parse_dob(raw: str | None) -> dict:
-    """-> {dob_iso, dob_alt_iso, dob_ambiguous}.
+def infer_date_convention(first_over_12: int, second_over_12: int, min_evidence: int = 1000,
+                          max_minority_share: float = 0.001) -> str | None:
+    """Which part of d/m/Y is the day, judged from the dates in a column that can only be read one way.
 
-    dob_iso is the reading we trust most; dob_alt_iso is the other reading when day and month
-    could be swapped (both <= 12 and different). Matching must treat both as candidates.
-    Conventions used to rank the readings: '/' is month/day (North American), '-' and '.' are day-month.
+    first_over_12  = dates whose first part is above 12 (so the first part must be the day)
+    second_over_12 = dates whose second part is above 12 (so the second part must be the day)
+    The convention is returned only when there is plenty of evidence AND it is one-sided. A mixed
+    column (both orders present) returns None: it is never guessed.
     """
-    out = {"dob_iso": None, "dob_alt_iso": None, "dob_ambiguous": False}
+    n = first_over_12 + second_over_12
+    if n < min_evidence or min(first_over_12, second_over_12) > max_minority_share * n:
+        return None
+    return "day_first" if first_over_12 > second_over_12 else "month_first"
+
+
+def parse_dob(raw: str | None, convention: str | None = None) -> dict:
+    """-> {dob_iso, dob_alt_iso, dob_ambiguous, dob_was_ambiguous, dob_basis}.
+
+    dob_basis: 'exact' (only one reading is possible), 'convention' (both readings were possible and the
+    column's convention chose one), 'ambiguous' (both readings kept), or None (empty or invalid).
+    dob_ambiguous is True only if the value is STILL ambiguous; dob_was_ambiguous says the text alone was.
+    convention: 'day_first' | 'month_first' | None, inferred per column by infer_date_convention.
+    Without a convention, '/' is ranked month-first and '-' and '.' day-first, and both readings are kept.
+    """
+    out = {"dob_iso": None, "dob_alt_iso": None, "dob_ambiguous": False, "dob_was_ambiguous": False, "dob_basis": None}
     if raw is None or not str(raw).strip():
         return out
     s = str(raw).strip()
 
+    def done(value, basis="exact"):
+        out["dob_iso"] = value
+        out["dob_basis"] = basis if value else None
+        return out
+
     m = re.fullmatch(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", s) or re.fullmatch(r"(\d{4})(\d{2})(\d{2})", s)
     if m:  # year first: unambiguous
-        out["dob_iso"] = _valid(int(m[1]), int(m[2]), int(m[3]))
-        return out
+        return done(_valid(int(m[1]), int(m[2]), int(m[3])))
 
     m = re.fullmatch(r"([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})", s)
     if m and m[1].upper() in MONTHS:  # "Feb 23 2008"
-        out["dob_iso"] = _valid(int(m[3]), MONTHS[m[1].upper()], int(m[2]))
-        return out
+        return done(_valid(int(m[3]), MONTHS[m[1].upper()], int(m[2])))
     m = re.fullmatch(r"(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{4})", s)
     if m and m[2].upper() in MONTHS:  # "23 Feb 2008"
-        out["dob_iso"] = _valid(int(m[3]), MONTHS[m[2].upper()], int(m[1]))
-        return out
+        return done(_valid(int(m[3]), MONTHS[m[2].upper()], int(m[1])))
 
     m = re.fullmatch(r"(\d{1,2})([-/.])(\d{1,2})\2(\d{4})", s)
     if m:
@@ -58,14 +77,16 @@ def parse_dob(raw: str | None) -> dict:
         md = _valid(y, a, b)  # a = month, b = day
         dm = _valid(y, b, a)  # a = day, b = month
         if a > 12:
-            out["dob_iso"] = dm
-        elif b > 12:
-            out["dob_iso"] = md
-        elif a == b:
-            out["dob_iso"] = md
-        else:
-            primary, alt = (md, dm) if sep == "/" else (dm, md)
-            out["dob_iso"], out["dob_alt_iso"], out["dob_ambiguous"] = primary, alt, True
+            return done(dm)
+        if b > 12 or a == b:
+            return done(md)
+        out["dob_was_ambiguous"] = True
+        if convention == "day_first":
+            return done(dm, "convention")
+        if convention == "month_first":
+            return done(md, "convention")
+        primary, alt = (md, dm) if sep == "/" else (dm, md)
+        out["dob_iso"], out["dob_alt_iso"], out["dob_ambiguous"], out["dob_basis"] = primary, alt, True, "ambiguous"
     return out
 
 

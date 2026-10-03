@@ -150,22 +150,24 @@ checks:
     how: "Parsed into `std_dob`."
   - id: F6
     area: format
-    title: "Date of birth with day and month both 12 or less: two readings possible (CRM)"
+    title: "CRM date of birth where day and month are both 12 or less, so the text alone allows two readings"
     tables: [customers]
     severity: medium
-    status: standardised
+    status: fixed
     table: curated.customers
-    where: "std_dob_ambiguous"
-    how: "Both readings kept (`std_dob` and `std_dob_alt`, flag `std_dob_ambiguous`). Matching must try both; the value is never guessed."
+    where: "std_dob_was_ambiguous"
+    evidence: "select 'settled by the CRM column date_of_birth: ' || format('{:,}', count(*) filter (where date_of_birth = reading)) || ' of ' || format('{:,}', count(*)) || ' unambiguous slash dates in dob_raw agree with it, ' || count(*) filter (where date_of_birth is distinct from reading) || ' disagree' from (select date_of_birth, case when try_cast(split_part(dob_raw, '/', 1) as int) > 12 then try_strptime(dob_raw, '%d/%m/%Y')::date else try_strptime(dob_raw, '%m/%d/%Y')::date end as reading from curated.customers where regexp_matches(dob_raw, '^[0-9]{2}/[0-9]{2}/[0-9]{4}$') and date_of_birth is not null and (try_cast(split_part(dob_raw, '/', 1) as int) > 12 or try_cast(split_part(dob_raw, '/', 2) as int) > 12))"
+    how: "Settled with certainty by the CRM's own cleaned `date_of_birth`, which agrees with every unambiguous `dob_raw`. `std_dob_basis` = `source_clean_column`. The text column alone is mixed (day-first and month-first both occur), so a column-wide rule would have been wrong for 43% (if day-first) or 57% (if month-first) of these. A record with no clean value would keep both readings."
   - id: F7
     area: format
-    title: "Date of birth with day and month both 12 or less: two readings possible (cards)"
+    title: "Card date of birth where day and month are both 12 or less, so the text alone allows two readings"
     tables: [card_accounts]
     severity: medium
     status: standardised
     table: curated.card_accounts
-    where: "std_dob_ambiguous"
-    how: "Same as F6."
+    where: "std_dob_was_ambiguous"
+    evidence: "select 'in this column ' || format('{:,}', first_over_12) || ' dates can only be day-first and ' || format('{:,}', second_over_12) || ' can only be month-first; decision: ' || decision from curated._date_conventions where table_name = 'card_accounts'"
+    how: "Read with the column's own convention (day-first), inferred from the dates that can only be read one way; the evidence is recorded in `curated._date_conventions`. This is an inference, not a certainty per value, but the evidence is one-sided and large. `std_dob_basis` = `convention`. A column with both orders present is never guessed."
   - id: F8
     area: format
     title: "CRM phone numbers in 10 different formats"
@@ -534,6 +536,8 @@ checks:
     how: "Not changed."
 
 clean_checks:   # checks that found nothing; listed so the coverage is visible
+  - {id: C21, title: "Date of birth still ambiguous after resolution (customers, cards, loans, deposits, bureau)", sql: "select (select count(*) filter (where std_dob_ambiguous) from curated.customers) + (select count(*) filter (where std_dob_ambiguous) from curated.card_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.loan_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.deposit_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.external), (select count(*) from curated.customers) + (select count(*) from curated.card_accounts) + (select count(*) from curated.loan_accounts) + (select count(*) from curated.deposit_accounts) + (select count(*) from curated.external)"}
+  - {id: C22, title: "CRM date_of_birth disagrees with the only possible reading of dob_raw", sql: "select count(*) filter (where date_of_birth is distinct from reading), count(*) from (select date_of_birth, case when try_cast(split_part(dob_raw, '/', 1) as int) > 12 then try_strptime(dob_raw, '%d/%m/%Y')::date else try_strptime(dob_raw, '%m/%d/%Y')::date end as reading from curated.customers where regexp_matches(dob_raw, '^[0-9]{2}/[0-9]{2}/[0-9]{4}$') and date_of_birth is not null and (try_cast(split_part(dob_raw, '/', 1) as int) > 12 or try_cast(split_part(dob_raw, '/', 2) as int) > 12))"}
   - {id: C1, title: "Exact duplicate rows removed (all tables)", sql: "select coalesce(sum(dupes_removed), 0), coalesce(sum(raw_rows), 0) from curated._build_log"}
   - {id: C2, title: "Customer date of birth in the future, or age under 18 or over 110", table: curated.customers, where: "std_dob is not null and (cast(std_dob as date) > date '{as_of}' or date_diff('year', cast(std_dob as date), date '{as_of}') < 18 or date_diff('year', cast(std_dob as date), date '{as_of}') > 110)"}
   - {id: C3, title: "Customer stored age differs from age computed from date of birth by more than 1 year", table: curated.customers, where: "age is not null and date_of_birth is not null and abs(age - date_diff('year', date_of_birth, date '{as_of}')) > 1"}

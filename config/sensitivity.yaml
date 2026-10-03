@@ -342,6 +342,8 @@ tables:
     std_dob: direct_pii
     std_dob_alt: direct_pii
     std_dob_ambiguous: direct_pii
+    std_dob_was_ambiguous: direct_pii
+    std_dob_basis: direct_pii
     std_phone_primary_e164: direct_pii
     std_phone_primary_masked: direct_pii
     std_phone_primary_prefix: direct_pii
@@ -846,6 +848,8 @@ tables:
     std_dob: direct_pii
     std_dob_alt: direct_pii
     std_dob_ambiguous: direct_pii
+    std_dob_was_ambiguous: direct_pii
+    std_dob_basis: direct_pii
     std_phone_primary_e164: direct_pii
     std_phone_primary_masked: direct_pii
     std_phone_primary_prefix: direct_pii

@@ -5,9 +5,9 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 ## 1. Summary
 
 - **51 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
-- **20 further checks found nothing** (section 10), so the coverage is visible.
+- **22 further checks found nothing** (section 10), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **flagged** 20, **documented** 13, **standardised** 13, **fixed** 3, **deferred to identity layer** 1, **excluded from current view** 1.
+- How each issue was handled: **flagged** 20, **documented** 13, **standardised** 12, **fixed** 4, **deferred to identity layer** 1, **excluded from current view** 1.
 - **Schema drift:** the loader recorded 6 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
@@ -41,8 +41,8 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | F2 | CRM date of birth not in ISO format (`dob_raw`: ISO, MM/DD/YYYY, `Mon DD YYYY`) | 405,432 | 39.7% | medium | Standardised |
 | F13 | Card first name is only an initial (`J. LANGLOIS`) | 329,786 | 50.0% | medium | Standardised |
 | F15 | ALL-CAPS two-word card names with no comma: word order not stated (`JESSICA SMIRNOV`) | 262,897 | 39.8% | medium | Standardised |
-| F7 | Date of birth with day and month both 12 or less: two readings possible (cards) | 239,324 | 36.3% | medium | Standardised |
-| F6 | Date of birth with day and month both 12 or less: two readings possible (CRM) | 128,980 | 12.6% | medium | Standardised |
+| F7 | Card date of birth where day and month are both 12 or less, so the text alone allows two readings | 239,324 | 36.3% | medium | Standardised |
+| F6 | CRM date of birth where day and month are both 12 or less, so the text alone allows two readings | 128,980 | 12.6% | medium | Fixed |
 | F16 | ALL-CAPS two-word loan names with no comma: word order not stated (`KAPOOR CASEY`) | 80,607 | 19.9% | medium | Standardised |
 | R9 | Routing rule used in assignments is missing from the reference table (RR-EARLY-03, RR-MID-03, RR-LATE-03, RR-REC-03) | 74,697 | 24.0% | medium | Documented |
 | M6 | Card days-past-due missing | 52,734 | 7.99% | medium | Documented |
@@ -161,17 +161,21 @@ Every source system writes dates of birth, phones, postal codes and names in its
 
 **Handling (standardised).** Parsed into `std_dob`.
 
-### F6. Date of birth with day and month both 12 or less: two readings possible (CRM)
+### F6. CRM date of birth where day and month are both 12 or less, so the text alone allows two readings
 
 **Affected:** 128,980 of 1,020,000 (12.6%) · **Tables:** `customers` · **Severity:** medium
 
-**Handling (standardised).** Both readings kept (`std_dob` and `std_dob_alt`, flag `std_dob_ambiguous`). Matching must try both; the value is never guessed.
+*Evidence:* settled by the CRM column date_of_birth: 213,884 of 213,884 unambiguous slash dates in dob_raw agree with it, 0 disagree.
 
-### F7. Date of birth with day and month both 12 or less: two readings possible (cards)
+**Handling (fixed).** Settled with certainty by the CRM's own cleaned `date_of_birth`, which agrees with every unambiguous `dob_raw`. `std_dob_basis` = `source_clean_column`. The text column alone is mixed (day-first and month-first both occur), so a column-wide rule would have been wrong for 43% (if day-first) or 57% (if month-first) of these. A record with no clean value would keep both readings.
+
+### F7. Card date of birth where day and month are both 12 or less, so the text alone allows two readings
 
 **Affected:** 239,324 of 660,000 (36.3%) · **Tables:** `card_accounts` · **Severity:** medium
 
-**Handling (standardised).** Same as F6.
+*Evidence:* in this column 398,847 dates can only be day-first and 0 can only be month-first; decision: day_first.
+
+**Handling (standardised).** Read with the column's own convention (day-first), inferred from the dates that can only be read one way; the evidence is recorded in `curated._date_conventions`. This is an inference, not a certainty per value, but the evidence is one-sided and large. `std_dob_basis` = `convention`. A column with both orders present is never guessed.
 
 ### F8. CRM phone numbers in 10 different formats
 
@@ -466,6 +470,8 @@ Partly, and the difference matters.
 
 | ID | Check | Rows checked |
 |---|---|---:|
+| C21 | Date of birth still ambiguous after resolution (customers, cards, loans, deposits, bureau) | 3,864,500 |
+| C22 | CRM date_of_birth disagrees with the only possible reading of dob_raw | 213,884 |
 | C1 | Exact duplicate rows removed (all tables) | 68,162,322 |
 | C2 | Customer date of birth in the future, or age under 18 or over 110 | 1,020,000 |
 | C3 | Customer stored age differs from age computed from date of birth by more than 1 year | 1,020,000 |

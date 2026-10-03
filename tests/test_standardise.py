@@ -104,3 +104,34 @@ def test_employer_variants_collapse():
     assert a == normalise_employer("Wildrose Machining Limited") == "WILDROSE MACHINING"
     assert normalise_employer("Silverbirch Media Inc. (Saguenay)") == "SILVERBIRCH MEDIA"
     assert normalise_employer("Cascade Engineering Ltée") == normalise_employer("Cascade Engineering Ltd")
+
+
+# ----- column convention for ambiguous dates -----
+from trustissues.factory.curate.standardise import infer_date_convention  # noqa: E402
+
+
+def test_convention_inferred_only_when_one_sided_and_plentiful():
+    assert infer_date_convention(398_847, 0) == "day_first"          # cards: first part is >12 often, second never
+    assert infer_date_convention(0, 5_000) == "month_first"
+    assert infer_date_convention(122_353, 91_531) is None            # CRM text column: both orders present, never guessed
+    assert infer_date_convention(100, 0) is None                     # too little evidence
+    assert infer_date_convention(0, 0) is None
+    assert infer_date_convention(100_000, 50) == "day_first"         # 0.05% minority is still under the 0.1% limit
+    assert infer_date_convention(100_000, 101) is None               # 0.1% limit exceeded: treated as mixed
+
+
+def test_ambiguous_date_resolved_by_convention_and_basis_recorded():
+    free = parse_dob("07-12-1992")
+    assert free["dob_ambiguous"] and free["dob_was_ambiguous"] and free["dob_basis"] == "ambiguous"
+    day = parse_dob("07-12-1992", "day_first")
+    assert (day["dob_iso"], day["dob_alt_iso"], day["dob_ambiguous"], day["dob_basis"]) == ("1992-12-07", None, False, "convention")
+    assert day["dob_was_ambiguous"]                                  # the text alone was ambiguous; the column resolved it
+    month = parse_dob("07-12-1992", "month_first")
+    assert month["dob_iso"] == "1992-07-12" and month["dob_basis"] == "convention"
+
+
+def test_convention_never_overrides_an_unambiguous_date():
+    r = parse_dob("30-09-2024", "month_first")                       # 30 can only be a day, whatever the convention says
+    assert (r["dob_iso"], r["dob_basis"], r["dob_was_ambiguous"]) == ("2024-09-30", "exact", False)
+    assert parse_dob("1992-07-12", "day_first")["dob_basis"] == "exact"
+    assert parse_dob("", "day_first")["dob_basis"] is None and parse_dob("31/02/1990")["dob_basis"] is None
