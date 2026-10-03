@@ -21,6 +21,31 @@ def test_shared_access_requires_local_demo_without_mfa():
     assert PASSWORD not in repr(Settings(demo=True, require_mfa=False, demo_password=PASSWORD))
 
 
+def test_demo_without_automatic_expiry_remains_signed_in(ui_settings):
+    with pytest.raises(ValueError):
+        Settings(session_timeouts=False)
+    app = create_app(replace(ui_settings, demo_password=PASSWORD, session_timeouts=False))
+    now = [0.0]
+    app.state.sessions.clock = lambda: now[0]
+    with TestClient(app) as c:
+        r = c.post('/api/session/login', json={'staff_id': 'A1', 'role': 'agent', 'password': PASSWORD})
+        assert r.status_code == 200
+        assert 'max-age' not in r.headers['set-cookie'].lower()
+        me = c.get('/api/session/me').json()
+        assert me['idle_minutes'] is None and me['max_hours'] is None
+        assert c.get('/api/session/options').json()['idle_minutes'] is None
+        now[0] = 24 * 60 * 60
+        assert c.get('/api/session/state').json() == {'idle_seconds_left': None, 'absolute_seconds_left': None}
+        security = c.get('/api/session/security')
+        assert security.status_code == 200 and len(security.json()['sessions']) == 1
+        headers = {'X-CSRF-Token': me['csrf_token']}
+        renewed = c.post('/api/session/reauthenticate', json={'password': PASSWORD}, headers=headers)
+        assert renewed.status_code == 200
+        headers = {'X-CSRF-Token': renewed.json()['csrf_token']}
+        assert c.post('/api/session/logout', json={}, headers=headers).status_code == 200
+        assert c.get('/api/session/me').status_code == 401
+
+
 def test_shared_access_uses_live_staff_and_preserves_accounts(ui_settings, tmp_path):
     before = ui_settings.accounts_file.read_bytes()
     accounts = tmp_path / 'no-accounts-created.json'

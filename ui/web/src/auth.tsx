@@ -123,17 +123,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 /** Idle lock (§9.1): warn two minutes before the server's idle timeout, then sign out. */
-export function useIdleLock(idleMinutes: number, maxHours: number, signedInAt: string) {
+export function useIdleLock(idleMinutes: number | null, maxHours: number | null, signedInAt: string) {
   const { signOut } = useAuth()
   const [warning, setWarning] = useState(false)
-  const [secondsLeft, setSecondsLeft] = useState(idleMinutes * 60)
-  const deadlines = useRef({ idle: Date.now() + idleMinutes * 60000, absolute: Date.parse(signedInAt) + maxHours * 3600000 })
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(idleMinutes === null && maxHours === null ? null
+    : Math.min(idleMinutes === null ? Infinity : idleMinutes * 60, maxHours === null ? Infinity : maxHours * 3600))
+  const deadlines = useRef({ idle: idleMinutes === null ? Infinity : Date.now() + idleMinutes * 60000,
+    absolute: maxHours === null ? Infinity : Date.parse(signedInAt) + maxHours * 3600000 })
   const warningRef = useRef(false)
   const lastKeepalive = useRef(0)
   const ending = useRef(false)
   const sync = useCallback((state: SessionState) => {
     const now = Date.now()
-    deadlines.current = { idle: now + state.idle_seconds_left * 1000, absolute: now + state.absolute_seconds_left * 1000 }
+    deadlines.current = { idle: state.idle_seconds_left === null ? Infinity : now + state.idle_seconds_left * 1000,
+      absolute: state.absolute_seconds_left === null ? Infinity : now + state.absolute_seconds_left * 1000 }
   }, [])
   useEffect(() => {
     let disposed = false
@@ -154,9 +157,10 @@ export function useIdleLock(idleMinutes: number, maxHours: number, signedInAt: s
     poll()
     const t = window.setInterval(() => {
       const now = Date.now()
-      const remaining = Math.max(0, Math.ceil((Math.min(deadlines.current.idle, deadlines.current.absolute) - now) / 1000))
+      const deadline = Math.min(deadlines.current.idle, deadlines.current.absolute)
+      const remaining = Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null
       setSecondsLeft(remaining)
-      warningRef.current = remaining <= 120
+      warningRef.current = remaining !== null && remaining <= 120
       setWarning(warningRef.current)
       if (remaining === 0 && !ending.current) {
         ending.current = true
@@ -174,7 +178,7 @@ export function useIdleLock(idleMinutes: number, maxHours: number, signedInAt: s
     const state = await api.post<SessionState>('/api/session/keepalive').catch(() => null)
     if (state) {
       sync(state)
-      warningRef.current = Math.min(state.idle_seconds_left, state.absolute_seconds_left) <= 120
+      warningRef.current = Math.min(state.idle_seconds_left ?? Infinity, state.absolute_seconds_left ?? Infinity) <= 120
       setWarning(warningRef.current)
     }
   }, [sync])

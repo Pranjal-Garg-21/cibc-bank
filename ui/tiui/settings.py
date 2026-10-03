@@ -26,6 +26,7 @@ class Settings:
     ask_llm: bool = False             # UI_ASK_LLM: let Ask use the language model and policy search
     idle_minutes: int = 15
     max_hours: int = 8
+    session_timeouts: bool = True     # UI_SESSION_TIMEOUTS; demo-only exception
     require_mfa: bool = True          # may be disabled ONLY in a labelled synthetic-data demo
     mfa_key: str | None = field(default=None, repr=False)  # UI_MFA_KEY: secret-manager Fernet key
     demo_password: str | None = field(default=None, repr=False)  # temporary shared access, never persisted
@@ -39,6 +40,8 @@ class Settings:
     dist_dir: Path = Path(__file__).resolve().parents[1] / "web" / "dist"
 
     def __post_init__(self):
+        if not self.session_timeouts and not self.demo:
+            raise ValueError("Automatic session expiry may be disabled only in a labelled demo.")
         if self.demo_password is not None and (not self.demo or self.require_mfa):
             raise ValueError("Shared access requires an explicitly labelled demo with MFA disabled.")
         if self.demo_password is not None and (not self.demo_password or any(
@@ -61,6 +64,7 @@ def from_env() -> Settings:
         ask_llm=_flag("UI_ASK_LLM"),
         idle_minutes=int(os.environ.get("UI_SESSION_IDLE_MIN", 15)),
         max_hours=int(os.environ.get("UI_SESSION_MAX_HOURS", 8)),
+        session_timeouts=_flag("UI_SESSION_TIMEOUTS", True),
         require_mfa=_flag("UI_REQUIRE_MFA", True),
         mfa_key=os.environ.get("UI_MFA_KEY"),
         demo_password=os.environ.get("UI_DEMO_PASSWORD"),

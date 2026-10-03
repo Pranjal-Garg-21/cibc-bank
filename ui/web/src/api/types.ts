@@ -11,7 +11,7 @@ export type Me = {
   ask_role: string
   csrf_token: string
   as_of_date: string
-  idle_minutes: number
+  idle_minutes: number | null
   demo: boolean
   shared_access: boolean
   site: string | null
@@ -19,7 +19,7 @@ export type Me = {
   languages: string | null
   employment_type: string | null
   signed_in_at: string
-  max_hours: number
+  max_hours: number | null
   mfa: boolean
   transport_secure: boolean
   features: { queue: boolean; ask: boolean; identity: boolean; status: boolean }
@@ -38,8 +38,8 @@ export type TeamAgent = {
 }
 export type TeamAgents = { team_lead: string; agents: TeamAgent[] }
 
-export type Options = { sign_in_configured: boolean; demo: boolean; as_of_date: string; idle_minutes: number; mfa_required: boolean; shared_access: boolean }
-export type SessionState = { idle_seconds_left: number; absolute_seconds_left: number }
+export type Options = { sign_in_configured: boolean; demo: boolean; as_of_date: string; idle_minutes: number | null; mfa_required: boolean; shared_access: boolean }
+export type SessionState = { idle_seconds_left: number | null; absolute_seconds_left: number | null }
 export type SecurityInfo = {
   sessions: { id: string; current: boolean; device: string; signed_in_at: string; mfa: boolean }[]
   events: { at: string; action: string; outcome: string }[]

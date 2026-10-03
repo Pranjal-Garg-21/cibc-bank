@@ -42,7 +42,7 @@ def options(request: Request):
     """What the sign-in page needs: nothing about staff, only whether sign-in is set up."""
     s = request.app.state.settings
     return {"sign_in_configured": request.app.state.accounts.configured(), "demo": s.demo,
-            "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes, "mfa_required": s.require_mfa,
+            "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes if s.session_timeouts else None, "mfa_required": s.require_mfa,
             "shared_access": s.demo_password is not None}
 
 
@@ -55,7 +55,7 @@ class Login(BaseModel):
 
 def _cookie(response: Response, sess, settings) -> None:
     response.set_cookie(SESSION_COOKIE, sess.sid, httponly=True, samesite="strict", secure=settings.https,
-                        path="/", max_age=settings.max_hours * 3600)
+                        path="/", max_age=settings.max_hours * 3600 if settings.session_timeouts else None)
 
 
 @router.post("/login")
@@ -116,7 +116,8 @@ def me(request: Request):
         "certified": user.certified, "ask_role": user.ask_role, "csrf_token": sess.csrf,
         "site": user.site, "team_lead_id": user.team_lead_id, "languages": user.languages,
         "employment_type": user.employment_type, "signed_in_at": sess.signed_in_at,
-        "max_hours": s.max_hours, "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes, "demo": s.demo,
+        "max_hours": s.max_hours if s.session_timeouts else None, "as_of_date": AS_OF.isoformat(),
+        "idle_minutes": s.idle_minutes if s.session_timeouts else None, "demo": s.demo,
         "features": features(),
         "mfa": sess.mfa,
         "shared_access": s.demo_password is not None,

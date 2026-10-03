@@ -39,7 +39,7 @@ class Session:
 
 
 class SessionStore:
-    def __init__(self, idle_seconds: int, max_seconds: int, clock=time.monotonic):
+    def __init__(self, idle_seconds: int | None, max_seconds: int | None, clock=time.monotonic):
         self.idle, self.max, self.clock = idle_seconds, max_seconds, clock
         self._s: dict[str, Session] = {}
         self._lock = threading.Lock()
@@ -61,13 +61,17 @@ class SessionStore:
 
     def _purge(self, now: float) -> None:
         for sid in [sid for sid, s in self._s.items()
-                    if now - s.last_seen >= self.idle or now - s.created >= self.max]:
+                    if self._expired(s, now)]:
             del self._s[sid]
 
-    def remaining(self, s: Session) -> dict[str, int]:
+    def _expired(self, s: Session, now: float) -> bool:
+        return ((self.idle is not None and now - s.last_seen >= self.idle)
+                or (self.max is not None and now - s.created >= self.max))
+
+    def remaining(self, s: Session) -> dict[str, int | None]:
         now = self.clock()
-        return {"idle_seconds_left": max(0, int(self.idle - (now - s.last_seen))),
-                "absolute_seconds_left": max(0, int(self.max - (now - s.created)))}
+        return {"idle_seconds_left": max(0, int(self.idle - (now - s.last_seen))) if self.idle is not None else None,
+                "absolute_seconds_left": max(0, int(self.max - (now - s.created))) if self.max is not None else None}
 
     def for_user(self, user_id: str, current_sid: str) -> list[dict]:
         with self._lock:
@@ -103,7 +107,7 @@ class SessionStore:
             s = self._s.get(sid)
             if s is None:
                 return None
-            if now - s.last_seen >= self.idle or now - s.created >= self.max:
+            if self._expired(s, now):
                 del self._s[sid]
                 return None
             if touch:

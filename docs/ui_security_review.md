@@ -29,6 +29,11 @@ unsupported roles are refused. Existing accounts and MFA keys are preserved. Per
 revocation are disabled. This loopback-only mode visibly disables MFA; stopping it ends all demo sessions.
 The inspected warehouse has 484 active agents, 135 active senior agents and 75 active team leads.
 
+Follow-up: shared demo sessions now have no automatic idle or absolute expiry, as requested. The countdown and
+expiry warning are removed for this mode. Explicit sign-out, account-status checks, session revocation and the
+three-session cap still work. Restarting ends all sessions. `UI_SESSION_TIMEOUTS=1` restores the normal limits;
+disabling expiry is refused outside a labelled demo.
+
 ## Implemented controls
 
 - Password plus authenticator/recovery authentication in the default mode, generic failures, account lockout and rate limits.
@@ -44,7 +49,7 @@ The inspected warehouse has 484 active agents, 135 active senior agents and 75 a
 
 ## Verification
 
-- Backend: **78 passed, 3 skipped**. Skips concern unmerged real P2/P3 integrations.
+- Backend: **79 passed, 3 skipped**. Skips concern unmerged real P2/P3 integrations.
 - Frontend: **14 passed**; TypeScript and production build passed.
 - `npm audit` and `pip-audit -r ui/requirements.txt`: no known dependency vulnerabilities at review time.
 - Chromium: authenticator sign-in, 32-character recovery challenge, sensitive-action cancellation and verified retry,
@@ -53,8 +58,15 @@ The inspected warehouse has 484 active agents, 135 active senior agents and 75 a
 - Local Lighthouse desktop sign-in: performance 99, accessibility 100, best practices 96; LCP 0.8s, CLS 0.002.
   Best-practices deduction reflects the expected anonymous `/api/session/me` 401. These are local laboratory results.
 - Shared-access browser verification confirmed the existing account-file digest and warehouse size/mtime remained unchanged.
+- Follow-up: a simulated 24-hour backend session stayed valid without automatic expiry; Chromium showed no
+  countdown or idle warning after advancing 16 minutes, and explicit sign-out still succeeded.
 
 ## Deployment work
+
+Database schema stubs already exist in `contracts/interfaces/stubs.sql`. Inspection found `gold.nba_decisions`,
+`gold.nba_overrides` and `gold.promises_enriched` present with zero rows. Ask/queue screens remain unavailable
+because `trustissues.ask.service`, `trustissues.features` and `trustissues.nba` are absent on this branch.
+This UI work did not add or populate banking data tables; agent accounts read the existing `curated.agents`.
 
 This is application hardening, not a claim of bank certification. Before a bank deployment, integrate the bank's
 OIDC/SSO and phishing-resistant authenticators; provision TLS and trusted reverse-proxy headers; configure explicit

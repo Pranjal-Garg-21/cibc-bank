@@ -130,7 +130,7 @@ export function Shell() {
       <main id="main" tabIndex={-1} className="console-width flex-1 py-7 md:py-9">
         <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 text-[13px] text-muted-foreground">
           <button type="button" className="flex min-h-8 flex-wrap items-center gap-2 text-left hover:text-brand" onClick={() => { setProfileTab('security'); setProfileOpen(true) }}><ShieldCheck className="size-4" strokeWidth={1.5} aria-hidden="true" />{me.mfa ? 'Multi-factor authentication verified' : 'Demo access: MFA disabled'}<span className="ml-2 text-brand underline underline-offset-4">Session & security</span></button>
-          <span className="flex items-center gap-2 tabular-nums"><Clock3 className="size-4" strokeWidth={1.5} aria-hidden="true" />Session expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</span>
+          <span className="flex items-center gap-2 tabular-nums"><Clock3 className="size-4" strokeWidth={1.5} aria-hidden="true" />{secondsLeft === null ? 'Automatic session expiry is off for this demo' : `Session expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`}</span>
         </div>
         <Suspense fallback={<Loading />}>
           <Outlet />
@@ -141,7 +141,7 @@ export function Shell() {
         <div className="console-width flex flex-wrap justify-between gap-2 py-4">
           <span>For internal use by authorized staff only. Activity on this system is logged.</span>
           <span>
-            You are signed in as {me.agent_id}. Your session ends after {me.idle_minutes} minutes without activity.
+            You are signed in as {me.agent_id}. {me.idle_minutes === null && me.max_hours === null ? 'Sign out when you finish.' : me.idle_minutes !== null ? `Your session ends after ${me.idle_minutes} minutes without activity.` : `Your session ends after ${me.max_hours} hours.`}
           </span>
         </div>
       </footer>
@@ -184,7 +184,9 @@ function ProfileSheet({ me, open, onOpenChange, initialTab }: { me: Me; open: bo
   ]
   const session: [string, ReactNode][] = [
     ['Signed in', dateTime(me.signed_in_at)],
-    ['Ends after', `${me.idle_minutes} minutes without activity, or ${me.max_hours} hours`],
+    ['Ends after', me.idle_minutes === null && me.max_hours === null ? 'Sign-out or server restart (demo)' :
+      [me.idle_minutes !== null ? `${me.idle_minutes} minutes without activity` : null,
+        me.max_hours !== null ? `${me.max_hours} hours` : null].filter(Boolean).join(', or ')],
   ]
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

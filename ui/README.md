@@ -55,6 +55,9 @@ active team leads use **Team lead**. The selected role must match DuckDB. Unknow
 roles cannot sign in. Individual password changes and revocation are disabled during shared access. Stop the
 process to end this temporary mode, then restart without `--shared-access` to use individual credentials and MFA.
 Shared access is restricted to loopback hosts and visibly labels MFA as disabled.
+Automatic idle and absolute session expiry are off in this temporary mode; sign out when finished. Restarting
+the server also ends its sessions. Set `UI_SESSION_TIMEOUTS=1` to restore the usual 15-minute idle and eight-hour
+absolute limits. Individual-credential mode keeps those defaults; `UI_SESSION_TIMEOUTS=0` is allowed only in demos.
 
 For an entirely separate synthetic warehouse:
 

@@ -35,6 +35,7 @@ def main() -> None:
             ap.error("A non-empty demo password is required")
         os.environ["UI_DEMO_PASSWORD"] = password
         os.environ["UI_REQUIRE_MFA"] = "0"
+        os.environ.setdefault("UI_SESSION_TIMEOUTS", "0")
     if a.dev:
         os.environ["UI_DEV"] = "1"
     if a.ask_llm:

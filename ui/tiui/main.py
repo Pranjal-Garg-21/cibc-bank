@@ -33,7 +33,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(lifespan=lifespan, title="TrustIssues UI API", docs_url="/api/docs" if settings.dev else None,
                   redoc_url=None, openapi_url="/api/openapi.json" if settings.dev else None)
     app.state.settings = settings
-    app.state.sessions = SessionStore(settings.idle_minutes * 60, settings.max_hours * 3600)
+    app.state.sessions = SessionStore(settings.idle_minutes * 60 if settings.session_timeouts else None,
+                                     settings.max_hours * 3600 if settings.session_timeouts else None)
     app.state.limiter = RateLimiter()
     app.state.accounts = (SharedDemoAccounts(settings.demo_password) if settings.demo_password is not None
                           else AccountStore(settings.accounts_file, mfa_key=settings.mfa_key))
