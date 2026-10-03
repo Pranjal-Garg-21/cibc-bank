@@ -229,6 +229,9 @@ For each open case: rules → case risk → value each allowed action → hardsh
   certified agents only for hardship); a case whose best action is full gets its next best and the card says so
   (`no_capacity`). Flagged cases without a certified agent get one as owner (`assign_owners`).
 - **Experiment**: cases in the bank's `no_contact_holdout` cell are left to the bank (rule `experiment_holdout`).
+- **Do not call** (rule `do_not_call`, phone only): the bank's internal list, i.e. the customer asked the bank not to
+  call. The National Do Not Call List is not used: it covers telemarketing only (POL-COLL-001 §5.3; fixed 3 Oct,
+  see below).
 - **Approval** (first that applies), only when something is done, never for `wait`: vulnerability, hardship,
   balance ≥ `high_balance_cad` (5,000), digital batch. Recorded with `nba/review.py`.
 - **Placeholders until gold**: `golden_customer_id` holds `crm_customer_id`; `evidence` is empty until P4's
@@ -280,10 +283,34 @@ plus one sign-off for the 35,912-case digital batch. Breakdown regenerated on ev
 `reports/model_evaluation.md` ("Hardship and vulnerable cases").
 
 **Still open.**
-- 4,901 due support calls are blocked by `do_not_call`, which includes the National Do Not Call List. POL-COLL-001
-  §5.3 says that list does not apply to collection calls (and a support call is not telemarketing): fixing that
-  rule would unblock most of them.
+- ~~4,901 due support calls are blocked by `do_not_call`~~: fixed the same day, see "Do Not Call fix" below.
 - 2,251 are blocked by phone consent: a hardship letter or email offering the programmes would reach them.
 - `broken_plan_90d` is approximated (offers carry no break date): a plan accepted in the last 90 days that is
   now broken.
 - Hardship cases on a running plan wait; payments on the plan are not checked yet.
+
+### Do Not Call fix (3 Oct)
+
+**What was wrong.** `nba/rules.py` blocked every phone call for customers on the National Do Not Call List as well
+as the bank's internal list. The bank's own policy says the national list "applies to telemarketing only and does
+not block collection calls" (POL-COLL-001 §5.3, FAQ-COLL-001 Q2); 356,436 CRM customers are on it, against 14,801
+on the internal list.
+
+**What changed.** `do_not_call` now means the internal list only (`internal_do_not_call_flag`);
+`national_dncl_flag` is no longer read (`features/sources.py`). Documented in the `nba/rules.py` docstring; test
+`test_only_the_internal_do_not_call_list_blocks_calls`.
+
+**Effect on the 28 Sep queue.**
+
+| | Before | After |
+|---|---|---|
+| Cases with a call blocked by `do_not_call` | 22,851 | 950 |
+| Collections calls (`agent_call`) | 812 | 1,254 |
+| Support calls (hardship / vulnerable) | 8,051 | 12,357 |
+| Support calls due but blocked by a rule | 9,718 | 5,412 (consent 2,251, contact limit 1,066, dispute 672, representative 552, cease contact 386, experiment holdout 268, internal do not call 216, insolvency 1) |
+| Individual approvals | 8,306 | 12,612 (more support calls to approve) |
+
+4,306 flagged cases moved from `wait` to `support_call`; about 600 other cases changed channel (mostly to a call
+or a letter). Every support call fits in the certified agents' capacity, and 48,417 agent calls on shift are
+still unused. The contact-limit count rises because those calls are no longer blocked by do-not-call first.
+

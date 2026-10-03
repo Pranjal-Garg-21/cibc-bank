@@ -69,3 +69,28 @@ def test_contact_hours_only_bind_real_time_channels():
     r = rules.allowed_actions(_flags(planned_local_time=time(19, 0), permitted_call_hours=(time(8), time(21)),
                                      preferred_window=(time(9), time(18))))
     assert r.blocked == {"agent_call": "outside_preferred_window", "support_call": "outside_preferred_window", "sms_reminder": "outside_preferred_window"}
+
+
+def test_only_the_internal_do_not_call_list_blocks_calls():
+    """POL-COLL-001 §5.3: the National DNCL covers telemarketing only and does not block collection calls."""
+    import duckdb
+
+    from trustissues.features import sources
+
+    con = duckdb.connect()
+    con.execute(f"CREATE SCHEMA {sources.SCHEMA}")
+    tables: dict[str, set] = {"customers": {"is_deleted", "effective_to_ts", "national_dncl_flag"},
+                              "model_scores": {"model_name"}}  # + columns the sources filter on
+    for s in sources.SOURCES.values():  # every source, all VARCHAR, as load_raw makes them
+        tables.setdefault(s.table, set()).update(c for c, _ in s.columns.values())
+    for table, cols in tables.items():
+        con.execute(f"CREATE TABLE {sources.SCHEMA}.{table} ({', '.join(f'{c} VARCHAR' for c in sorted(cols))})")
+    for case, cust, national, internal in (("CS-N", "C-N", "true", "false"), ("CS-I", "C-I", "false", "true")):
+        con.execute(f"INSERT INTO {sources.SCHEMA}.collections_cases (case_id, coll_customer_ref) VALUES (?, ?)",
+                    [case, cust])
+        con.execute(f"""INSERT INTO {sources.SCHEMA}.customers (crm_customer_id, is_deleted, effective_to_ts,
+                        consent_call, national_dncl_flag, internal_do_not_call_flag)
+                        VALUES (?, 'false', '9999-12-31', 'true', ?, ?)""", [cust, national, internal])
+    flags = rules.load_case_flags(con)
+    assert not flags["CS-N"].do_not_call and "agent_call" in rules.allowed_actions(flags["CS-N"]).allowed
+    assert flags["CS-I"].do_not_call and rules.allowed_actions(flags["CS-I"]).blocked["agent_call"] == "do_not_call"

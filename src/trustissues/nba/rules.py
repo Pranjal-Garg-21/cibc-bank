@@ -6,6 +6,10 @@ blocked it (the first one, in RULES order). `wait` is never blocked.
 Flags come from collections_cases and the CRM (customers) by crm_customer_id for now
 (`load_case_flags`); they switch to gold.customer_safeguards later. CRM safety flags are read only
 here, never as model features.
+
+Do not call means the bank's internal list (`internal_do_not_call_flag`): the customer asked the bank not to
+call. The National Do Not Call List is not used: it covers telemarketing only and does not block collection
+calls (POL-COLL-001 §5.3, FAQ-COLL-001 Q2), and a support call is not telemarketing either.
 """
 from __future__ import annotations
 
@@ -25,7 +29,7 @@ class CaseFlags:
     insolvency: bool = False  # insolvency hold, bankruptcy or consumer proposal
     open_dispute: bool = False
     represented: bool = False  # third-party / legal representative: do not contact the customer directly
-    do_not_call: bool = False  # national DNCL or internal do-not-call
+    do_not_call: bool = False  # the customer asked the bank not to call (internal list); not the National DNCL
     experiment_holdout: bool = False  # in the bank's randomised no_contact_holdout cell: leave it to the bank
     consent: dict[str, bool] = field(default_factory=dict)  # channel -> consented; missing = no consent
     contacts_last_7d: int = 0
@@ -105,7 +109,8 @@ def load_case_flags(con, case_ids: list[str] | None = None, planned_local_time: 
                    OR coalesce(f.consumer_proposal_flag, false) AS insolvency,
                coalesce(c.dispute_flag, false) AND coalesce(c.dispute_status, 'open') = 'open' AS open_dispute,
                coalesce(c.third_party_rep_flag, false) OR coalesce(f.legal_representative_flag, false) AS represented,
-               coalesce(f.national_dncl_flag, false) OR coalesce(f.internal_do_not_call_flag, false) AS do_not_call,
+               -- internal list only: the National DNCL covers telemarketing, not collection calls (POL-COLL-001 §5.3)
+               coalesce(f.internal_do_not_call_flag, false) AS do_not_call,
                coalesce(c.test_cell = 'no_contact_holdout', false) AS experiment_holdout,
                coalesce(f.consent_call, false), coalesce(f.consent_sms, false), coalesce(f.consent_email, false),
                coalesce(f.consent_push, false), coalesce(f.consent_letter, false),

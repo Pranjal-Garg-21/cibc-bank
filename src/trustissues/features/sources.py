@@ -202,7 +202,7 @@ SOURCES: dict[str, Source] = {
             "crm_customer_id": ("crm_customer_id", "VARCHAR"),
             **_c("consent_call", "consent_sms", "consent_email", "consent_push", "consent_letter",
                  "cease_communication_flag", "deceased_flag", "bankruptcy_flag", "consumer_proposal_flag",
-                 "vulnerability_flag", "national_dncl_flag", "internal_do_not_call_flag", "legal_representative_flag",
+                 "vulnerability_flag", "internal_do_not_call_flag", "legal_representative_flag",
                  type_="BOOLEAN"),
             **_c("preferred_contact_window_start", "preferred_contact_window_end", "permitted_call_start_local",
                  "permitted_call_end_local"),
