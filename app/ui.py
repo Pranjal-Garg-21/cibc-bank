@@ -44,7 +44,11 @@ def acting_as(c) -> dict | None:
     ids = list(labels)
     if st.session_state.get("user_id") not in labels:
         st.session_state["user_id"] = ids[0] if ids else None
-    st.sidebar.selectbox("Acting as", ids, format_func=labels.get, key="user_id")
+    # Streamlit drops a widget's value when the page changes, so the choice lives in "user_id" (not a widget key)
+    # and is copied into the picker on every page; without this, opening a card switched back to the first person.
+    st.session_state["_user_id_picker"] = st.session_state["user_id"]
+    st.sidebar.selectbox("Acting as", ids, format_func=labels.get, key="_user_id_picker",
+                         on_change=lambda: st.session_state.update(user_id=st.session_state["_user_id_picker"]))
     st.sidebar.caption(f"Data as of {AS_OF}. Demo login: pick any member of staff.")
     return agent_view.staff(c, st.session_state["user_id"]) if ids else None
 

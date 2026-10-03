@@ -685,3 +685,19 @@ added (Step 5), so nothing new to review.
 2.18: today's open promises are a different mix from resolved ones, DQ T2); feature drift `balance_to_limit` 0.35
 (was 0.34) and `card_utilisation` 0.26 (new: cards now reach the person), `ptp_to_overdue_ratio` 0.75.
 **Leakage:** `tests/test_feature_leakage.py` passes on every group (no group added). 196 tests pass.
+
+### Golden records, Step 8: app and cards (3 Oct)
+
+**Decision card** (`app/pages/3_Decision_Card.py`, `nba/agent_view.py` `customer_context`): the caption shows the
+golden customer; a new panel "The customer (N cases)" lists all the person's cases (open first) and their hardship
+offers on any of those cases, known before the as-of date, and opens by itself when the person has more than one case.
+Evidence quotes still wait for P4's text features. **Agent queue** (`agent_queue`): one row per customer (the contacted
+case, or the first in working order) with `other_cases`; the metric reads "Customers". On 28 Sep every open case is a
+different person, so the lists do not change. Tests: `test_agent_queue_order_and_scope` (a second case of the same
+person is folded into its row), `test_customer_context_lists_the_persons_cases_and_offers`. 197 tests pass.
+
+**Clicked through** (`make app`): team lead AG-1294 (today's states, batch, approvals; opened the card of G-0773844,
+5 cases, 3 earlier offers across them) and agent AG-1681 (queue with golden IDs, card with Accept / Override). **Bug
+found and fixed** (`app/ui.py`, there since the pages were added): Streamlit drops a widget's value on a page change,
+so opening a card from the agent's queue switched "Acting as" back to the first member of staff (a team lead), and the
+card refused the assigned agent's decision. The choice now lives in a plain session key copied into the picker.

@@ -184,9 +184,9 @@ if it helps on both folds**; otherwise delete it and record the result.
 
 ## Step 8. App and cards (1 h)
 
-- [ ] Decision card: the golden customer, all their open cases, evidence quotes, hardship history across cases.
-- [ ] Agent queue: one row per customer per day when they have several cases.
-- [ ] `python -m pytest tests/test_agent_view.py tests/test_app.py -q`; open `make app` and click through one agent and
+- [x] Decision card: the golden customer, all their open cases, evidence quotes, hardship history across cases.
+- [x] Agent queue: one row per customer per day when they have several cases.
+- [x] `python -m pytest tests/test_agent_view.py tests/test_app.py -q`; open `make app` and click through one agent and
       one team lead.
 
 **Done when:** pages work for an agent and a team lead on the gold data.

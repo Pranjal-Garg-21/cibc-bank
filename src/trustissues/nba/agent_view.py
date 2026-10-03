@@ -53,7 +53,9 @@ def _state(con, as_of: date) -> pd.DataFrame:
 
 
 def agent_queue(con, agent_id: str, as_of: date) -> pd.DataFrame:
-    """The agent's recommendations for the day, in working order, with where each one stands."""
+    """The agent's recommendations for the day, in working order, with where each one stands. One row per customer
+    (golden customer): a person with several cases is contacted on one of them at most (nba/queue.py), so the list
+    shows that case, or the first in working order, and `other_cases` counts the rest (on the decision card)."""
     q = con.execute("""
         SELECT recommendation_id, case_id, golden_customer_id AS customer, action, channel, risk_score, expected_value,
                approval_reason, json_extract_string(decision_card, '$.summary') AS summary,
@@ -61,7 +63,9 @@ def agent_queue(con, agent_id: str, as_of: date) -> pd.DataFrame:
         FROM gold.nba_decisions WHERE as_of_date = ? AND agent_id = ?""", [as_of, agent_id]).df()
     q = q.merge(_state(con, as_of), on="recommendation_id", how="left")
     q["order"] = q["action"].map(ACTION_ORDER).fillna(9)
-    return q.sort_values(["order", "expected_value", "risk_score"], ascending=[True, False, False]).drop(columns="order")
+    q = q.sort_values(["order", "expected_value", "risk_score"], ascending=[True, False, False]).drop(columns="order")
+    q["other_cases"] = q.groupby("customer")["recommendation_id"].transform("size") - 1
+    return q.drop_duplicates("customer", keep="first")
 
 
 def lead_digest(con, as_of: date) -> dict:
@@ -97,6 +101,24 @@ def card(con, recommendation_id: str, user: dict | None) -> dict:
     rec["history"] = con.execute("""SELECT ts, agent_id AS decided_by, decision, reason_code FROM gold.nba_overrides
                                     WHERE recommendation_id = ? ORDER BY ts""", [recommendation_id]).df()
     return rec
+
+
+def customer_context(con, customer: str, as_of: date) -> dict:
+    """The person behind a case (golden customer): all their cases, and their hardship offers across those cases,
+    known before the as-of date. Sources must be registered."""
+    cases = con.execute("""
+        SELECT case_id, case_status AS status, primary_product AS product, strftime(case_open_date, '%Y-%m-%d') AS opened,
+               current_dpd AS days_past_due, total_overdue, coalesce(hardship_flag, false) AS hardship
+        FROM src_cases WHERE coalesce(golden_customer_id, crm_customer_id) = ? AND case_open_date < CAST(? AS DATE)
+        ORDER BY case_status = 'open' DESC, case_open_date DESC""", [customer, as_of]).df()
+    offers = con.execute("""
+        SELECT h.offer_ts AS offered, h.case_id, h.program_id AS programme,
+               CASE WHEN h.response_ts < CAST(? AS TIMESTAMP) THEN h.customer_response END AS response,
+               CASE WHEN h.response_ts < CAST(? AS TIMESTAMP) THEN h.plan_status END AS plan_status
+        FROM src_hardship_offers h JOIN src_cases c USING (case_id)
+        WHERE coalesce(c.golden_customer_id, c.crm_customer_id) = ? AND h.offer_ts < CAST(? AS TIMESTAMP)
+        ORDER BY h.offer_ts DESC LIMIT 10""", [as_of, as_of, customer, as_of]).df()
+    return {"customer": customer, "cases": cases, "offers": offers}
 
 
 def case_context(con, case_id: str, as_of: date) -> dict:

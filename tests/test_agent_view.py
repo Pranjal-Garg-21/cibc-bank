@@ -16,7 +16,9 @@ RECS = [  # recommendation_id, case, agent, action, value, requires_approval, ap
     ("R-SUP", "CS-4", "AG-1", "support_call", 0.0, True, "hardship"),
     ("R-OTHER", "CS-5", "AG-2", "agent_call", 7.0, False, None),
     ("R-SMS", "CS-6", None, "sms_reminder", 3.0, True, "digital_batch"),
+    ("R-SAME", "CS-7", "AG-1", "wait", 0.0, False, None),  # the same person as CS-3: contacted there today
 ]
+CUSTOMER = {"CS-7": "G-CS-3"}  # everyone else: G-<case>
 
 
 @pytest.fixture
@@ -29,8 +31,9 @@ def con():
                   [a, role])
     for rec, case, agent, action, value, needs, why in RECS:
         card = DecisionCard(recommended_action=action, channel=None, risk_score=0.5, summary=f"summary {rec}")
-        c.execute("INSERT INTO gold.nba_decisions VALUES (?, 'C-1', ?, ?, ?, ?, NULL, 0.5, ?, ?, ?, ?, 'm', 's', ?)",
-                  [rec, case, agent, D, action, value, needs, why, card.to_json(), datetime(2026, 9, 28, 6)])
+        c.execute("INSERT INTO gold.nba_decisions VALUES (?, ?, ?, ?, ?, ?, NULL, 0.5, ?, ?, ?, ?, 'm', 's', ?)",
+                  [rec, CUSTOMER.get(case, f"G-{case}"), case, agent, D, action, value, needs, why, card.to_json(),
+                   datetime(2026, 9, 28, 6)])
     c.execute(f"""INSERT INTO {sources.SCHEMA}.collections_cases (case_id, coll_customer_ref, case_status, primary_product,
                   current_dpd, total_overdue, case_open_date) VALUES ('CS-3', 'C-1', 'open', 'card', '40', '512.5',
                   '2026-08-01')""")
@@ -44,6 +47,7 @@ def con():
 def test_agent_queue_order_and_scope(con):
     q = agent_view.agent_queue(con, "AG-1", D)
     assert list(q["recommendation_id"]) == ["R-SUP", "R-CALL", "R-EMAIL", "R-WAIT"]  # support, call, contact, wait
+    assert dict(zip(q["recommendation_id"], q["other_cases"]))["R-CALL"] == 1  # R-SAME: same person, not listed
     assert dict(zip(q["recommendation_id"], q["state"])) == {"R-SUP": "waiting_approval", "R-CALL": "waiting_agent",
                                                             "R-EMAIL": "ready", "R-WAIT": "ready"}
 
@@ -78,3 +82,15 @@ def test_case_context_stops_at_the_as_of_date(con):
     assert len(ctx["contacts"]) == 2  # the contact on the as-of date itself is not shown
     assert list(ctx["contacts"]["channel"]) == ["call", "call"]
     assert ctx["facts"]["opened"] == "2026-08-01"
+
+
+def test_customer_context_lists_the_persons_cases_and_offers(con):
+    con.execute(f"""INSERT INTO {sources.SCHEMA}.collections_cases (case_id, coll_customer_ref, case_status,
+                    primary_product, case_open_date) VALUES ('CS-8', 'C-1', 'closed', 'loan', '2025-01-10')""")
+    con.execute("INSERT INTO gold.case_customer (case_id, golden_customer_id) VALUES ('CS-3', 'G-1'), ('CS-8', 'G-1')")
+    con.execute(f"""INSERT INTO {sources.SCHEMA}.offers (offer_id, case_id, program_id, offer_ts, customer_response,
+                    response_ts) VALUES ('O-1', 'CS-8', 'HP-LOAN-SKIP', '2025-03-01 10:00:00', 'accepted',
+                    '2025-03-02 10:00:00'), ('O-2', 'CS-8', 'HP-LOAN-RED3', '2026-10-01 10:00:00', NULL, NULL)""")
+    who = agent_view.customer_context(con, "G-1", D)
+    assert list(who["cases"]["case_id"]) == ["CS-3", "CS-8"]  # open first
+    assert list(who["offers"]["programme"]) == ["HP-LOAN-SKIP"]  # the offer after the as-of date is not shown

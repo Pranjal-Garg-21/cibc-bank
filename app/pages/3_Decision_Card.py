@@ -98,6 +98,18 @@ with right:
     else:
         st.caption("No text signals yet (P4's text features are not built).")
 
+who = agent_view.customer_context(c, rec["golden_customer_id"], AS_OF)
+with st.expander(f"The customer ({len(who['cases'])} case{'s' if len(who['cases']) != 1 else ''})",
+                 expanded=len(who["cases"]) > 1):
+    st.caption("One person across their CRM, card, loan and deposit records (identity resolution). Safeguards, the "
+               "7-day contact limit and hardship history are theirs, across all these cases; they are contacted on "
+               "one case a day at most.")
+    a, b = st.columns(2)
+    a.caption("Their cases")
+    a.dataframe(who["cases"], hide_index=True, use_container_width=True)
+    b.caption("Hardship offers on any of their cases")
+    b.dataframe(who["offers"], hide_index=True, use_container_width=True)
+
 ctx = agent_view.case_context(c, rec["case_id"], AS_OF)
 with st.expander("The case", expanded=True):
     f = ctx["facts"]

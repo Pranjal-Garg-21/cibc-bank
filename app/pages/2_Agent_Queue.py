@@ -42,7 +42,7 @@ def agent_view_section() -> None:
         return
     calls = q["action"].isin(["agent_call", "support_call"])
     m = st.columns(4)
-    m[0].metric("Cases", f"{len(q):,}")
+    m[0].metric("Customers", f"{len(q):,}", help="One row per customer; other cases of theirs are on the card")
     m[1].metric("Calls to make", f"{int(calls.sum()):,}", help="Collections calls and support calls")
     m[2].metric("Support calls", f"{int((q['action'] == 'support_call').sum()):,}",
                 help="Hardship or vulnerable customers: offer help first, no payment request before an option")
