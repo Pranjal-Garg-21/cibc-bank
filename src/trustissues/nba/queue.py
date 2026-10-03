@@ -149,8 +149,10 @@ def request(p: Plan) -> allocate.Request:
     """The allocation request for a plan. Support calls go first (tier 0), most exposed first (risk x overdue)."""
     c = p.case
     if p.order[0] == hardship.SUPPORT:
-        return allocate.Request(p.order, c.risk * c.amount, c.assigned_agent_id, c.team, True, tier=0)
-    return allocate.Request(p.order, p.candidates[p.order[0]], c.assigned_agent_id, c.team, p.route_to_certified)
+        return allocate.Request(p.order, c.risk * c.amount, c.assigned_agent_id, c.team, True, tier=0,
+                                customer=c.customer_id)
+    return allocate.Request(p.order, p.candidates[p.order[0]], c.assigned_agent_id, c.team, p.route_to_certified,
+                            customer=c.customer_id)
 
 
 def card_channel_is_real_time(action: str) -> bool:
@@ -265,20 +267,32 @@ def score_open_promises(con, snapshot_dir=None) -> dict[str, float]:
     return dict(zip(df.index, risk.tolist()))
 
 
+# The person a case belongs to: its golden customer, or its CRM ID for the few cases identity could not tie to anyone.
+PERSON = "coalesce(c.golden_customer_id, c.crm_customer_id)"
+
+
 def load_cases(con, as_of) -> list[dict]:
-    """Open cases with what routing and hardship need. Offers count only if made before the as-of date, and their
-    answer only if given before it (some offers and answers in the data are dated after the snapshot)."""
+    """Open cases with what routing and hardship need. Hardship history is the PERSON's, across all their cases:
+    offers, broken plans (and, in load_uses_12m, programme uses). Months on book run from the person's oldest account
+    in the same product system as the case's account (card, loan, deposit). Offers count only if made before the
+    as-of date, and their answer only if given before it (some offers and answers are dated after the snapshot)."""
     rel = con.sql(f"""
         WITH opened AS (
-            SELECT * FROM src_card_opened UNION ALL SELECT * FROM src_loan_opened
-            UNION ALL SELECT * FROM src_deposit_opened
+            SELECT *, 'card' AS system FROM src_card_opened UNION ALL SELECT *, 'loan' FROM src_loan_opened
+            UNION ALL SELECT *, 'deposit' FROM src_deposit_opened
+        ),
+        held AS (  -- the person's oldest account in each product system
+            SELECT o.golden_customer_id, d.system, min(d.opened) AS first_opened
+            FROM src_account_owner o JOIN opened d USING (account_id)
+            WHERE d.opened < DATE '{as_of}' GROUP BY 1, 2
         ),
         offers AS (
-            SELECT case_id, max(offer_ts) AS last_offer_ts,
+            SELECT {PERSON} AS person, max(h.offer_ts) AS last_offer_ts,
                    -- offers carry no break date: a plan accepted in the last 90 days that is now broken
-                   bool_or(plan_status = 'broken' AND response_ts < TIMESTAMP '{as_of}'
-                           AND response_ts >= TIMESTAMP '{as_of}' - INTERVAL 90 DAY) AS broken_plan_90d
-            FROM src_hardship_offers WHERE offer_ts < TIMESTAMP '{as_of}' GROUP BY 1
+                   bool_or(h.plan_status = 'broken' AND h.response_ts < TIMESTAMP '{as_of}'
+                           AND h.response_ts >= TIMESTAMP '{as_of}' - INTERVAL 90 DAY) AS broken_plan_90d
+            FROM src_hardship_offers h JOIN src_cases c USING (case_id)
+            WHERE h.offer_ts < TIMESTAMP '{as_of}' GROUP BY 1
         )
         SELECT c.case_id, c.golden_customer_id, c.crm_customer_id, c.assigned_agent_id, c.assigned_team, c.total_overdue,
                c.current_ptp_id, c.primary_product, coalesce(c.current_dpd, 0) AS current_dpd,
@@ -288,24 +302,26 @@ def load_cases(con, as_of) -> list[dict]:
                CASE WHEN c.hardship_program_accepted THEN c.hardship_plan_end END AS plan_end,
                coalesce(c.hardship_program_offered, false) OR o.last_offer_ts IS NOT NULL AS ever_offered,
                o.last_offer_ts, coalesce(o.broken_plan_90d, false) AS broken_plan_90d,
-               date_diff('month', d.opened, DATE '{as_of}') AS months_on_book
+               date_diff('month', coalesce(hp.first_opened, d.opened), DATE '{as_of}') AS months_on_book
         FROM src_cases c
         LEFT JOIN (SELECT golden_customer_id, bool_or(vulnerability_flag) AS vulnerability_flag
                    FROM src_crm_safety_flags GROUP BY 1) f USING (golden_customer_id)  -- the person, any record
         LEFT JOIN src_agents a ON a.agent_id = c.assigned_agent_id
-        LEFT JOIN offers o USING (case_id)
+        LEFT JOIN offers o ON o.person = {PERSON}
         LEFT JOIN opened d ON d.account_id = c.primary_account_id
+        LEFT JOIN held hp ON hp.golden_customer_id = c.golden_customer_id AND hp.system = d.system
         WHERE c.case_status = 'open'
         ORDER BY c.case_id""")
     return [dict(zip(rel.columns, r)) for r in rel.fetchall()]
 
 
 def load_uses_12m(con, as_of) -> dict[str, dict[str, int]]:
-    """case_id -> {program_id: plans accepted in the 12 months before the as-of date} (max_uses_12m)."""
+    """person -> {program_id: plans accepted in the 12 months before the as-of date, on any of their cases}
+    (max_uses_12m). The person is the case's golden customer (PERSON), as CaseInput.customer_id."""
     rows = con.execute(f"""
-        SELECT case_id, program_id, count(*) FROM src_hardship_offers
-        WHERE customer_response = 'accepted' AND response_ts < TIMESTAMP '{as_of}'
-          AND response_ts >= TIMESTAMP '{as_of}' - INTERVAL 12 MONTH
+        SELECT {PERSON}, h.program_id, count(*) FROM src_hardship_offers h JOIN src_cases c USING (case_id)
+        WHERE h.customer_response = 'accepted' AND h.response_ts < TIMESTAMP '{as_of}'
+          AND h.response_ts >= TIMESTAMP '{as_of}' - INTERVAL 12 MONTH
         GROUP BY ALL""").fetchall()
     out: dict[str, dict[str, int]] = {}
     for case_id, program, n in rows:
@@ -319,7 +335,7 @@ def case_input(c: dict, flags: rules.CaseFlags, programs: list[dict], uses: dict
     ctx = hardship.AccountContext(product=c["primary_product"], dpd=c["current_dpd"],
                                   months_on_book=c["months_on_book"] if c["months_on_book"] is not None else 0,
                                   insolvency=flags.insolvency, broken_plan_90d=c["broken_plan_90d"],
-                                  uses_12m=uses.get(c["case_id"], {}))
+                                  uses_12m=uses.get(c["golden_customer_id"] or c["crm_customer_id"], {}))
     return CaseInput(
         case_id=c["case_id"], customer_id=c["golden_customer_id"] or c["crm_customer_id"], assigned_agent_id=c["assigned_agent_id"],
         agent_certified=bool(c["agent_certified"]), amount=float(c["total_overdue"] or 0.0), flags=flags,
@@ -363,8 +379,11 @@ def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
                        allocate.Assignment(a.action, default_agent(p, a.action), a.no_capacity)
                        for p, a in zip(plans, assignments)]
         # every hardship / vulnerable case without a certified agent yet gets a certified owner
+        # one certified owner per person: an owner allocation already gave one of their cases is kept for the rest
+        owners = {p.case.customer_id: a.agent_id for p, a in zip(plans, assignments)
+                  if p.route_to_certified and a.agent_id is not None}
         need = [i for i, (p, a) in enumerate(zip(plans, assignments)) if p.route_to_certified and a.agent_id is None]
-        for i, owner in zip(need, allocate.assign_owners([requests[i] for i in need], cap)):
+        for i, owner in zip(need, allocate.assign_owners([requests[i] for i in need], cap, owners)):
             assignments[i] = allocate.Assignment(assignments[i].action, owner, assignments[i].no_capacity)
         capacity["left"] = {"channel": dict(cap.channel), "agent_calls": sum(cap.agent_calls.values())}
     else:

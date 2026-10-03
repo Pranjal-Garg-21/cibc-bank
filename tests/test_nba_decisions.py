@@ -229,3 +229,13 @@ def test_a_support_call_wins_over_a_more_valuable_reminder_for_the_same_person()
         pytest.skip("no support call due for this signal")
     one_contact_per_customer(plans)
     assert plans[1].order[0] == hardship.SUPPORT and plans[0].order == ["wait"]
+
+
+def test_one_certified_owner_per_person_across_their_cases():
+    """Golden records Step 4: a person's flagged cases share one certified owner, the one already chosen if any."""
+    cap = _cap(certified={"AG-2", "AG-9"})
+    reqs = [allocate.Request(["wait"], 0, None, "T9", True, customer="G-1"),
+            allocate.Request(["wait"], 0, "AG-2", None, True, customer="G-1"),   # would be AG-2 on its own
+            allocate.Request(["wait"], 0, None, "T9", True, customer="G-2")]
+    assert allocate.assign_owners(reqs, cap) == ["AG-2", "AG-2", "AG-9"]   # G-1's first case set the owner
+    assert allocate.assign_owners(reqs[:2], cap, {"G-1": "AG-9"}) == ["AG-9", "AG-9"]  # allocation chose AG-9

@@ -133,13 +133,13 @@ or `duckdb -readonly warehouse/trustissues.duckdb`.
 
 ## Step 4. Hardship across the customer (1–2 h)
 
-- [ ] `nba/allocate.py` `assign_owners`: one certified owner per golden customer across all their cases.
-- [ ] `nba/queue.py` `load_cases` / `load_uses_12m`: programme uses in 12 months and broken plans counted across the
+- [x] `nba/allocate.py` `assign_owners`: one certified owner per golden customer across all their cases.
+- [x] `nba/queue.py` `load_cases` / `load_uses_12m`: programme uses in 12 months and broken plans counted across the
       customer's accounts; months on book from the customer's oldest relevant account.
 - [ ] If `gold.text_features` exists and P4's text evaluation passed: hardship level `clear` from a stated hardship
       signal (agreed confidence threshold); evidence sentences into `DecisionCard.evidence`; only notes dated before the
       as-of date.
-- [ ] `python -m pytest tests/test_hardship_monotonic.py tests/test_nba_decisions.py -q`.
+- [x] `python -m pytest tests/test_hardship_monotonic.py tests/test_nba_decisions.py -q`.
 
 **Done when:** hardship tests green (never harsher, no reminders); change in support reasons and programmes recorded.
 

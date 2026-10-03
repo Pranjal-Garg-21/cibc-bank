@@ -219,11 +219,11 @@ offering help, hardship programmes first). The rest wait: nothing is due, or a c
 
 | Situation | Support call today | Due, blocked by a rule | Nothing due today | With eligible programmes on the card |
 |---|---|---|---|---|
-| Hardship plan in place: no collections contact while it runs | 0 | 0 | 10,372 | 9,762 |
-| Hardship recorded and no programme offered yet: offer one before asking for payment (§4.2) | 5,893 | 2,931 | 0 | 8,493 |
-| Hardship programme offered in the last 30 days: give the customer time to answer | 0 | 0 | 6,217 | 6,051 |
+| Hardship plan in place: no collections contact while it runs | 0 | 0 | 10,372 | 9,818 |
+| Hardship recorded and no programme offered yet: offer one before asking for payment (§4.2) | 5,772 | 2,884 | 0 | 8,366 |
+| Hardship programme offered in the last 30 days: give the customer time to answer | 0 | 0 | 6,217 | 6,088 |
 | Vulnerable customer due for contact: a certified agent makes it instead of a reminder or a collections call (§4.5) | 4,056 | 913 | 0 | 0 |
-| Hardship programme offered over 30 days ago and not taken up: follow up (§4.2) | 2,574 | 1,581 | 0 | 3,874 |
+| Hardship programme offered over 30 days ago and not taken up: follow up (§4.2) | 2,695 | 1,628 | 0 | 4,061 |
 | Vulnerable customer, no contact due today | 0 | 0 | 1,399 | 0 |
 | Hardship plan ends within 10 days: review it with the customer (§4.4) | 198 | 95 | 0 | 271 |
 

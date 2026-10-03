@@ -46,6 +46,7 @@ class Request:
     team: str | None
     needs_certified: bool
     tier: int = 1  # 0 = support call (placed before all collections work)
+    customer: str | None = None  # the person (golden customer): one certified owner per person
 
 
 @dataclass
@@ -111,10 +112,12 @@ def allocate(requests: list[Request], cap: Capacity) -> list[Assignment]:
     return out
 
 
-def assign_owners(requests: list[Request], cap: Capacity) -> list[str | None]:
-    """A certified owner for each request (hardship and vulnerable cases): its assigned agent if certified, else
-    the certified agent in the same team with the fewest cases assigned so far, else the least-loaded certified
-    agent anywhere. None only if no active agent is certified."""
+def assign_owners(requests: list[Request], cap: Capacity, owners: dict[str, str] | None = None) -> list[str | None]:
+    """A certified owner for each request (hardship and vulnerable cases): the person's owner if they already have
+    one (`owners`, person -> agent, filled in as owners are chosen), else its assigned agent if certified, else the
+    certified agent in the same team with the fewest cases assigned so far, else the least-loaded certified agent
+    anywhere. None only if no active agent is certified."""
+    owners = {} if owners is None else owners
     load: dict[str, int] = defaultdict(int)
     by_team: dict[str | None, list[str]] = defaultdict(list)
     for a in sorted(cap.certified):
@@ -122,11 +125,15 @@ def assign_owners(requests: list[Request], cap: Capacity) -> list[str | None]:
     everyone = sorted(cap.certified)
     out: list[str | None] = []
     for r in requests:
-        if r.assigned_agent in cap.certified:
+        if r.customer is not None and r.customer in owners:
+            owner = owners[r.customer]
+        elif r.assigned_agent in cap.certified:
             owner = r.assigned_agent
         else:
             owner = min(by_team.get(r.team) or everyone, key=lambda a: (load[a], a), default=None)
         if owner is not None:
             load[owner] += 1
+            if r.customer is not None:
+                owners.setdefault(r.customer, owner)
         out.append(owner)
     return out

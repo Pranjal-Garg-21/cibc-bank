@@ -618,3 +618,20 @@ on the card. Tests: `test_every_case_of_a_person_gets_the_persons_safeguards`,
 | Open cases whose CRM ID does not exist (2,582) that get a contact | 6 | **1,443** (355 support calls, 431 email, 350 push, 161 SMS, 108 letters, 38 calls); 1,139 still wait |
 | Cases blocked by the 7-day contact limit | 4,555 | 6,204 (contacts to the same person through their other, closed cases) |
 | Queue | wait 33,863, email 16,007, push 13,581, support 12,727, SMS 5,423, letter 3,000, call 1,458 | wait 33,532, email 16,160, push 13,695, support 12,721, SMS 5,482, letter 3,000, call 1,469 |
+
+### Golden records, Step 4: hardship across the customer (3 Oct)
+
+**What changed** (`nba/queue.py`, `nba/allocate.py`). Hardship history is the person's: offers and a plan broken in
+90 days (`load_cases`) and programme uses in 12 months (`load_uses_12m`) count across all of the person's cases
+(person = golden customer, or the CRM ID for the 9 cases with none). Months on book run from the person's oldest
+account in the same product system as the case's account (card, loan or deposit, across all their records, through
+`gold.c360_account`); POL-COLL-004 does not define months on book, and programmes are per product, so "relevant" is
+read as the same product system. One certified owner per person: `allocate.assign_owners` takes the person
+(`Request.customer`) and keeps an owner once chosen, starting from the owners capacity allocation already gave.
+Test: `test_one_certified_owner_per_person_across_their_cases`. **Not done:** hardship from text
+(`gold.text_features` has no rows yet; P4).
+
+**Effect** (28 Sep): no action changed; hardship tests green (never harsher, no reminders). Programme options changed
+on 926 cards: 153 more cases have at least one programme (28,451 -> 28,604), 1,644 more options in all, as months on
+book now count the person's oldest account. Support-call reasons: `offer_programme` 5,893 -> 5,772, `follow_up` 2,574
+-> 2,695 (121 people were already offered a programme on another case).
