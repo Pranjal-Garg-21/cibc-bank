@@ -1,0 +1,51 @@
+# Ask refusal gate. Patterns are regexes matched case-insensitively against the question.
+# Word boundaries matter: "average" and "ageing buckets" must NOT trigger the age rule.
+protected_attributes:
+  reason: "Protected personal attributes are not used to rank, select or describe customers."
+  registry_levels: [protected]
+  patterns:
+    - '\bgender\b'
+    - '\bmarital( status)?\b'
+    - '\bcitizen(ship)?\b'
+    - '\bnewcomers?\b'
+    - '\bimmigra\w+'
+    - '\b(race|racial|ethnic\w*|religio\w*|sexual orientation)\b'
+    - '\b(?:customers?|clients?|borrowers?|debtors?|cardholders?|persons?|individuals?)(?:[''’]s?)?\s+(?:chronological\s+)?ages?\b'
+    - '\bage(?:s| bands?| groups?| brackets?| distribution| mix| profile)?\s+(?:of|for|among)\s+(?:(?:the|our|all|these)\s+)?(?:customers?|clients?|borrowers?|debtors?|cardholders?|people|persons?|individuals?)\b(?![''’]s?\s+(?:accounts?|cases?|loans?|debts?|promises?|balances?))'
+    - '\b(?:customers?|clients?|borrowers?|people|debtors?|cardholders?)\s+(?:(?:grouped|ranked|segmented|sorted)\s+)?(?:by|according to|based on)\s+(?:their\s+)?age(?:s| bands?| groups?| brackets?)?\b'
+    - '\b(?:customers?|clients?|borrowers?|people|debtors?|cardholders?)\b.{0,40}\b(?:aged|under|over)\s+\d+\b'
+    - '\bdate of birth\b|\bdob\b|\bbirth ?date\b'
+name_origin_discrimination:
+  reason: "Names or inferred personal origin cannot determine collections treatment."
+  intent_patterns:
+    - '\b(?:call(?:s|ed|ing)?|phon(?:e|es|ed|ing)|contact(?:s|ed|ing)?|(?:de)?prioriti[sz](?:e|es|ed|ing)|avoid(?:s|ed|ing)?|skip(?:s|ped|ping)?|rank(?:s|ed|ing)?|default(?:s|ed|ing)?|target(?:s|ed|ing)?|exclude|reject|select|prefer|suppress)\b'
+  patterns:
+    - '\b(?:names?|surnames?)\b'
+    - '\b(?:national|ethnic) origin\b|\bcountry of (?:birth|origin)\b|\bnationality\b'
+proxy_geography:
+  reason: "Postal areas act as a proxy for protected attributes and cannot drive treatment decisions."
+  registry_proxies: true
+  patterns:
+    - '\bfsas?\b'
+    - '\bpostal (areas?|codes?)\b'
+    - '\bforward sortation\b'
+    - '\bneighbou?rhoods?\b'
+pii_export:
+  reason: "Customer identities and contact details are not disclosed in bulk."
+  registry_levels: [direct_pii]
+  intent_patterns:
+    - '\b(export|download|list|show|give|extract|provide|print|output|display|reveal|fetch|return|send|dump)\b'
+    - '\btell me\b'
+    - '\bwhat(?: is| are|''s)\s+(?:the\s+)?(?:(?:customers?|clients?|borrowers?)[''’]s?\s+)?(?:full names?|names?|phones?|e-?mails?|addresses|contact details)\b'
+  patterns:
+    - '\b(names?|(?:phone|telephone) numbers?|(?:e-?mail|home|postal) addresses?|contact details|addresses|sin|social insurance)\b.{0,60}\b(customers?|clients?|borrowers?)\b'
+    - '\b(customers?|clients?|borrowers?)\b.{0,60}\b(names?|(?:phone|telephone) numbers?|(?:e-?mail|home|postal) addresses?|contact details|addresses|sin|social insurance)\b'
+    - '\b(?:customers?|clients?|borrowers?)[''’]s?\s+(?:phone|email)(?!\s+(?:attempts?|calls?|contacts?|logs?|rates?|counts?|volumes?))\b'
+out_of_scope:
+  reason: "This question is outside collections analytics and policy."
+  patterns:
+    - '\bweather\b|\bforecast\b|\btemperature\b'
+    - '\b(stock price|sports? score|recipe|horoscope|lottery)\b'
+    - '\bwho (won|is the president)\b'
+    - '\b(stock|share)\b.{0,40}\b(price|quote)\b|\b(price|quote)\b.{0,40}\b(stock|shares?)\b'
+    - '\b(tell|write|make)\b.{0,20}\b(joke|jokes|recipe|horoscope)\b'

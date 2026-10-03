@@ -1,0 +1,26 @@
+[OK] How many open cases are there in each queue?
+[DIFF] How many cases were opened in each month of 2026?
+   sql : SELECT EXTRACT(YEAR FROM "semantic_cases"."case_open_date") AS "year", EXTRACT(MONTH FROM "semantic_cases"."case_open_date") AS "month", COUNT(*) AS "cases_opened" FROM (SELECT * FROM "gold"."semantic_cases" WHERE COALESCE(case_open_date, CAST('1900-01-01' AS DATE)) < CAST('2026-09-29' AS DATE)) AS 
+   got : ((2026, 1, 7949), (2026, 2, 8245), (2026, 3, 9430), (2026, 4, 13479)) 
+   want: [('2026-03', 9430), ('2026-05', 16948), ('2026-04', 13479), ('2026-07', 26987)]
+[OK] What is the total number of SMS contacts sent in September 2026?
+[OK] How many charged-off cases are there by primary product?
+[OK] What is the average current days past due for open cases in each province?
+[OK] How many promises were created in August 2026 by agent site?
+[OK] What total amount was paid against promises in July 2026?
+[OK] How many cases have the hardship flag set, by queue?
+[OK] What is the total contact cost for calls in September 2026?
+[OK] How many distinct customers had a call in September 2026?
+[OK] Which five agent sites made the most outbound contacts in August 2026?
+[DIFF] How many cases cured in 2026 by primary product?
+   sql : SELECT "c"."primary_product" AS "primary_product", COUNT(*) AS "cured_cases" FROM (SELECT * FROM "gold"."semantic_cases" WHERE COALESCE(case_open_date, CAST('1900-01-01' AS DATE)) < CAST('2026-09-29' AS DATE)) AS c WHERE "c"."cure_date" >= '2026-01-01' AND "c"."cure_date" < '2027-01-01' GROUP BY "c"
+   got : (('mortgage', 4076), ('personal_loan', 13389), ('overdraft', 9555), ('card', 44339)) 
+   want: [('overdraft', 9271), ('personal_loan', 12996), ('mortgage', 3946), ('loc', 6014)]
+[DIFF] What share of open cases have a hardship flag?
+   sql : SELECT COUNT(*) FILTER(WHERE "semantic_cases"."hardship_flag") * 100.0 / COUNT(*) AS "hardship_share_pct" FROM (SELECT * FROM "gold"."semantic_cases" WHERE COALESCE(case_open_date, CAST('1900-01-01' AS DATE)) < CAST('2026-09-29' AS DATE)) AS semantic_cases WHERE "semantic_cases"."outcome" IS NULL LI
+   got : ((36.325,),) 
+   want: [(0.36325,)]
+[OK] How many accounts are in each account status?
+[OK] What is the highest balance among accounts over 90 days past due?
+
+12/15 match the reference

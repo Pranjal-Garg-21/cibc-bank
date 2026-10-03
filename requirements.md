@@ -30,6 +30,8 @@ pip install -e ".[dev]"
 
 `pip install -e` installs the `trustissues` package from `src/` so `python -m trustissues...` works from anywhere. `pip install -r requirements.txt` also works for the packages alone, but then you must set `PYTHONPATH=src`.
 
+Once, for the Ask router (P2): `python scripts/setup_router.py` downloads its local metric matcher (`BAAI/bge-small-en-v1.5`, ONNX, 65 MB) into `warehouse/cache/router_embeddings/`. At run time it only reads cached files and never downloads. Without it the router still works on its rules alone but places fewer questions, and 5 router tests are skipped with a message saying to run this.
+
 ## 3. Get the data
 
 The dataset is on Hugging Face: `nuxsh/maple-collections-hackathon`. It must end up at `maple_data/maple_collections_release/` (this is the default in `config/settings.yaml`).

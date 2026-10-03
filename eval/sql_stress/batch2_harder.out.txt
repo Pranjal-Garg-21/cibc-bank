@@ -1,0 +1,23 @@
+[OK] How many outbound calls were made on cases in each queue in September 2026?
+[DIFF] Which primary product has the highest share of cases with a hardship flag among cases opened in 2026?
+   sql : SELECT "semantic_cases"."primary_product" AS "primary_product", ROUND(100.0 * SUM(CASE WHEN "semantic_cases"."hardship_flag" THEN 1 ELSE 0 END) / COUNT(*), 2) AS "hardship_share_pct" FROM (SELECT * FROM "gold"."semantic_cases" WHERE COALESCE(case_open_date, CAST('1900-01-01' AS DATE)) < CAST('2026-09-29' AS DATE)) AS semantic_cases WHERE "semantic_cases"."case_open_date" >= '2026-01-01' AND "seman
+   got : (('auto_loan', 26.76),) 
+   want: [('auto_loan', 0.26756880733944954)]
+[DIFF] Compare the number of calls made between 1-14 September 2026 and 15-28 September 2026
+   sql : SELECT CASE WHEN "semantic_contacts"."contact_ts_local" >= CAST('2026-09-01' AS DATE) AND "semantic_contacts"."contact_ts_local" < CAST('2026-09-15' AS DATE) THEN '1-14 Sep' WHEN "semantic_contacts"."contact_ts_local" >= CAST('2026-09-15' AS DATE) AND "semantic_contacts"."contact_ts_local" < CAST('2026-09-29' AS DATE) THEN '15-28 Sep' END AS "period_label", COUNT(*) AS "call_count" FROM (SELECT * 
+   got : (('1-14 Sep', 89936), ('15-28 Sep', 110675)) 
+   want: [(89936, 110675)]
+[OK] How many promises created in July 2026 ended up kept, broken and partially kept?
+[OK] What is the average amount paid per kept promise by queue?
+[OK] Which agent sites made more than 5000 outbound calls in August 2026?
+[OK] Which day of the week had the most calls in September 2026?
+[OK] What share of calls were within permitted hours by province in September 2026?
+[OK] How many cases opened in 2026 have had no contact at all?
+[OK] What is the average number of days from case open to cure for cured cases by primary product?
+[OK] What are the top 3 provinces by number of charged-off cases?
+[OK] How many customers have more than one open case?
+[OK] By how much did the number of newly opened cases change from August to September 2026?
+[OK] What is the total overdue amount by product for accounts more than 90 days past due?
+[OK] How many distinct cases with a broken promise also have the hardship flag set?
+
+13/15 match the reference

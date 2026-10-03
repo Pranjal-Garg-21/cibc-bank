@@ -1,0 +1,179 @@
+{
+  "source": "Released metric_definitions.csv plus reviewed BQ-006/BQ-010 template contracts; no evaluation questions",
+  "metrics": [
+    {
+      "metric_id": "roll_rate",
+      "name": "Roll rate",
+      "definition": "Share of accounts in a bucket at the start of the period that are in a worse bucket at the end",
+      "synonyms": [
+        "flow rate",
+        "roll forward",
+        "deterioration"
+      ],
+      "example": "Roll rate from 1-30 to 31-60 this month by product?"
+    },
+    {
+      "metric_id": "cure_rate",
+      "name": "Cure rate",
+      "definition": "Share of cases open at the start of the period that return to current within the period",
+      "synonyms": [
+        "self-cure",
+        "back to current",
+        "cured"
+      ],
+      "example": "What was the cure rate for cases opened in August?"
+    },
+    {
+      "metric_id": "promise_kept_rate",
+      "name": "Promise-kept rate",
+      "definition": "Share of resolved promises that were kept in full",
+      "synonyms": [
+        "PTP kept rate",
+        "promise kept",
+        "kept promises"
+      ],
+      "example": "What is the promise-kept rate this month by queue?"
+    },
+    {
+      "metric_id": "broken_promise_rate",
+      "name": "Broken promise rate",
+      "definition": "Share of resolved promises that were broken",
+      "synonyms": [
+        "broken PTP rate",
+        "PTP break rate"
+      ],
+      "example": "Broken promise rate by tier?"
+    },
+    {
+      "metric_id": "rpc_rate",
+      "name": "Right-party contact rate",
+      "definition": "Share of outbound call attempts that reached the customer",
+      "synonyms": [
+        "RPC rate",
+        "contact rate",
+        "reach rate"
+      ],
+      "example": "RPC rate by hour of day last month?"
+    },
+    {
+      "metric_id": "ptp_rate",
+      "name": "PTP rate",
+      "definition": "Promises taken per right-party contact",
+      "synonyms": [
+        "promise rate",
+        "PTP per RPC"
+      ],
+      "example": "PTP rate by agent site?"
+    },
+    {
+      "metric_id": "cost_per_contact",
+      "name": "Cost per contact",
+      "definition": "Average contact cost in CAD",
+      "synonyms": [
+        "contact cost",
+        "cost per attempt"
+      ],
+      "example": "Cost per contact by channel this month?"
+    },
+    {
+      "metric_id": "cost_per_rpc",
+      "name": "Cost per right-party contact",
+      "definition": "Total contact cost divided by right-party contacts",
+      "synonyms": [
+        "cost per RPC"
+      ],
+      "example": "Cost per RPC by channel?"
+    },
+    {
+      "metric_id": "collected_amount",
+      "name": "Amount collected",
+      "definition": "Payments received on cases in the period",
+      "synonyms": [
+        "collections",
+        "recoveries",
+        "dollars collected"
+      ],
+      "example": "How much did we collect in September?"
+    },
+    {
+      "metric_id": "hardship_rate",
+      "name": "Hardship rate",
+      "definition": "Share of cases with financial hardship recorded",
+      "synonyms": [
+        "hardship share",
+        "hardship cases"
+      ],
+      "example": "Hardship rate by province?"
+    },
+    {
+      "metric_id": "delinquency_rate",
+      "name": "Delinquency rate",
+      "definition": "Share of active accounts 1+ days past due",
+      "synonyms": [
+        "delinquent share",
+        "arrears rate"
+      ],
+      "example": "Card delinquency rate by bucket today?"
+    },
+    {
+      "metric_id": "write_off_rate",
+      "name": "Write-off rate",
+      "definition": "Share of accounts charged off in the period",
+      "synonyms": [
+        "charge-off rate",
+        "loss rate"
+      ],
+      "example": "Write-offs in the last 12 months by product?"
+    },
+    {
+      "metric_id": "average_dpd",
+      "name": "Average days past due",
+      "definition": "Mean DPD of open cases",
+      "synonyms": [
+        "mean DPD",
+        "average arrears age"
+      ],
+      "example": "Average DPD of open cases by queue?"
+    },
+    {
+      "metric_id": "contact_attempts_per_case",
+      "name": "Attempts per case",
+      "definition": "Outbound attempts per case",
+      "synonyms": [
+        "contact intensity",
+        "touches per case"
+      ],
+      "example": "Attempts per case by bucket?"
+    },
+    {
+      "metric_id": "payroll_delay_share",
+      "name": "Payroll delay share",
+      "definition": "Share of customers with a payroll deposit more than 7 days late",
+      "synonyms": [
+        "late payroll",
+        "missed pay"
+      ],
+      "example": "How many open-case customers have payroll more than a week late?"
+    },
+    {
+      "metric_id": "out_of_hours_share",
+      "name": "Out-of-hours call share",
+      "definition": "Percentage of outbound calls outside permitted calling hours using the supplied flag, grouped by province.",
+      "synonyms": [
+        "calling-hours violations",
+        "outside calling window"
+      ],
+      "example": "What share of outbound calls were outside permitted hours by province?"
+    },
+    {
+      "metric_id": "dispute_count",
+      "name": "Dispute count",
+      "definition": "Count of customer disputes raised about fees during two comparison periods.",
+      "synonyms": [
+        "fee disputes",
+        "dispute volume"
+      ],
+      "example": "How many fee disputes were raised compared with the preceding period?"
+    }
+  ]
+}

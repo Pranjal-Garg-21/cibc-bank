@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "trustissues"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["duckdb>=1.1", "pyyaml", "openpyxl", "splink>=5.0", "scipy", "pyarrow", "anthropic", "rank-bm25", "rich"]
+dependencies = ["duckdb>=1.1", "pyyaml", "openpyxl", "sqlglot", "networkx", "rank-bm25", "rich",
+                "splink>=5.0", "scipy", "pyarrow", "anthropic", "fastembed==0.8.1", "pyahocorasick==2.3.1"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -21,3 +22,6 @@ ti-gold = "trustissues.factory.gold.build_c360:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"trustissues.ask.data" = ["metric_sql/*.sql"]

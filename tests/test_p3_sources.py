@@ -73,7 +73,10 @@ def test_protected_attributes_are_read_only_by_the_fairness_check(sensitivity):
     assert all(labels.get(c) != "direct_pii" for c, _ in sources.SOURCES["protected_attributes"].columns.values()
                if c != "crm_customer_id")
     src = config.REPO_ROOT / "src" / "trustissues"
-    readers = {p.relative_to(src).as_posix() for p in src.rglob("*.py") if "protected_attributes" in p.read_text()}
+    # a read is the source accessor (sources.protected_attributes(con)) or the source by name; the bare word is also
+    # a refusal category in ask/llm_screen.py, which reads nothing
+    reads = re.compile(r"protected_attributes\s*\(|(?:SOURCES\[|relation\([^)]*)[\"']protected_attributes[\"']")
+    readers = {p.relative_to(src).as_posix() for p in src.rglob("*.py") if reads.search(p.read_text())}
     assert readers == {"features/sources.py", "nba/fairness.py"}, readers
 
 

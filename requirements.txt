@@ -2,6 +2,8 @@
 duckdb>=1.1          # tested 1.5.6
 pyyaml>=6.0          # tested 6.0.3
 openpyxl>=3.1        # tested 3.1.5 (reads the data dictionary xlsx)
+sqlglot              # Layer 2 (Ask): SQL validator
+networkx             # Layer 2 (Ask): schema join graph
 pytest>=8            # tested 9.1.1 (tests only)
 splink>=5.0          # tested 5.0.0 (probabilistic identity matching; brings sqlglot)
 scipy>=1.11          # tested 1.18.0 (connected components)
@@ -10,3 +12,5 @@ anthropic>=0.40      # tested 0.116.0 (optional LLM second opinion on grey-zone 
 huggingface_hub      # only to download the dataset; tested 2.1.1 (provides the `hf` command)
 rank-bm25>=0.2      # tested 0.2.2 (keyword half of policy search)
 rich>=13            # tested 15.0.0 (terminal dashboard: scripts/policy_dashboard.py)
+fastembed==0.8.1     # Layer 2 (Ask): local metric matcher (bge-small ONNX on CPU). Run `python scripts/setup_router.py` once to download the model files; without them the router scores lower
+pyahocorasick==2.3.1 # Layer 2 (Ask): one-pass phrase search for the refusal gate (optional: a regex fallback gives the same results)

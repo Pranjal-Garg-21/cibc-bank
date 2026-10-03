@@ -1,49 +1,114 @@
 # P2 Design Sections: For Final System Design PDF
 
+All numbers were measured on the development data (`warehouse/ask_dev`, 3 October 2026, one machine, warm and sequential unless stated). The development data holds 367,229 cases, 2,688,337 contacts, 238,815 promises, 1,064,500 account rows and 12,569,692 month-end snapshot rows. Two things are empty in the development data: `gold.customer_xref` and `gold.semantic_payroll` have no rows, and no development case carries a golden customer ID. Anything that needs identity or payroll (the payroll-delay metric, customer-level joins) cannot be shown on this data. Design intent is marked as such.
+
 ## Heading: Layer 2: Insight and NLP Platform (Structured)
 
 ### 1. Architectural Overview & Query Pipeline
-Layer 2 provides natural-language conversational analytics ("Collections Ask") over the unified Collections 360 data product. Operating over 31 tables and 1,422 columns across about 1M customers, the system addresses the classic Text-to-SQL problems of context bloat, join hallucinations and double-counting with a staged pipeline that checks every question before and after the LLM:
 
-0. **Access check (before anything else):** the user's role sets what they can see (agents: assigned cases only; team leads: portfolio aggregates; analytics: non-PII data). The role is passed into every later stage and into SQL validation.
+Layer 2 answers collections questions in plain language over the curated data. Most numbers do not come from a model. The 17 metrics in the metric catalogue each have a reviewed SQL template, and a question that names one is answered by filling that template with a period and a breakdown. A model writes SQL only for questions no metric covers, and that answer is labelled uncertified. Every statement, from either source, passes the same validator before it runs.
 
-1. **Stage 0: Adversarial Prompt-Injection Defense:** A lightweight, quantized classification model (DeBERTa-v3-small running via ONNX Runtime in ~12ms) inspects the raw prompt for adversarial jailbreaks, roleplay bypasses, system-prompt extraction attempts, and obfuscated SQL payloads. Malicious prompts are rejected before reaching downstream parsers.
-2. **Stage 1: Deterministic Compliance & Refusal Gate:** Queries passing Stage 0 enter a lexical index implemented as an Aho-Corasick automaton compiled from a Radix Trie. Refusal triggers are generated from the same protected-attribute registry as Layer 1 (the 12 columns tagged `Protected attribute` in the data dictionary, plus their synonyms), from the columns tagged `Direct PII`, and from out-of-scope topics. Matching is whole-word, so "average" or "ageing report" does not trigger a refusal. Questions that ask to filter, group or compare by `age` or `age_band` are refused (age is kept out of drivers and models by policy), while "age of account" and "ageing buckets" are allowed. A hit short-circuits the pipeline in about 2 ms and returns a refusal reason with a safe alternative question.
-3. **Stage 2: Deterministic As-Of Date Resolution:** To prevent the fatal time-displacement bug common in frozen historical datasets (the hackathon dataset snapshot is anchored at 28 September 2026), all relative temporal expressions ("this week", "last 90 days", "this month") are deterministically resolved against the fixed benchmark anchor (`AS_OF_DATE = '2026-09-28'`). The resolved date boundaries are passed as explicit date literals into query parameters and displayed as editable chips on the UI answer card.
-4. **Stage 3: Query Routing & Metric-First Intent:** Queries are classified into six benchmark categories: `metric`, `drivers`, `comparison`, `rag_corpus`, `rag_customer`, and `guardrail`.
-   * **Metric & Comparison Queries:** The system maps the question to certified metrics in `metric_definitions` using precomputed semantic embeddings of metric names, business definitions, and synonyms. The LLM extracts only operational parameters (filters, dates, segments), binding them into the certified SQL formula with `default_filters` automatically enforced.
-   * **Drivers Queries:** Handled via a structured Drivers Decomposition Pipeline: the system evaluates the certified metric and splits it across an approved whitelist of operational dimensions (`product`, `stated_delay_reason`, payroll-delay band, `prior_broken_ptp_count`). Protected attributes are never allowed as split dimensions. It ranks each factor's contribution to the change.
-   * **Policy & Customer Transcripts:** Handled by routing the request to Layer 2 RAG (P4) via Interface I6.
-5. **Stage 4: Grain-Aware Schema Pruning (Steiner Join Tree):** For ad-hoc queries where no certified metric exists (the answer is labelled "uncertified"), the Radix Trie and embedding matcher extract terminal tables and columns. To reduce "fan traps" and "chasm traps" (joining multi-account tables across a customer duplicates rows and double-counts balances), the join graph follows the Candidate Network idea of DISCOVER (VLDB 2002). Foreign-key edges carry multiplicity annotations; many-to-many paths are heavily penalised and sent through certified pre-aggregated views (`gold.c360_customer`) or isolated CTE subqueries. A Steiner tree (via `networkx`) extracts the minimal join path and prunes the schema from 1,422 columns to roughly 15 relevant ones. The graph is built over the gold layer, including the `bureau_history` link through `bank_subject_ref` in the crosswalk. Pruning quality is measured as schema-linking recall against each benchmark question's `expected_tables`.
-6. **Stage 5: AST Validation & Read-Only Execution:** Before execution, the generated SQL is parsed into an Abstract Syntax Tree (AST) using `sqlglot`. The validator enforces: (a) read-only `SELECT` only, (b) all tables and columns come from the pruned schema, (c) joins follow the Steiner tree edges, (d) the metric's `default_filters` are present, (e) no direct-PII or protected columns are selected and the user's role scope is applied, and (f) a row cap (`LIMIT 100`). On failure the query is re-prompted once with the error; if it still fails, the system says the question cannot be answered reliably. Validated queries run on in-memory DuckDB marts, typically in tens of milliseconds.
+A question goes through these stages in order. The two model-backed stages (3, and the fallback in 4) run only when a language-model client is connected; without one, the rules alone decide.
 
-### 2. UI Answer Card Specification
-Every query returns an auditable Answer Card containing:
-* **"Show What It Understood":** Editable parameter chips (e.g. `[Product: Personal Loan]`, `[Window: 21 Sep - 28 Sep 2026]`, `[Status: Broken PTP]`) that analysts can modify with a single click.
-* **"Show the Working":** A collapsible provenance drawer displaying the exact generated SQL, source tables, and execution latency.
-* **Executive Summary & Next Actions:** A 2-sentence natural language synthesis of findings accompanied by 3 clickable follow-up questions.
+1. **Prompt-injection screen (rules).** Regular expressions look for attempts to override the assistant's instructions, reveal its prompt, or smuggle SQL (for example `; DROP TABLE`), plus patterns that pair an override or reveal verb with an object such as "instructions", "rules" or "configuration". A hit refuses the question and nothing else runs. This is a heuristic, not a trained classifier.
+2. **Refusal gate (rules).** A lexicon refuses requests to select, rank, treat or describe customers by a protected attribute or a proxy for one, to export personal identities or contact details in bulk, and out-of-scope topics. Protected and proxy phrases are generated from the sensitivity registry (`config/sensitivity.yaml`) and searched in one pass with an Aho-Corasick automaton (`pyahocorasick`, whole-word matching), alongside hand-written context rules. The context rules separate a person's age from the age of an account, and statistics about phone or email contacts from a request for phone numbers, so "average days past due" and "contact rate by channel" are not refused. Without `pyahocorasick`, the same phrases are matched with boundary-aware regular expressions and the refusal results are unchanged.
+3. **Model safety screen.** The model is asked whether the question clearly uses a protected attribute or a proxy such as a name or origin, asks for identities or contact details in bulk, or tries to override or reveal the assistant's instructions. **It can only add a refusal.** A rule refusal is final and never reaches it, and a model failure, a timeout or an unusable reply leaves the rules' verdict as it was. The prompt tells it to allow a question when unsure, so a request that no rule and no model reading catches passes. It sees only the question text.
+4. **Router.** The router chooses one of seven outcomes: `metric`, `drivers`, `rag_corpus`, `rag_customer`, `sql`, `incident` or `cannot_answer`.
+   - Deterministic metric triggers are tried first. A case ID with call wording goes to `rag_customer` only when no metric trigger matched.
+   - Wording that asks what a policy requires goes to `rag_corpus`; "why did X change" goes to `drivers`; a case population count goes to `sql`.
+   - If no trigger matches, a local embedding matcher compares the question with each metric's name, definition, synonyms and example (`BAAI/bge-small-en-v1.5` on CPU through FastEmbed/ONNX; no question leaves the machine). A metric is selected only if its similarity is at least 0.65 and it leads the next metric by at least 0.055; these are thresholds, not calibrated probabilities. If two metrics are close, the router asks which one is meant.
+   - When the result is `cannot_answer`, including a pending clarification, the **model fallback** asks the model to choose a path and, for a metric, one catalogue id. So a clarification can be replaced by a model choice. It sees the question and the metric definitions only; an unknown id, an unknown path or a wrongly typed reply is ignored. A chosen metric still goes through the parameter builder.
+   - A recognised breakdown the metric does not support (for example "by individual customer") returns "unsupported" or a refusal, not a nearby number. Recognition is by wording, so an unfamiliar unsupported filter can still be lost (see limits).
+5. **Access check.** The role decides which paths are open: metric, SQL and drivers to team leads and analysts; policy questions to every role; customer-call questions to agents (assigned cases only) and team leads. The path is checked before the case, and a missing case and a case the user may not see give the same message, so the answer does not reveal which cases exist.
+6. **Date resolution.** Named and relative periods ("September 2026", "the 12 months to 28 September", "end of March", "today") are resolved in code against the as-of date supplied with each call (configured as 28 September 2026). Periods are half-open and clamped to the as-of date. On the generated-SQL path, a question about a period that starts after the as-of date gets a note saying so.
+7. **Answer paths.**
+   - **Certified metric.** A reviewed template (17 metrics plus a cohort variant of the cure rate) is filled with the parsed period and breakdown. Most rates report the numerator and denominator beside the rate; the out-of-hours share reports the percentage and the number of calls.
+   - **Drivers ("why did it change").** The certified metric is computed for two periods and the change is split into a rate effect and a mix effect across approved dimensions; counts are split by segment. Protected attributes, direct PII and experiment labels are never split dimensions. For rates, a change under 2% is called small; for call volume, a change spread evenly across segments is reported as broad-based. The answer states which segments moved and does not claim a cause.
+   - **Policy and regulation questions** go to P4's policy RAG (51 policy chunks) through the shared model wrapper, with a required supporting quotation and citation. A quotation does not prove every sentence of the answer; the text answers are still reviewed by a person.
+   - **Customer-call questions** use P4's customer function, which is not connected. With no resolver the answer is "customer lookups are unavailable"; the contract is in `docs/interfaces.md`.
+   - **Generated SQL fallback.** For questions no metric covers (for example "open cases by bucket"), the model writes one DuckDB SELECT over the six `gold.semantic_*` views. The prompt lists all 73 approved columns with notes, plus join hints (a Steiner path over the approved join keys, and warnings about fan-out and snapshot pairing). The hints are text only; the validator is the control.
+8. **Validation and execution.** Every statement is parsed with `sqlglot` and must satisfy: read-only SELECT, one statement, no set operations, approved tables, columns and join keys only, no direct-PII or protected columns for the role, and trusted row filters inside each scan, with a row cap of 500 on returned rows. Generated queries receive the as-of limit in addition to the role's own filters. Certified queries pass explicit as-of parameters instead. Execution has a 5-second timeout per statement, set on the execution only, not on validation, model calls or repairs. Before a generated query runs, three further checks apply, all heuristic: a filter on a label column (queue, bucket, outcome, product, channel and similar) must use a value that exists for that user (found through the same validated policy, and skipped when the lookup cannot run); a question that says "calls", "SMS", "email", "outbound" or "inbound" must have the matching channel or direction as a top-level AND term of a WHERE clause; and an unknown column triggers a repair hint naming the table that owns it. A query is repaired once and then rejected with "could not answer reliably". Two other reads sit outside this validator: the case resolver and the policy retrieval query their own tables directly.
+9. **Answer card.** A card carries the question, the answer, the path, the as-of date, the SQL and its parameters, the sources, a certified flag and notes. On a successful answer the SQL is the statement that ran. A failure card can carry the rejected statement instead. Parameters are stored as parsed values and shown with ISO dates in the benchmark file and the drivers log. Grouped rows are sorted in a natural order (`1-30` before `31-60`) so a repeated question returns the same table, except where a generated query supplies its own ORDER BY, which is kept.
+
+What reaches the model: the safety screen and the router fallback see the question text and metric definitions only. The SQL prompt carries schema text and the question. Policy answers carry policy chunks, which include hardship-programme records. A repair message can carry label values the user is allowed to see, and error text with numbers removed.
+
+### 2. What the Answer Card Contains (the screen is not built)
+
+The record holds what a screen needs: parsed parameters, the executed SQL, the sources, the certified flag and the notes ("uncertified", "one repair", "period after the as-of date"). The editable parameter chips, the working drawer and the suggested follow-up questions are design intent. No Ask screen exists.
+
+### 3. Evidence of Quality
+
+| Check | Result |
+|---|---|
+| Released questions with a development grade (21 of the 35), full pipeline with `--llm` | 14 pass, 6 text answers marked for human review, 1 fail. The other 14 released questions have no grade, and "review" means a person has not yet confirmed the answer. The 5 expected refusals are refused and none of the other 30 is. |
+| The one failure (BQ-017, roll rate) | The reference answer's date parser drops month-first dates; an independent calculation from the raw files with the corrected parser matches our curated result (auto loan 8.1545% on 466, against the reference's 7.4419% on 430). The team is handling it. |
+| Reproducibility | Five full runs of the 35 questions (`eval/repro_runs/`). The two runs after the ordering fix that bypassed the cache, and one cached run, give identical numeric answers. Policy text answers vary in wording across runs (BQ-001, BQ-019) while the facts match. Two earlier runs differed only in the order of grouped rows, which is now fixed. |
+| Router paraphrase sets (current scores, with the model fallback and safety screen) | 100% on the 72-case set the rules were tuned on; 94.5% on a 55-case held-out set; 94.9% on a 39-case fresh set; 95.2%, 95.8% and 95.5% on three later safety-focused sets. Cached model responses were used, so these reproduce earlier model outputs. The later sets were used to diagnose misses, so they overstate unseen accuracy. |
+| First scores on unseen wording | Rules only: 47.2% on the original set, 47.3% on the held-out set. With the model fallback added: 80.0% on the held-out set and 84.6% on the fresh set. On refusals, 4 of 16 on the first safety set with rules only, then 16 of 16 once the model screen was added. A final 22-case set scored once with the screen on: 12 of 12 refusals and 6 of 6 look-alike questions passed; one policy question about elderly customers was wrongly refused. |
+| Optional packages (router scores by configuration) | With everything installed: 100 / 94.5 / 94.9 / 95.2 / 95.8 / 95.5%. Without `pyahocorasick`: identical. Without FastEmbed (embedding matcher) and with `--llm`: 66.7 / 63.6 / 56.4 / 85.7 / 91.7 / 95.5%. Without FastEmbed and without a model: 66.7 / 49.1 / 41.0 / 85.7 / 41.7 / 68.2%. FastEmbed and its model files are needed to reproduce the full scores (`requirements-router.txt`, `scripts/setup_router.py`). |
+| Generated SQL | 30 unseen questions, each checked against a reference query written independently (`eval/sql_stress/`). After the fixes, all 30 return correct values under a defensible reading. Five differ from the reference in layout, units or a definition choice (cure date versus cure outcome). Before the fixes, one question counted all outbound contacts as calls; that class is now blocked for wording the check knows. |
+| Adversarial probes | `DELETE`, `UPDATE` and `DROP TABLE` text never ran. Bulk identity pulls were refused or rejected by the validator. A filter on a label that does not exist (`reported_bucket = 'default'`) returned a confident 0 before the label check; it now says the value does not exist. |
+| Automated tests | 655 |
+
+### 4. Known Limits
+
+- **Safety layers are heuristics.** The rules and the model screen both pass what they do not recognise; the screen is told to allow when unsure, and a model failure leaves the rules' decision. Each layer can miss a request, and the screen can refuse a legitimate one (seen once).
+- **Certified does not mean correctly interpreted.** A certified card shows a reviewed template ran. It does not show the template answers the question as asked. Open cases: "touches per open case" can select the average-days-past-due metric; a request for a historical period the data cannot support (delinquency in August 2025) is answered at the as-of snapshot; a filter to one case on a portfolio metric is dropped. These are in the catalogue parser and are on the fix list.
+- **Generated SQL is tested on 30 questions**, mostly single-table or simple joins, and every answer is uncertified. The channel, direction and label checks are heuristics: a query can satisfy them and still use the wrong definition. "Late stage" can be read as the late-stage queue or the last two delinquency buckets; the model is asked to state how it read an ambiguous word, and the card shows it as an "Interpretation" note, but the note is the model's own sentence and is not checked. The 500-row cap limits returned rows, not rows scanned.
+- **Reads outside the validator.** The case resolver and the policy retrieval query their tables directly.
+- **Certified history scans.** The roll-rate template joins the 12.6 million-row snapshot view twice.
+- **Concurrency is unmeasured.** Execution is serialised by a lock. The latency figures are single-user.
+- **Customer-call questions** wait for P4's function. One metric variant (BQ-014) is unsupported.
+- **Model-backed stages need the provider key at run time** (the configured model is the free tier of Nemotron 3 Super on OpenRouter, which is rate-limited), and the embedding matcher needs its model files (`fastembed` is in the main requirements; run `scripts/setup_router.py` once to download them).
+- **Not built:** the Ask screens, small-group disclosure limits for tiny breakdowns, the DeBERTa classifier, a compressed Radix Trie and a learned schema pruner that earlier drafts described.
+
+Small-group disclosure, listed above, is now implemented for grouped metric, drivers and SQL cards with usable count columns. `config/disclosure.yaml` defaults to a note for counts below five; optional suppression nulls numeric cells in affected rows. Single-row totals and results without counts are not checked, and check failures leave answers unchanged. Note mode warns; it does not prevent disclosure.
 
 ---
 
 ## Heading: Scalability, Part 2: Real-Time / Query Serving (merge with P1's part under one "Scalability" heading)
 
-### 1. Interactive Latency Budget (planning estimates, to be measured)
-To serve supervisors, strategy leads and operations teams during peak hours, the query pipeline targets an answer in under 2 seconds. Everything except the LLM call takes tens of milliseconds, so the hosted LLM call dominates the budget:
+### 1. Measured Latency (development data, one machine, single user)
 
-| Processing Stage | Tool / Technology | Algorithmic Complexity | Target Latency |
-|---|---|---|---|
-| Prompt Injection Pre-Filter | DeBERTa-v3-small (ONNX) | Fixed transformer pass | 12–15 ms |
-| Lexical Scan & Refusal Gate | pyahocorasick (Radix Trie) | O(\|Query\|) linear scan | 1–2 ms |
-| Date Resolver & Router | Regex + Vector Sim (all-MiniLM) | Cosine similarity over metrics | 8–12 ms |
-| Steiner Tree Schema Pruning | networkx (31-node graph) | Minimal Steiner tree approx. | 3–5 ms |
-| Parameter / SQL Generation | Hosted LLM API (Pruned Context) | ~250 input tokens | 600–1,200 ms (estimate) |
-| AST Syntax Validation | sqlglot AST Parser | Single-pass grammar traversal | 2–3 ms |
-| Analytical Query Execution | DuckDB In-Memory OLAP | Columnar vectorized scan | 15–30 ms |
-| **Total to first result** | | | **~0.65–1.3 s** |
+Where two measurements exist, both are shown.
 
-The two-sentence summary and follow-up suggestions are generated after the result is shown (streamed), so they do not delay the table.
+| Stage | Technology | Measured |
+|---|---|---|
+| Injection screen and refusal gate (rules, Aho-Corasick) | regular expressions, pyahocorasick | 0.14–0.20 ms |
+| Router trigger rules | regular expressions | 0.11–0.25 ms |
+| Metric matcher, uncached | bge-small ONNX on CPU | 10.7–13.7 ms median; first call after start 1.8 s to load the model |
+| Join hint for the SQL prompt | networkx over approved join keys | 0.7–1.0 ms |
+| Validation of one statement | sqlglot | 70–165 ms, depending on the query |
+| Certified metric, end to end, no model | template + DuckDB | 120–270 ms |
+| Drivers, end to end, no model | several certified queries | 0.8–1.3 s |
+| Model safety screen, per question, uncached | hosted Nemotron via OpenRouter | 1.3–2.5 s |
+| Model router fallback, uncached (only when rules do not place a question) | hosted Nemotron | 1.1–2.2 s |
+| Certified metric with an uncached screen | screen + template + DuckDB | 1.5–2.5 s |
+| Certified metric with a cached screen | cache + template + DuckDB | 0.22 s |
+| Generated SQL, end to end, uncached | screen + generation + validation + execution | 3.3–7.8 s |
 
-### 2. High-Throughput In-Memory Architecture
-* **Columnar Vectorized Execution:** Curated gold-layer tables (`gold.c360_customer`, `gold.c360_account`, `gold.customer_xref`) and historical transaction marts are persisted as compressed Parquet files and mapped into an in-memory DuckDB analytical engine. DuckDB’s vectorized execution engine performs multi-threaded scans and aggregations over 1M+ rows in milliseconds with no distributed cluster.
-* **Zero-Copy Schema Indexing:** The Radix Trie and Aho-Corasick automaton are built once at catalog sync time, residing in memory (<10MB RAM footprint). Query parsing scales strictly with the character length of the user question, independent of the size of the underlying database.
-* **Multi-User Read-Only Concurrency:** The query engine operates over read-only snapshots, so many analyst sessions can run side by side (concurrency to be load-tested). Heavy joins on large history tables (e.g. the 10M-row `transactions` table) go through pre-aggregated views (`gold.bucket_transitions`, a salary summary) so they do not slow frontline queries.
+With the model screen connected, every question makes one language-model call. The `--no-cache` flag on the benchmark runner makes every call fresh. A full uncached run of the 35 released questions took 99 seconds (one measurement). Earlier drafts estimated 0.65–1.3 s to the first result, built on a 12 ms classifier and 600–1,200 ms generation; that was never measured and does not hold with the screen on.
+
+### 2. Serving Architecture
+
+- **Embedded, read-only DuckDB.** A file-backed query opens the database read-only. There is no server to run. Questions reach the gold views; the validator adds trusted filters inside each scan for generated SQL.
+- **Large history tables.** The generated-SQL path is the main risk for scans, bounded by the 500-row output cap and the per-statement 5-second timeout. The certified roll-rate template also scans snapshot history.
+- **Response cache.** The model wrapper caches successful responses keyed by the whole request (model, prompts, settings, prompt version), so repeated questions and reruns are free and reproducible.
+- **Concurrency is untested**, and execution is currently serialised by a lock.
+
+---
+
+## README entry: what changed from the design
+
+| Earlier draft | What is built |
+|---|---|
+| DeBERTa-v3-small (ONNX) injection classifier, about 12 ms | Rule patterns plus a hosted-model safety screen that can only add refusals. No DeBERTa model was trained or shipped. |
+| Aho-Corasick automaton compiled from a Radix Trie, about 2 ms | `pyahocorasick` over phrases generated from the sensitivity registry, with a regex fallback; no separate Radix Trie. The rules together take 0.14–0.20 ms. |
+| Embedding matcher (all-MiniLM) for metric selection | FastEmbed/ONNX `bge-small-en-v1.5` on CPU with similarity and margin thresholds, behind trigger rules, with a hosted-model fallback for what remains. |
+| Steiner-tree pruning to about 15 columns, validator enforcing the tree | Steiner path used as text hints in the SQL prompt only. The prompt lists all 73 approved columns. The validator enforces approved join keys, not the tree. |
+| Router with six categories including `comparison` and `guardrail` | Seven outcomes: `metric`, `drivers`, `rag_corpus`, `rag_customer`, `sql`, `incident`, `cannot_answer`. Comparisons are metrics or drivers; guardrails are the refusal gate and screens before routing. |
+| The model extracts operational parameters into the certified formula | Parameters of a certified metric are parsed in code. The model never supplies one; it may only choose which catalogue metric. |
+| Editable parameter chips, working drawer, follow-up suggestions | Answer record only; no screen built. |
+| Latency estimate 0.65–1.3 s to first result | Measured: about 1.5–2.5 s uncached for a certified metric with the safety screen on, 0.22 s when cached. |
+| Row cap `LIMIT 100` | Row cap 500 on returned rows; 5-second timeout per statement. |
+| (not in the earlier draft) | Added during the build: model fallback and model safety screen (additive only), label-value and channel/direction checks for generated SQL, stable row ordering, response cache and `--no-cache`, held-out evaluation sets, reproducibility run records. |
