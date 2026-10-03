@@ -34,3 +34,10 @@ def warehouse_path() -> Path:
     base = _resolve(os.environ.get("WAREHOUSE_DIR", settings()["paths"]["warehouse_dir"]))
     base.mkdir(parents=True, exist_ok=True)
     return base / settings()["paths"]["duckdb_file"]
+
+
+def p3_dir() -> Path:
+    """P3 outputs (Parquet, model files). Separate from the DuckDB file so P3 never takes the write lock."""
+    base = _resolve(os.environ.get("P3_OUTPUT_DIR", settings()["p3"]["output_dir"]))
+    base.mkdir(parents=True, exist_ok=True)
+    return base

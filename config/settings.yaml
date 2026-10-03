@@ -15,3 +15,14 @@ ingest:
   # A removed or retyped column stops the load for that source unless listed here.
   allow_missing_columns: {}
   transcript_glob: files/transcripts/*/*/*.json
+
+p3:
+  # P3 outputs (training sets, features, models) live here as Parquet, never in the shared DuckDB.
+  output_dir: warehouse/p3
+  # Incumbent ptp_break scores start here: train before it, holdout = resolved promises it scored.
+  split_date: "2026-06-30"
+  # Validation slice (early stopping and calibration): the last ~2 months before split_date.
+  valid_start: "2026-05-01"
+  incumbent_model: ptp_break
+  # Schema features/sources.py reads: curated (typed, dates recovered) until gold exists.
+  source_schema: curated
