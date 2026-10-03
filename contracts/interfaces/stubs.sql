@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS gold.c360_account (
 -- I1: P1 -> P3
 -- ---------------------------------------------------------------------------------------------
 -- Allow-list view. NO protected attributes, NO direct PII, NO geo, NO age, NO accent/interpreter use.
+-- GRAIN (proposed, P1+P3 to confirm): a HISTORY table, one row per (golden_customer_id, valid_from).
+-- A row is valid from valid_from until the next row's valid_from. Training joins as-of ptp_created_ts using
+-- available_from (when the bank/pipeline could have known the values), NOT valid_from.
 CREATE TABLE IF NOT EXISTS gold.decisioning_customer (
     golden_customer_id  VARCHAR,
     segment             VARCHAR,
@@ -80,10 +83,14 @@ CREATE TABLE IF NOT EXISTS gold.decisioning_customer (
     worst_bucket        VARCHAR,
     bureau_score        DOUBLE,
     bureau_score_model  VARCHAR,   -- scale differs by source (300-900 vs 300-850)
-    feature_ts          TIMESTAMP  -- when these values were true (point-in-time key)
+    valid_from          TIMESTAMP, -- when these values became true in the real world
+    available_from      TIMESTAMP  -- when they became known to us (>= valid_from). Point-in-time join key.
 );
 
 -- One row per promise; the point-in-time spine for training. Label is derived here, one definition.
+-- Columns are in two groups. CREATION-TIME columns are known when the promise is made and may feed features.
+-- OUTCOME columns (below the marker) are labels/evaluation only and must NEVER be a feature input.
+-- The machine-readable split is PROMISE_OUTCOME_COLUMNS in common/interfaces.py (a test keeps them in sync).
 CREATE TABLE IF NOT EXISTS gold.promises_enriched (
     ptp_id              VARCHAR,
     golden_customer_id  VARCHAR,
@@ -104,12 +111,13 @@ CREATE TABLE IF NOT EXISTS gold.promises_enriched (
     dpd_at_creation     INTEGER,
     payment_method_promised VARCHAR,
     grace_days          INTEGER,
+    customer_stated_income_date DATE,
+    -- ===== OUTCOME columns: label / evaluation only, never features =====
     ptp_status          VARCHAR,   -- kept | broken | partially_kept | open
     status_ts           TIMESTAMP,
     amount_paid_against DOUBLE,
     paid_date           DATE,
     broken_reason_agent_coded VARCHAR,
-    customer_stated_income_date DATE,
     label_broken        BOOLEAN    -- NULL while open; definition follows metric_definitions
 );
 
@@ -196,7 +204,7 @@ CREATE TABLE IF NOT EXISTS gold.nba_decisions (
     expected_value      DOUBLE,
     requires_approval   BOOLEAN,
     approval_reason     VARCHAR,   -- hardship | vulnerability | high_balance | digital_batch
-    decision_card       VARCHAR,   -- JSON: reasons, blocked actions, evidence quotes
+    decision_card       VARCHAR,   -- JSON, shape = DecisionCard in common/interfaces.py
     model_version       VARCHAR,
     feature_snapshot_id VARCHAR,
     created_ts          TIMESTAMP
