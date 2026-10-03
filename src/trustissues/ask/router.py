@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 from .catalog import detect_metric, match_metric
+from .requested_shape import requested_shape
 
 CASE_ID = re.compile(r"\bCS-\d{4}-\d{5,7}\b", re.I)
 POLICY_WORDS = (
@@ -15,9 +16,9 @@ POLICY_WORDS = (
 )
 CALL_WORDS = r"\b(call|conversation|transcript|spoke|said|agree[ds]?|summari[sz]e)\b"
 # Wording that asks for a rule or an instruction even when it contains analytic words.
-POLICY_ASK = r"\b(how long|how many days|can we|can (?:the )?agent|should|must|is .{1,40} needed|allowed|permitted to|what happens|does .{0,80}(?:prevent|prohibit|permit|allow))\b"
-ANALYTIC = r"\b(what share|how many|rate|average|percentage|count of|compare|rank)\b"
-DRIVER_WORDS = (r"\b(what (?:drove|is driving|explains|caused|is behind)|drivers? of|"
+POLICY_ASK = r"\b(how long|how many days|can we|can (?:the )?agent|should|must|is .{1,40} needed|(?:is|are|be) .{0,40}allowed|permitted to|what happens|does .{0,80}(?:prevent|prohibit|permit|allow))\b"
+ANALYTIC = r"\b(how many|how much|how often|number of|count|share|rate|average|mean|fraction|proportion|total|percentage|compare|rank|distribution|breakdown|break down)\b"
+DRIVER_WORDS = (r"^\s*why\b|\b(what (?:drove|is driving|explains|caused|is behind)|drivers? of|"
                 r"why (?:did|has|have|was|were|is)\b.{0,80}\b(?:drop|fall|fell|dip|decline|decrease|rise|rose|increase|spike|change|improv\w*|worse\w*))")
 COUNT_WORDS = r"\b(how many|how much|how often|number of|count|share|rate|average|mean|fraction|proportion|total|percentage|compare|rank|by)\b"
 
@@ -35,18 +36,19 @@ def route(question: str) -> Route:
     q = question.strip()
     case = CASE_ID.search(q)
     metric = detect_metric(q)
+    shape = requested_shape(q)
+    if shape in {"cost_per_rpc", "cost_per_contact"}:
+        metric = shape
     # A case ID plus call wording is a customer-specific RAG question; an ID alone is not enough.
     if case and re.search(CALL_WORDS, q, re.I) and not metric:
         return Route("rag_customer", case_id=case[0].upper(), why="case id with call wording")
     policy = re.search(POLICY_WORDS, q, re.I)
     if policy and (re.search(POLICY_ASK, q, re.I) or not re.search(ANALYTIC, q, re.I)):
         return Route("rag_corpus", why="policy wording")
-    # Entity counts are not a rate merely because a delinquency bucket is named.
-    entity_count = re.search(r"\b(how many|number of|count of|count)\b.{0,30}\b(?:open |collections )?cases\b", q, re.I)
-    if entity_count and metric is None and not re.search(r"\b(disputes?|hardship|cure|attempts?|contact|times)\b", q, re.I):
-        return Route("sql", why="case population count, not a catalogue rate")
     driver = re.search(DRIVER_WORDS, q, re.I)
     volume = re.search(r"(?:call|contact|outbound)\s+(?:volume|numbers?)|number of (?:calls|contacts)", q, re.I)
+    if shape == "population" and not driver:
+        return Route("sql", why="population count or distribution without a catalogue statistic")
     if metric is None and not (driver and volume) and re.search(COUNT_WORDS, q, re.I):
         match = match_metric(q)
         if match is not None:
