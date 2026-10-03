@@ -47,6 +47,21 @@ def kind(schema_type: str | None) -> str:
     return "text"  # string, enum, json, array<...>
 
 
+def date_fallback(b: str) -> str:
+    """Recover a date written in a non-ISO format, only when the reading is unambiguous.
+
+    YYYYMMDD is always unambiguous. For d/m/Y vs m/d/Y the part greater than 12 must be the day;
+    when both parts are <= 12 the value is genuinely ambiguous and stays NULL (its text is kept in <col>__raw).
+    """
+    p1, p2 = f"TRY_CAST(split_part({b}, '/', 1) AS INT)", f"TRY_CAST(split_part({b}, '/', 2) AS INT)"
+    return (
+        f"CASE WHEN regexp_matches({b}, '^[0-9]{{8}}$') THEN TRY_CAST(try_strptime({b}, '%Y%m%d') AS DATE) "
+        f"WHEN regexp_matches({b}, '^[0-9]{{1,2}}/[0-9]{{1,2}}/[0-9]{{4}}$') THEN "
+        f"CASE WHEN {p1} > 12 AND {p2} <= 12 THEN TRY_CAST(try_strptime({b}, '%d/%m/%Y') AS DATE) "
+        f"WHEN {p2} > 12 AND {p1} <= 12 THEN TRY_CAST(try_strptime({b}, '%m/%d/%Y') AS DATE) END END"
+    )
+
+
 def typed_expr(col: str, k: str) -> str:
     c = q(col)
     blank = f"NULLIF(trim({c}), '')"
@@ -57,7 +72,7 @@ def typed_expr(col: str, k: str) -> str:
     if k == "double":
         return f"TRY_CAST({blank} AS DOUBLE)"
     if k == "date":
-        return f"TRY_CAST({blank} AS DATE)"
+        return f"COALESCE(TRY_CAST({blank} AS DATE), {date_fallback(blank)})"
     if k == "timestamp":
         return f"TRY_CAST({blank} AS TIMESTAMP)"
     if k == "boolean":
@@ -155,15 +170,25 @@ def curate_table(con, name: str, schema: dict, curate_cfg: dict) -> dict:
     # 1. find columns whose cast loses values (one scan)
     typed_cols = [c for c in data_cols if kinds[c] != "text"]
     failing: dict[str, tuple[int, str | None]] = {}
+    recovered: dict[str, tuple[int, str | None]] = {}
     if typed_cols:
         aggs = []
         for c in typed_cols:
-            aggs.append(f"count(*) FILTER (WHERE NULLIF(trim({q(c)}),'') IS NOT NULL AND {typed_expr(c, kinds[c])} IS NULL)")
-            aggs.append(f"any_value({q(c)}) FILTER (WHERE NULLIF(trim({q(c)}),'') IS NOT NULL AND {typed_expr(c, kinds[c])} IS NULL)")
+            nonblank = f"NULLIF(trim({q(c)}),'') IS NOT NULL"
+            aggs.append(f"count(*) FILTER (WHERE {nonblank} AND {typed_expr(c, kinds[c])} IS NULL)")
+            aggs.append(f"any_value({q(c)}) FILTER (WHERE {nonblank} AND {typed_expr(c, kinds[c])} IS NULL)")
+            if kinds[c] == "date":  # parsed only thanks to the non-ISO fallback
+                rec = f"{nonblank} AND TRY_CAST(NULLIF(trim({q(c)}),'') AS DATE) IS NULL AND {typed_expr(c, kinds[c])} IS NOT NULL"
+                aggs.append(f"count(*) FILTER (WHERE {rec})")
+                aggs.append(f"any_value({q(c)}) FILTER (WHERE {rec})")
+            else:
+                aggs.extend(["0", "NULL"])
         row = con.execute(f"SELECT {', '.join(aggs)} FROM raw.{q(name)}").fetchone()
         for i, c in enumerate(typed_cols):
-            if row[2 * i]:
-                failing[c] = (row[2 * i], row[2 * i + 1])
+            if row[4 * i]:
+                failing[c] = (row[4 * i], row[4 * i + 1])
+            if row[4 * i + 2]:
+                recovered[c] = (row[4 * i + 2], row[4 * i + 3])
 
     # 2. select list
     ident = (curate_cfg.get("identity_fields") or {}).get(name)
@@ -191,6 +216,11 @@ def curate_table(con, name: str, schema: dict, curate_cfg: dict) -> dict:
     n_raw = con.execute(f"SELECT count(*) FROM raw.{q(name)}").fetchone()[0]
     n_cur = con.execute(f"SELECT count(*) FROM curated.{q(name)}").fetchone()[0]
 
+    con.execute("CREATE TABLE IF NOT EXISTS curated._format_recoveries (table_name VARCHAR, column_name VARCHAR, "
+                "recovered_rows BIGINT, example_raw VARCHAR, recorded_at TIMESTAMP)")
+    con.execute("DELETE FROM curated._format_recoveries WHERE table_name = ?", [name])
+    for c, (n, ex) in recovered.items():
+        con.execute("INSERT INTO curated._format_recoveries VALUES (?,?,?,?, now())", [name, c, n, ex])
     con.execute("DELETE FROM curated._cast_failures WHERE table_name = ?", [name])
     for c, (n, ex) in failing.items():
         con.execute("INSERT INTO curated._cast_failures VALUES (?,?,?,?,?, now())", [name, c, kinds[c], n, ex])
@@ -198,7 +228,8 @@ def curate_table(con, name: str, schema: dict, curate_cfg: dict) -> dict:
     con.execute("INSERT INTO curated._build_log VALUES (?,?,?,?,?,?,now())",
                 [name, n_raw, n_cur, n_raw - n_cur, len(failing), round(time.time() - t0, 1)])
     return {"table": name, "raw": n_raw, "curated": n_cur, "dupes_removed": n_raw - n_cur,
-            "cols_with_cast_failures": len(failing), "secs": round(time.time() - t0, 1)}
+            "cols_with_cast_failures": len(failing), "cols_with_recovered_formats": len(recovered),
+            "secs": round(time.time() - t0, 1)}
 
 
 def build_current_views(con, curate_cfg: dict) -> None:
@@ -235,7 +266,7 @@ def run(only: list[str] | None = None) -> list[dict]:
         r = curate_table(con, t, schema, curate_cfg)
         res.append(r)
         print(f"{t:28s} {r['raw']:>11,} -> {r['curated']:>11,}  dupes {r['dupes_removed']:>8,}  "
-              f"cast-fail cols {r['cols_with_cast_failures']:>3}  {r['secs']}s", flush=True)
+              f"cast-fail cols {r['cols_with_cast_failures']:>3}  recovered-format cols {r['cols_with_recovered_formats']:>2}  {r['secs']}s", flush=True)
     build_current_views(con, curate_cfg)
     con.close()
     return res
