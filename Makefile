@@ -13,7 +13,7 @@ help:
 	@echo "make queue       today's NBA queue into gold.nba_decisions (stop the app first)"
 	@echo "make fairness    reports/fairness_report.md"
 	@echo "make monitoring  reports/monitoring.md"
-	@echo "make nightly     pipeline, queue, fairness, monitoring (scripts/nightly.py)"
+	@echo "make nightly     pipeline, text features, queue, fairness, monitoring (scripts/nightly.py)"
 	@echo "make app         the Streamlit app (Agent queue, Decision card)"
 	@echo "make test        the test suite"
 

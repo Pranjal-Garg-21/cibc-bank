@@ -14,7 +14,7 @@ Proposed shapes, taken from `implementation_plan.md` §7.1 and the `p1`–`p4` d
 | I2 | P1 → P2 | `gold.bucket_transitions`, `gold.c360_customer`, `gold.c360_account`, `gold.customer_xref` | Inputs to the Ask schema graph. |
 | I2 | P1 → P2 | `gold.semantic_*` | **Not stubbed**, see open question 1. |
 | — | P1 → P4 | `gold.customer_timeline` | Unnumbered in the plan. Redacted, eligible text only. |
-| I3 | P4 → P3 | `gold.text_features` | Exactly the plan's columns. |
+| I3 | P4 → P3 | `gold.text_features` | The plan's columns plus P4's extras (`text_extract.EXTRA_COLUMNS`, e.g. `vulnerability`). Written by `features/text_extract.py`; P3 reads it in `nba/text_signals.py` (hardship / vulnerability routing and card evidence, never a model feature). |
 | I6 | P2 ↔ P4 | `RagRequest` / `RagResponse` / `Citation` | Python dataclasses, not a table. |
 | — | P3 → P2 | `gold.nba_decisions` | Added to the Ask schema graph. |
 | I7 | App → P3 | `gold.nba_overrides` | Exactly the plan's columns. |

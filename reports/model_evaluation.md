@@ -191,6 +191,11 @@ interval includes zero, so cheap channels the customer responds to win, and a ca
 One contact per person per day: 0 cases wait because their person is contacted on
 another case today ("Best before capacity" counts after this rule).
 
+Text signals (P4's `gold.text_features`, `nba/text_signals.py`; last 90 days,
+confidence >= 0.6): 0 cases carry evidence
+quotes from their person's notes or calls; 0 are flagged as hardship or
+vulnerable from text alone (0 of them get a support call today).
+
 Capacity on 2026-09-28 (`channel_capacity`; 720 agents on shift with
 62,028 outbound calls between them, 47,461 left unused):
 

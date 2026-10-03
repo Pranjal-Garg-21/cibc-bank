@@ -115,6 +115,12 @@ p3:
   # time per call. If time on shift is already paid for, set the true extra cost (e.g. telephony only) and
   # calls will fill agent capacity for the customers who answer the phone.
   call_cost_cad: null
+  # P4's text features (gold.text_features) as hardship / vulnerability signals and card evidence (nba/text_signals.py).
+  # A row counts if dated before the as-of date, within lookback_days, with confidence >= min_confidence and a
+  # verbatim evidence sentence. text_extract caps confidence at 0.5 when its quote is not in the text.
+  text_signals:
+    lookback_days: 90
+    min_confidence: 0.6
 
 mapping_assistant:
   # AI column-mapping assistant (factory/curate/mapping_assistant.py). Sends column METADATA only (names, types,

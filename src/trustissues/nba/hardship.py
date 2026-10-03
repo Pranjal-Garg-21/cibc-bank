@@ -1,7 +1,8 @@
 """Hardship and vulnerability handling. Pure logic, no AI. Policy: POL-COLL-004 (§4.2, §4.4, §4.5).
 
-A case is flagged when it has a hardship signal (collections_cases.hardship_flag; P4 text features later) or a
-vulnerability flag (case or CRM). For a flagged case:
+A case is flagged when it has a hardship signal (collections_cases.hardship_flag, or a recent hardship read from the
+person's notes or calls by P4's text features, nba/text_signals.py) or a vulnerability flag (case, CRM, or text).
+For a flagged case:
 
 - No collections pressure. The only actions are `wait` and `support_call`: a certified agent calls to offer
   help, hardship programmes first, and asks for no payment before an option is offered (§4.2). Payment
@@ -23,7 +24,8 @@ vulnerability flag (case or CRM). For a flagged case:
   effective_to), checked against product_types, max_dpd, min_months_on_book, excludes_insolvency,
   excludes_broken_plan_90d, max_uses_12m and min_hardship_level. Eligible programmes go on the card.
 - Hardship level (`level_from_case`): `clear` when the customer told us (recorded by an agent or a customer
-  form), `possible` when only a model flagged it. Programmes needing `clear` are offered only then.
+  form), `possible` when only a model flagged it (including a text signal). Programmes needing `clear` are offered
+  only then.
 """
 from __future__ import annotations
 

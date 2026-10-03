@@ -746,3 +746,39 @@ changes window (the rules already combined a person's records the same way).
 `curated.promises_to_pay`, an extra column after the agreed shape; equal on all 238,815 promises), so the `promises`
 source reads only gold and P3 joins nothing from curated for the person-level data. Interface gaps from Step 0b: all
 closed except the agreements with P4 (text features).
+
+### P4 merged into main; text features wired into the queue (4 Oct)
+
+P4's branch (`p4/policy-rag`: policy RAG, customer path, `common/llm.py`, LLM text features) is merged into main on
+`merge/p4-into-main`. The one real conflict, `curate/text_controls.py` (built by both P1 and P4), is one file now
+(`docs/text_controls.md`, `merge.md` §1); P3 is not affected by it.
+
+**Text signals (`nba/text_signals.py`).** The queue reads P4's `gold.text_features` (interface I3) two ways, never as a
+model feature:
+- **Routing.** A hardship or vulnerability signal in the person's notes or calls flags their open cases for
+  `nba/hardship.py`, as a hardship flag on the case does: no reminders or collections calls, a certified owner, a
+  support call when one is due. The text hardship level is `possible` at most (a model read it; `clear` needs the
+  customer's recorded statement), so programmes that need `clear` are not offered on text alone. A text signal never
+  lowers a recorded level. The card summary says when a case was flagged from text only.
+- **Evidence.** The card's `evidence` (empty until now) quotes up to 3 sentences with source id and date: what flagged
+  the case first, then disputes, then firm promises, then the rest; newest first within each. The Decision Card page
+  already showed them.
+
+What counts (`config/settings.yaml` `p3.text_signals`): dated before the as-of date, within 90 days, confidence ≥ 0.6,
+with an evidence sentence (P4 keeps one only if it is in the text word for word and caps confidence at 0.5 otherwise).
+Why not through `features/sources.py`: its default-deny check uses `config/sensitivity.yaml`, which labels source
+tables, and `evidence_sentence` comes from `agent_notes.note_text` (direct PII there); this text has already passed
+text controls, the scrubber and P4's verbatim check, and only the case's agent sees it.
+
+**Effect today: none.** `gold.text_features` is empty on this machine (no LLM key here; P4 ran the 485-text evaluation
+on theirs). Queue run after the merge: 86,059 open cases, identical to the run before it (0 changes in action, agent or risk); the report line reads 0 cases with quotes, 0 flagged from text. Once someone with the OpenRouter key runs
+`python -m trustissues.features.text_extract --scope open_cases --limit 20000` (or the nightly), the next queue run
+picks them up; the report's "Text signals" line gives the counts. Open-case customers have 272,503 notes and 12,941
+transcripts in the timeline (214,477 and 11,257 in the last 90 days), so the first 20,000 cover only the newest.
+
+**Nightly.** The `text_features` stage was skipped while the module was missing; it now runs
+`text_extract --scope open_cases --limit 20000` (the default scope, `labelled`, is P4's evaluation set). Without a
+key it stops at once and the run carries on with the features already in gold.
+
+Tests: `tests/test_text_signals.py` (6: point in time, lookback, confidence, verbatim quote, ordering, missing table or
+columns, level never lowered, vulnerability routing, card evidence), `tests/test_nightly.py` updated. 346 pass, 6 skipped.

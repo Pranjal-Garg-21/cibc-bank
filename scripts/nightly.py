@@ -7,7 +7,9 @@
 
 Stages, in order (each runs as its own process, so connections and memory do not carry over):
     pipeline       Layer 1: raw -> curated -> quality (factory/pipeline.py, P1)
-    text_features  P4's LLM text features, once features/text_extract.py exists (skipped until then)
+    text_features  P4's LLM text features for open-case customers, newest 20,000 not yet extracted
+                   (features/text_extract.py --scope open_cases). Without an LLM key it stops itself at once
+                   and the run goes on; the queue then works from the features already in gold.text_features
     queue          score every open case as of AS_OF_DATE and write gold.nba_decisions (nba/queue.py --write-gold)
     fairness       reports/fairness_report.md (nba/fairness.py)
     monitoring     reports/monitoring.md (governance/monitoring.py)
@@ -29,12 +31,12 @@ from trustissues.common import config
 
 STAGES = [
     ("pipeline", ["trustissues.factory.pipeline"]),
-    ("text_features", ["trustissues.features.text_extract"]),
+    ("text_features", ["trustissues.features.text_extract", "--scope", "open_cases", "--limit", "20000"]),
     ("queue", ["trustissues.nba.queue", "--write-gold"]),
     ("fairness", ["trustissues.nba.fairness"]),
     ("monitoring", ["trustissues.governance.monitoring"]),
 ]
-OPTIONAL = {"text_features"}  # skipped while the module does not exist (P4)
+OPTIONAL = {"text_features"}  # skipped if the module is missing (a checkout without P4's work)
 
 
 def plan(start: str | None = None, only: str | None = None, skip_pipeline: bool = False) -> list[tuple[str, list[str]]]:

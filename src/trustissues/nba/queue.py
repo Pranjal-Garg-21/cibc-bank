@@ -9,14 +9,17 @@ For each open case on AS_OF_DATE:
    the as-of date. Cases with an open promise also get the promise model's break risk on the card.
 3. value (nba/actions.py): the randomised test's effect per contact x the case's risk x its reach on the
    channel x amount overdue, minus the channel's unit cost
-4. hardship (nba/hardship.py): a hardship or vulnerable case gets no payment reminders or collections calls,
+4. hardship (nba/hardship.py): a hardship or vulnerable case (a flag on the case or the CRM record, or a recent
+   signal in the person's notes or calls read by P4's text features, nba/text_signals.py) gets no payment reminders
+   or collections calls,
    only `wait` or a `support_call` by a certified agent when one is due (no programme offered yet, plan ending,
    follow-up, or a vulnerable customer who would otherwise be contacted), with its eligible programmes
 5. capacity (nba/allocate.py): support calls first, then the most valuable cases, into the day's channel and
    agent capacity; an action that does not fit falls back to the case's next best. Every hardship or
    vulnerable case gets a certified owner (agent_id) even when it waits
 6. card (nba/explain.py) and approval, only when something is done (never for `wait`): vulnerability,
-   hardship, high balance, or the daily digital batch
+   hardship, high balance, or the daily digital batch. The card quotes the evidence sentences from the person's
+   notes and calls (gold.text_features), what flagged the case first
 
 risk_score holds the case model's risk. --write-gold needs the warehouse write lock, so run it as a stage
 after the Layer 1 pipeline, never alongside it. golden_customer_id is the case's person from gold.case_customer
@@ -33,7 +36,7 @@ from trustissues.common import config
 from trustissues.common.db import connect
 from trustissues.common.interfaces import BlockedAction, DecisionCard, HardshipOption, Reason
 from trustissues.features import compute, sources
-from trustissues.nba import actions, allocate, explain, hardship, rules
+from trustissues.nba import actions, allocate, explain, hardship, rules, text_signals
 
 DECISIONS_FILE = "nba_decisions.parquet"
 COLUMNS = ["recommendation_id", "golden_customer_id", "case_id", "agent_id", "as_of_date", "action", "channel",
@@ -59,6 +62,8 @@ class CaseInput:
     team: str | None = None
     history: hardship.HardshipHistory = field(default_factory=hardship.HardshipHistory)
     options: list[HardshipOption] = field(default_factory=list)  # eligible hardship programmes
+    evidence: list = field(default_factory=list)  # EvidenceQuote from P4's text features (nba/text_signals.py)
+    text_flagged: bool = False  # hardship / vulnerability known only from the person's notes or calls
 
 
 @dataclass
@@ -186,13 +191,13 @@ def render(plan: Plan, assignment: allocate.Assignment, ctx: Context) -> dict:
         why_beat_runner_up=explain.why_beat(action, runner, plan.candidates, assignment.no_capacity, support,
                                             same_day=plan.contacted_on),
         blocked_actions=blocked,
-        evidence=[],  # P4 text features (gold.text_features) fill this once they exist
+        evidence=c.evidence,
         requires_approval=reason is not None,
         approval_reason=reason,
         summary=explain.summary(action, c.risk, c.reasons, plan.route_to_certified, hard_stop,
                                 promise_risk=c.promise_risk, no_capacity=assignment.no_capacity, support=support,
                                 options=[o.name for o in c.options], window=window_text,
-                                same_day=plan.contacted_on),
+                                same_day=plan.contacted_on, from_text=c.text_flagged),
         support_reason=plan.support_reason if action == hardship.SUPPORT else None,
         hardship_options=c.options,
         contact_window=window_text,
@@ -329,9 +334,15 @@ def load_uses_12m(con, as_of) -> dict[str, dict[str, int]]:
     return out
 
 
-def case_input(c: dict, flags: rules.CaseFlags, programs: list[dict], uses: dict, as_of, **model) -> CaseInput:
-    """One open case (a load_cases row) as the planner's input, with its hardship signal, history and options."""
-    level = hardship.level_from_case(c["hardship_flag"], c["hardship_source"])
+def case_input(c: dict, flags: rules.CaseFlags, programs: list[dict], uses: dict, as_of,
+               text: text_signals.TextSignal | None = None, **model) -> CaseInput:
+    """One open case (a load_cases row) as the planner's input, with its hardship signal, history and options.
+    `text` is the person's signal from their notes and calls: it can raise the hardship level to `possible` (a model
+    read it; `clear` needs the customer's recorded statement) and mark the case vulnerable, never lower either."""
+    text = text or text_signals.TextSignal()
+    case_level = hardship.level_from_case(c["hardship_flag"], c["hardship_source"])
+    level = max(case_level, "possible" if text.hardship else "none", key=hardship.LEVELS.index)
+    vulnerable = bool(c["vulnerable"]) or text.vulnerable
     ctx = hardship.AccountContext(product=c["primary_product"], dpd=c["current_dpd"],
                                   months_on_book=c["months_on_book"] if c["months_on_book"] is not None else 0,
                                   insolvency=flags.insolvency, broken_plan_90d=c["broken_plan_90d"],
@@ -339,9 +350,10 @@ def case_input(c: dict, flags: rules.CaseFlags, programs: list[dict], uses: dict
     return CaseInput(
         case_id=c["case_id"], customer_id=c["golden_customer_id"] or c["crm_customer_id"], assigned_agent_id=c["assigned_agent_id"],
         agent_certified=bool(c["agent_certified"]), amount=float(c["total_overdue"] or 0.0), flags=flags,
-        signal=hardship.HardshipSignal(level, bool(c["vulnerable"])), team=c["assigned_team"],
+        signal=hardship.HardshipSignal(level, vulnerable), team=c["assigned_team"],
         history=hardship.HardshipHistory(c["plan_end"], bool(c["ever_offered"]), c["last_offer_ts"]),
-        options=hardship.options(programs, as_of, ctx, level), **model)
+        options=hardship.options(programs, as_of, ctx, level), evidence=list(text.evidence),
+        text_flagged=text.active and case_level == "none" and not c["vulnerable"], **model)
 
 
 def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
@@ -361,8 +373,10 @@ def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
                   model_version=f"{CASE_MODEL_NAME}+{MODEL_NAME}", snapshot_id=snapshot_id)
     programs = hardship.load_programs(con)
     uses = load_uses_12m(con, config.AS_OF_DATE)
+    texts = text_signals.load(con, [c["golden_customer_id"] for c in cases if c["golden_customer_id"]], config.AS_OF_DATE)
     plans = [plan_case(case_input(
-        c, flags[c["case_id"]], programs, uses, config.AS_OF_DATE, risk=risk[c["case_id"]],
+        c, flags[c["case_id"]], programs, uses, config.AS_OF_DATE, text=texts.get(c["golden_customer_id"]),
+        risk=risk[c["case_id"]],
         reasons=reasons[c["case_id"]], reach=reach[c["case_id"]], promise_risk=promise_risk.get(c["current_ptp_id"]),
     ), ctx) for c in cases]
     same_day = one_contact_per_customer(plans)
@@ -389,8 +403,11 @@ def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
     else:
         assignments = [allocate.Assignment(p.order[0], default_agent(p, p.order[0]), []) for p in plans]
     rows = [render(p, a, ctx) for p, a in zip(plans, assignments)]
+    text_info = {"people_with_quotes": len(texts), "cases_with_quotes": sum(bool(p.case.evidence) for p in plans),
+                 "flagged_from_text_only": sum(p.case.text_flagged for p in plans),
+                 "text_flagged_support_calls": sum(p.case.text_flagged and p.order[0] == hardship.SUPPORT for p in plans)}
     return rows, {"snapshot_id": snapshot_id, "scored_cases": len(risk), "scored_promises": len(promise_risk),
-                  "same_day_waits": same_day,
+                  "same_day_waits": same_day, "text": text_info,
                   "calibration": cal, "capacity": capacity, "unconstrained": [p.order[0] for p in plans]}
 
 
@@ -469,6 +486,11 @@ interval includes zero, so cheap channels the customer responds to win, and a ca
 
 One contact per person per day: {info.get('same_day_waits', 0):,} cases wait because their person is contacted on
 another case today ("Best before capacity" counts after this rule).
+
+Text signals (P4's `gold.text_features`, `nba/text_signals.py`; last {text_signals.settings()['lookback_days']} days,
+confidence >= {text_signals.settings()['min_confidence']}): {info['text']['cases_with_quotes']:,} cases carry evidence
+quotes from their person's notes or calls; {info['text']['flagged_from_text_only']:,} are flagged as hardship or
+vulnerable from text alone ({info['text']['text_flagged_support_calls']:,} of them get a support call today).
 
 Capacity on {config.AS_OF_DATE} (`channel_capacity`; {cap['start']['agents_working']} agents on shift with
 {cap['start']['agent_calls']:,} outbound calls between them, {cap['left']['agent_calls']:,} left unused):

@@ -2,7 +2,7 @@
 
 The assigned agent accepts or overrides (a reason code is required to override); a team lead (or, for hardship and
 vulnerability, a hardship specialist) approves or rejects when approval is required. nba/review.py checks every
-decision. Evidence quotes appear once P4's text features exist.
+decision. Evidence quotes come from P4's text features (nba/text_signals.py).
 """
 import pandas as pd
 import streamlit as st
@@ -96,7 +96,8 @@ with right:
         for e in card["evidence"]:
             st.markdown(f"> {e['quote']}  \n— {e['source_id']}, {e['source_ts']}")
     else:
-        st.caption("No text signals yet (P4's text features are not built).")
+        st.caption("No quoted signal from this customer's notes or calls in the last 90 days (P4's text features, "
+                   "gold.text_features).")
 
 who = agent_view.customer_context(c, rec["golden_customer_id"], AS_OF)
 with st.expander(f"The customer ({len(who['cases'])} case{'s' if len(who['cases']) != 1 else ''})",
