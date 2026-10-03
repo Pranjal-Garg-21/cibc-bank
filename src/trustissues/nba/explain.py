@@ -198,7 +198,7 @@ def why_beat(action: str, runner_up: str | None, values: dict[str, float],
 def summary(action: str, risk: float, reasons: list[Reason], route_to_certified: bool,
             blocked_by_hard_stop: str | None, promise_risk: float | None = None,
             no_capacity: list[str] | None = None, support: str | None = None,
-            options: list[str] | None = None) -> str:
+            options: list[str] | None = None, window: str | None = None) -> str:
     head = f"{risk_band(risk)} risk of not being paid up in 30 days ({risk:.2f})"
     why = "; ".join(r.text for r in reasons[:2])
     parts = [f"{head}: {why}." if why else f"{head}."]
@@ -208,7 +208,7 @@ def summary(action: str, risk: float, reasons: list[Reason], route_to_certified:
         parts.append(f"Contact blocked ({blocked_by_hard_stop.replace('_', ' ')}).")
     if no_capacity and not route_to_certified:
         parts.append(f"No capacity today for {', '.join(no_capacity)}.")
-    parts.append(ACTION_TEXT.get(action, action) + ".")
+    parts.append(ACTION_TEXT.get(action, action) + (f", between {window}." if window else "."))
     if route_to_certified:
         parts.append(f"Hardship or vulnerability: {support or 'handled by a certified agent'}.")
         if options:

@@ -94,3 +94,28 @@ def test_only_the_internal_do_not_call_list_blocks_calls():
     flags = rules.load_case_flags(con)
     assert not flags["CS-N"].do_not_call and "agent_call" in rules.allowed_actions(flags["CS-N"]).allowed
     assert flags["CS-I"].do_not_call and rules.allowed_actions(flags["CS-I"]).blocked["agent_call"] == "do_not_call"
+
+
+def test_contact_window_for_the_day():
+    """POL-COLL-001 §5.1: 07:00-21:00 local; Sundays 13:00-17:00 only where Sunday contact is permitted; narrowed to
+    the preferred window when they overlap, never widened by it."""
+    from datetime import date
+
+    monday, sunday = date(2026, 9, 28), date(2026, 9, 27)
+    assert rules.contact_window(_flags(contact_day=monday)) == (time(7), time(21))
+    assert rules.contact_window(_flags(contact_day=monday, preferred_window=(time(9), time(18)))) == (time(9), time(18))
+    assert rules.contact_window(_flags(contact_day=monday, preferred_window=(time(5), time(6)))) == (time(7), time(21))
+    assert rules.contact_window(_flags(contact_day=sunday, sunday_contact=True)) == (time(13), time(17))
+    assert rules.contact_window(_flags(contact_day=sunday, sunday_contact=False)) is None
+    r = rules.allowed_actions(_flags(contact_day=sunday, sunday_contact=False))
+    assert r.blocked == {"agent_call": "no_sunday_contact", "support_call": "no_sunday_contact",
+                         "sms_reminder": "no_sunday_contact"}  # email, push and letters may still go
+    assert not rules.allowed_actions(_flags(contact_day=sunday, sunday_contact=True)).blocked
+
+
+def test_no_collection_contact_on_a_statutory_holiday():
+    from datetime import date
+
+    r = rules.allowed_actions(_flags(contact_day=date(2026, 9, 30)))  # National Day for Truth and Reconciliation
+    assert set(r.allowed) == {"wait", "letter"}  # a letter may still be posted
+    assert set(r.blocked.values()) == {"statutory_holiday"}

@@ -34,6 +34,10 @@ p3:
     holdout_start: "2026-06-30"
     horizon_days: 30
     incumbent_model: cure_30d
+  # No collection contact on these days (POL-COLL-001 s5.1). Federal statutory holidays: banks are federally
+  # regulated. Letters can still be posted. Extend the list when the as-of date moves to another year.
+  statutory_holidays: ["2026-01-01", "2026-04-03", "2026-05-18", "2026-07-01", "2026-09-07", "2026-09-30",
+                       "2026-10-12", "2026-11-11", "2026-12-25", "2026-12-26"]
   # NBA: cases owing at least this much (CAD) need a team lead's approval.
   high_balance_cad: 5000
   # Cost of one outbound call in the NBA value. null = channel_capacity.unit_cost_cad (2.40), which prices agent

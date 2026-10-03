@@ -237,6 +237,9 @@ For each open case: rules → case risk → value each allowed action → hardsh
   certified agents only for hardship); a case whose best action is full gets its next best and the card says so
   (`no_capacity`). Flagged cases without a certified agent get one as owner (`assign_owners`).
 - **Experiment**: cases in the bank's `no_contact_holdout` cell are left to the bank (rule `experiment_holdout`).
+- **Contact hours, Sundays, holidays** (`rules.contact_window`; added 3 Oct, see below): calls and texts only inside the
+  day's window (07:00–21:00 local, Sundays 13:00–17:00 where permitted, narrowed to the preferred window); no collection
+  contact on a federal statutory holiday except a posted letter. The window is on the card.
 - **Do not call** (rule `do_not_call`, phone only): the bank's internal list, i.e. the customer asked the bank not to
   call. The National Do Not Call List is not used: it covers telemarketing only (POL-COLL-001 §5.3; fixed 3 Oct,
   see below).
@@ -467,4 +470,29 @@ in its last logged run). Retraining is deliberately not nightly: `make train` re
 the incumbent baseline, both models, the action values and the Feast registry. The queue writes to the warehouse, so
 the app must be stopped first. `make` targets: pipeline, features, train, queue, fairness, monitoring, nightly, app,
 test. Test: `tests/test_nightly.py`.
+
+### Contact hours, Sundays and holidays (3 Oct)
+
+**What was wrong.** The permitted-hours rule only fired when a planned contact time was passed in, and the morning
+queue (a plan for the day) never passed one, so it never fired. There was no Sunday or statutory-holiday rule, although
+POL-COLL-001 §5.1 has both.
+
+**What changed** (`nba/rules.py`). Each case gets a contact window for the planned day (`contact_window`): the policy's
+07:00–21:00 customer-local within the CRM's permitted hours (07:00–21:00 for everyone in this data); on Sundays 13:00–17:00,
+and only if `sunday_contact_permitted` (256,581 CRM customers do not permit it); narrowed to the customer's preferred
+window when they overlap (it always overlaps here; a preference can never widen the legal hours). Calls and texts with
+no window are blocked (`no_sunday_contact`, `outside_permitted_hours`). On a statutory holiday
+(`settings.yaml` `p3.statutory_holidays`: the 2026 federal holidays, since banks are federally regulated) every contact
+action is blocked except a letter, which can still be posted (`statutory_holiday`). A planned time, when given, is still
+checked against the window. The window is on the card (`contact_window`, new optional field) and in the summary ("Call
+the customer, between 08:00–17:00 customer-local"). Tests in `tests/test_rules_hard_stops.py`.
+
+**Effect.** On Monday 28 Sep no decision changes (every customer has a window); the cards now say when to call. Planning
+Sunday 27 Sep instead: 15,977 of the 86,059 open cases would lose calls and texts, the rest limited to 13:00–17:00.
+Planning Wednesday 30 Sep (National Day for Truth and Reconciliation): 79,466 would get no contact but a letter (the
+rest are already blocked by other rules).
+
+**Cease contact and letters: kept as it is.** POL-COLL-001 §5.4 lets *required* letters and statements continue after a
+cease-communication request. The `letter` action is a payment-reminder letter, not a required one, so it stays blocked;
+required letters and statements are sent outside NBA. Recorded in the `nba/rules.py` docstring.
 

@@ -101,6 +101,7 @@ class DecisionCard:
     # offer_programme | plan_ending | follow_up | vulnerable_contact (None: no support call due).
     support_reason: str | None = None
     hardship_options: list[HardshipOption] = field(default_factory=list)  # eligible programmes, offer these first
+    contact_window: str | None = None  # calls and texts: when they may be made that day, e.g. "09:00–18:00 customer-local"
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)

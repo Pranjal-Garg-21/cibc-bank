@@ -126,6 +126,10 @@ def request(p: Plan) -> allocate.Request:
     return allocate.Request(p.order, p.candidates[p.order[0]], c.assigned_agent_id, c.team, p.route_to_certified)
 
 
+def card_channel_is_real_time(action: str) -> bool:
+    return actions.CATALOGUE[action].channel in rules.REAL_TIME
+
+
 def render(plan: Plan, assignment: allocate.Assignment, ctx: Context) -> dict:
     c, action = plan.case, assignment.action
     runner = explain.runner_up(action, plan.candidates)
@@ -134,6 +138,8 @@ def render(plan: Plan, assignment: allocate.Assignment, ctx: Context) -> dict:
     blocked = [BlockedAction(a, r) for a, r in plan.allowed.blocked.items()
                if plan.route_to_certified or a != hardship.SUPPORT]  # support calls exist only for flagged cases
     blocked += [BlockedAction(a, "no_capacity") for a in assignment.no_capacity]
+    window = rules.contact_window(c.flags) if card_channel_is_real_time(action) else None
+    window_text = f"{window[0]:%H:%M}–{window[1]:%H:%M} customer-local" if window else None
     support = None
     if plan.route_to_certified:
         support = explain.support_text(action, plan.support_reason,
@@ -152,9 +158,10 @@ def render(plan: Plan, assignment: allocate.Assignment, ctx: Context) -> dict:
         approval_reason=reason,
         summary=explain.summary(action, c.risk, c.reasons, plan.route_to_certified, hard_stop,
                                 promise_risk=c.promise_risk, no_capacity=assignment.no_capacity, support=support,
-                                options=[o.name for o in c.options]),
+                                options=[o.name for o in c.options], window=window_text),
         support_reason=plan.support_reason if action == hardship.SUPPORT else None,
         hardship_options=c.options,
+        contact_window=window_text,
     )
     return {
         "recommendation_id": f"REC-{ctx.as_of:%Y%m%d}-{c.case_id}",
@@ -295,7 +302,7 @@ def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
     risk, reasons, reach, snapshot_id = score_cases(con, config.p3_dir() / "snapshots")
     promise_risk = score_open_promises(con, config.p3_dir() / "snapshots")
     cases = load_cases(con, config.AS_OF_DATE)
-    flags = rules.load_case_flags(con, [c["case_id"] for c in cases])
+    flags = rules.load_case_flags(con, [c["case_id"] for c in cases], contact_day=config.AS_OF_DATE)
     cal = actions.load_calibration()
     costs = actions.load_unit_costs(con)
     if config.settings()["p3"].get("call_cost_cad") is not None:

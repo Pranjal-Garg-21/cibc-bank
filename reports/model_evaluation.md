@@ -294,9 +294,10 @@ Example decision card:
   "evidence": [],
   "requires_approval": false,
   "approval_reason": null,
-  "summary": "High risk of not being paid up in 30 days (0.60): No open promise to pay; Product: personal_loan. Call the customer.",
+  "summary": "High risk of not being paid up in 30 days (0.60): No open promise to pay; Product: personal_loan. Call the customer, between 08:00\u201317:00 customer-local.",
   "support_reason": null,
-  "hardship_options": []
+  "hardship_options": [],
+  "contact_window": "08:00\u201317:00 customer-local"
 }
 ```
 <!-- /section:nba_queue -->
