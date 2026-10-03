@@ -18,12 +18,9 @@ protected_attributes:
 name_origin_discrimination:
   reason: "Names or inferred personal origin cannot determine collections treatment."
   intent_patterns:
-    - '\b(exclude|avoid|skip|reject|deprioriti[sz]e|prioriti[sz]e|rank|target|select|prefer|suppress)\b'
-    - '\b(?:stop|never|do not|don''t|should not)\s+(?:calling|contacting|call|contact)\b'
+    - '\b(?:call(?:s|ed|ing)?|phon(?:e|es|ed|ing)|contact(?:s|ed|ing)?|(?:de)?prioriti[sz](?:e|es|ed|ing)|avoid(?:s|ed|ing)?|skip(?:s|ped|ping)?|rank(?:s|ed|ing)?|default(?:s|ed|ing)?|target(?:s|ed|ing)?|exclude|reject|select|prefer|suppress)\b'
   patterns:
-    - '\b(?:foreign|native|ethnic|non[- ]native)(?:[- ]sounding)?\s+(?:first |last |family |sur)?names?\b'
-    - '\b(?:names?|surnames?)\b.{0,60}\b(?:foreign|native|origins?|nationalit\w*)\b'
-    - '\b(?:origins?|nationalit\w*)\b.{0,60}\b(?:names?|surnames?)\b'
+    - '\b(?:names?|surnames?)\b'
     - '\b(?:national|ethnic) origin\b|\bcountry of (?:birth|origin)\b|\bnationality\b'
 proxy_geography:
   reason: "Postal areas act as a proxy for protected attributes and cannot drive treatment decisions."
@@ -37,7 +34,7 @@ pii_export:
   reason: "Customer identities and contact details are not disclosed in bulk."
   registry_levels: [direct_pii]
   intent_patterns:
-    - '\b(export|download|list|show|give|extract|provide|print|output|display|reveal|fetch|return|send)\b'
+    - '\b(export|download|list|show|give|extract|provide|print|output|display|reveal|fetch|return|send|dump)\b'
     - '\btell me\b'
     - '\bwhat(?: is| are|''s)\s+(?:the\s+)?(?:(?:customers?|clients?|borrowers?)[''’]s?\s+)?(?:full names?|names?|phones?|e-?mails?|addresses|contact details)\b'
   patterns:
