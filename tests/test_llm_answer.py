@@ -293,3 +293,11 @@ def test_finish_reason_length_is_raised_and_extra_body_is_sent(monkeypatch):
     with pytest.raises(L.LLMTruncated):
         be.complete(model="m", system="", user="", max_tokens=5, temperature=0)
     assert sent["body"]["reasoning"] == {"enabled": False}
+
+
+def test_a_string_value_missing_its_opening_quote_is_repaired():
+    bad = ('{"answer": Non, la liste ne bloque pas.", "evidence": [{"source": "S1", "quote": "ratio: 3 calls"}], '
+           '"not_found": false, "confidence": 1.0, "conflict_note": null, "n": -2}')
+    d = parse_json(bad)
+    assert d["answer"] == "Non, la liste ne bloque pas." and d["evidence"][0]["quote"] == "ratio: 3 calls"
+    assert d["not_found"] is False and d["conflict_note"] is None and d["n"] == -2

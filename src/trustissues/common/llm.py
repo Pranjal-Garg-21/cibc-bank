@@ -158,10 +158,24 @@ def parse_json(text: str):
         start, end = min((i for i in (t.find("{"), t.find("[")) if i >= 0), default=-1), max(t.rfind("}"), t.rfind("]"))
         if start < 0 or end <= start:
             raise LLMOutputError(f"reply is not JSON: {text[:200]!r}")
+        t = t[start:end + 1]
         try:
-            return json.loads(t[start:end + 1])
+            return json.loads(t)
         except json.JSONDecodeError as e:
-            raise LLMOutputError(f"reply is not valid JSON: {e}") from e
+            try:
+                return json.loads(_repair(t))
+            except json.JSONDecodeError:
+                raise LLMOutputError(f"reply is not valid JSON: {e}") from e
+
+
+# a string value whose opening quote is missing: {"answer": Non, la liste ..."}  (seen from Nemotron on 2026-10-03)
+_UNQUOTED = re.compile(r'("\w+"\s*:\s*)(?!["\[{\-\d]|true\b|false\b|null\b)(?=[^\s,}\]])')
+
+
+def _repair(t: str) -> str:
+    """Fix the one malformation seen in practice: a string value missing its opening quote.
+    Only right after a "key": so a colon inside a quoted value is never touched."""
+    return _UNQUOTED.sub(r'\1"', t)
 
 
 class LLM:
@@ -203,8 +217,8 @@ class LLM:
         cached = text is not None
         data = None
         for attempt in range(self.max_retries + 1):
-            if text is None:
-                text = self._call(model, system, user, max_tokens, temperature)
+            if text is None:  # after a bad-JSON reply, a little temperature: at 0 the model repeats the same reply
+                text = self._call(model, system, user, max_tokens, temperature if attempt == 0 else max(temperature, 0.3))
             try:
                 data = parse_json(text) if json_output else None
                 break

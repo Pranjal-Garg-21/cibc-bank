@@ -38,6 +38,11 @@ def check_key() -> bool:
     try:
         req = urllib.request.Request(cfg["base_url"].rstrip("/") + "/key", headers={"Authorization": f"Bearer {key}"})
         d = json.load(urllib.request.urlopen(req, timeout=20))["data"]
+        if all(m.endswith(":free") for m in cfg.get("models", {}).values()):  # free models: a daily request quota
+            free = d.get("free_model_daily_requests") or {}
+            ok = free.get("remaining") is None or free["remaining"] > 0
+            report("free-model requests left today", ok, f"{free.get('remaining')} of {free.get('limit')}")
+            return ok
         left = d.get("limit_remaining")
         ok = left is None or left > 0
         report("API key has credit", ok, f"used ${d.get('usage', 0):.3f}, limit {d.get('limit')}, remaining {left}")
