@@ -1,0 +1,48 @@
+# Per-source curation settings. Tables NOT listed here still get the generic typed + deduplicated
+# curated build (driven by schema.json), so a new table needs no entry here to be loaded and typed.
+
+# Identity fields to standardise (name / dob / phone / postal / employer). Output columns are prefixed std_.
+#   name_order: first_last | last_first | auto
+#   caps_default: convention for an ALL-CAPS two-word name with no comma (set per source from the data)
+identity_fields:
+  customers:
+    name: {col: full_name_raw, order: auto, caps_default: first_last}
+    dob: dob_raw
+    phones: {primary: primary_phone_raw, secondary: secondary_phone_raw, work: work_phone_raw}
+    postal: postal_code_raw
+    employer: employer_name
+  card_accounts:
+    name: {col: cardholder_name_raw, order: auto, caps_default: first_last}
+    dob: cardholder_dob_raw
+    phones: {primary: cardholder_phone_raw}
+    postal: cardholder_postal_raw
+  loan_accounts:
+    name: {col: borrower_name_raw, order: auto, caps_default: last_first}
+    dob: borrower_dob_raw
+    phones: {primary: borrower_phone_raw}
+    postal: borrower_postal_raw
+  deposit_accounts:
+    name: {col: holder_name_raw, order: auto, caps_default: last_first}
+    dob: holder_dob_raw
+    phones: {primary: holder_phone_raw}
+    postal: holder_postal_raw
+  external:
+    name: {col: subject_name_reported, order: auto, caps_default: last_first}
+    dob: subject_dob_reported
+    postal_from_address: subject_address_reported   # postal code is the trailing token of the address
+
+# "Current" views. History is always kept in curated.<table>; <table>_current / _latest keep one row per key.
+current_views:
+  customers:
+    key: crm_customer_id
+    order_by: effective_from_ts DESC, extract_ts DESC
+    where: "coalesce(is_deleted, false) = false"
+  card_accounts:
+    key: card_account_id
+    order_by: snapshot_date DESC
+  loan_accounts:
+    key: loan_id
+    order_by: snapshot_date DESC
+  deposit_accounts:
+    key: deposit_account_id
+    order_by: snapshot_date DESC
