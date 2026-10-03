@@ -113,8 +113,8 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
         if r.path == "rag_customer":
             if resolver is None:
                 return card("Customer lookups are unavailable: no case resolver is connected.", "cannot_answer")
+            check_path(user, "rag_customer")  # role first: a role that may not ask learns nothing about which cases exist
             owner = check_case(user, r.case_id, resolver)
-            check_path(user, "rag_customer")
             resp = rag(RagRequest(question, "rag_customer", user.role, user.user_id, as_of_date, owner.golden_customer_id,
                                   case_id=r.case_id))
             return _rag_card(card, "rag_customer", resp)

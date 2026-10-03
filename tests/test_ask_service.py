@@ -88,3 +88,11 @@ def test_period_after_the_as_of_date_is_called_out():
     assert _after_as_of_note("How many calls were made in November 2026?", AS_OF)
     assert not _after_as_of_note("How many calls were made in September 2026?", AS_OF)
     assert not _after_as_of_note("How many open cases are there?", AS_OF)
+
+
+def test_a_role_that_may_not_ask_about_cases_cannot_tell_real_from_missing_ones():
+    analyst = UserContext("an1", "analyst")
+    q = "Summarise the most recent recorded call on case {}: what did the customer say and agree to?"
+    real = ask(q.format("CS-2026-100001"), analyst, as_of_date=AS_OF, rag=lambda r: None, resolver=resolver)
+    missing = ask(q.format("CS-2026-999999"), analyst, as_of_date=AS_OF, rag=lambda r: None, resolver=resolver)
+    assert real.refused and missing.refused and real.answer == missing.answer

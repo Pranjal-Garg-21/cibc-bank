@@ -86,7 +86,8 @@ def as_of_filters(as_of: date) -> dict[str, tuple[str, ...]]:
 
 def _redact(message: str) -> str:
     """Error text goes back to the model: keep the shape, drop anything quoted (it may be a data value)."""
-    return re.sub(r"'[^']*'", "'?'", message.splitlines()[0])[:200]
+    first = re.sub(r"'[^']*'", "'?'", message.splitlines()[0])
+    return re.sub(r"\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", "N", first)[:200]  # a number in an error may be a data value
 
 
 # Words in a question that imply a filter on gold.semantic_contacts. A query that reads the table without it counts
@@ -100,13 +101,40 @@ IMPLIED_FILTERS = (
 )
 
 
+def _conjuncts(node) -> list:
+    """The top-level AND terms of a condition; anything under an OR or NOT is not a term that must hold."""
+    node = node.this if isinstance(node, exp.Where) else node
+    if isinstance(node, exp.And):
+        return _conjuncts(node.this) + _conjuncts(node.expression)
+    return [node]
+
+
+def _filters_on(sql: str, column: str, value: str) -> bool:
+    """True when some WHERE clause requires `column = value` (or IN (... value ...)) as a top-level AND term."""
+    try:
+        tree = sqlglot.parse_one(sql, read="duckdb")
+    except Exception:
+        return bool(re.search(rf"\b{column}\b[\"\s]*(?:=\s*'{value}'|in\s*\([^)]*'{value}')", sql, re.I))
+    for where in tree.find_all(exp.Where):
+        for term in _conjuncts(where):
+            if isinstance(term, exp.EQ) and isinstance(term.this, exp.Column) and term.this.name == column \
+                    and isinstance(term.expression, exp.Literal) and term.expression.this == value:
+                return True
+            if isinstance(term, exp.In) and isinstance(term.this, exp.Column) and term.this.name == column \
+                    and len(term.expressions) == 1 and getattr(term.expressions[0], "this", None) == value:
+                return True
+    return False
+
+
 def implied_filter_problem(question: str, sql: str) -> str | None:
-    """A repair message when the question names a channel or direction that the query on contacts never filters on."""
+    """A repair message when the question names a channel or direction that the query on contacts does not require.
+
+    The filter must be a top-level AND term of a WHERE clause: `(channel = 'call' OR 1 = 1)` does not count.
+    This is still a heuristic about wording, not a proof that the query answers the question."""
     if "semantic_contacts" not in sql.lower():
         return None
     for pattern, column, value, word in IMPLIED_FILTERS:
-        if re.search(pattern, question, re.I) and not re.search(
-                rf"\b{column}\b[\"\s]*(?:=\s*'{value}'|in\s*\([^)]*'{value}')", sql, re.I):
+        if re.search(pattern, question, re.I) and not _filters_on(sql, column, value):
             return f"The question asks about {word} but the query does not filter {column} = '{value}'"
     return None
 
@@ -183,7 +211,11 @@ def _generate(llm, system: str, user: str, ctx: dict) -> tuple[str | None, str]:
 def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=None, database=None,
                  user_id: str | None = None) -> FallbackResult:
     system = build_system(as_of) + "\n\n" + prompt_join_context(question)
-    policy = dataclasses.replace(policy, required_filters={**policy.required_filters, **as_of_filters(as_of)})
+    # The as-of limits are added to whatever the role already requires for a table, never in place of it.
+    trusted = dict(policy.required_filters)
+    for table, preds in as_of_filters(as_of).items():
+        trusted[table] = tuple(trusted.get(table, ())) + tuple(preds)
+    policy = dataclasses.replace(policy, required_filters=trusted)
     ctx = {"kind": "sql", "input_text": question, "user_role": policy.role, "user_id": user_id, "sources": []}
     user = f"Question: {question}"
     try:

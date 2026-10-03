@@ -195,3 +195,31 @@ def test_label_lookup_is_skipped_when_the_role_may_not_read_the_column(con):
     base = query_policy(LEAD)
     no_cases = dataclasses.replace(base, tables=frozenset(t for t in base.tables if t != "gold.semantic_cases"))
     assert unknown_label("SELECT COUNT(*) FROM gold.semantic_cases WHERE reported_bucket = 'default'", no_cases, con=con) is None
+
+
+# ---- review findings: trusted filters, filter placement, error redaction ------------------------------------------
+
+def test_as_of_limits_are_added_to_the_roles_own_filters_not_in_place_of_them(con):
+    import dataclasses
+    base = query_policy(LEAD)
+    scoped = dataclasses.replace(base, required_filters={
+        **base.required_filters, "gold.semantic_cases": ("queue = 'early_stage'",)})
+    llm = ScriptedLLM(GOOD)
+    out = run_fallback(Q, llm=llm, policy=scoped, as_of=AS_OF, con=con)
+    assert out.result is not None
+    assert "queue = 'early_stage'" in out.sql and "1900-01-01" in out.sql  # both the role's filter and the as-of limit
+
+
+def test_implied_filter_must_be_a_top_level_and_term():
+    q = "How many outbound calls by agent site?"
+    base = "SELECT COUNT(*) FROM gold.semantic_contacts WHERE direction = 'outbound' AND "
+    assert implied_filter_problem(q, base + "(channel = 'call' OR 1 = 1)")
+    assert implied_filter_problem(q, base + "NOT channel = 'call'")
+    assert implied_filter_problem(q, base + "channel = 'call'") is None
+    assert implied_filter_problem(q, base + "gold.semantic_contacts.channel IN ('call')") is None
+
+
+def test_repair_error_text_carries_no_numbers_from_the_data():
+    from trustissues.ask.sql_fallback import _redact
+    msg = _redact("Conversion Error: Could not convert 1e+30 to INT32 for value 42.5 at 'x'")
+    assert "1e+30" not in msg and "42.5" not in msg and "'x'" not in msg
