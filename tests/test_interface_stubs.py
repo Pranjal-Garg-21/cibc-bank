@@ -2,7 +2,13 @@
 import duckdb
 import pytest
 
-from trustissues.common.interfaces import apply_stubs
+import dataclasses
+import json
+from datetime import date
+
+from trustissues.common.fixtures import load_fixtures
+from trustissues.common.interfaces import (
+    PROMISE_OUTCOME_COLUMNS, DecisionCard, RagRequest, RagResponse, StubMismatch, apply_stubs)
 
 PROTECTED = {
     "gender_code", "marital_status", "citizenship_status", "household_size", "dependants_count",
@@ -45,3 +51,55 @@ def test_overrides_matches_i7(con):
 
 def test_promises_enriched_has_point_in_time_key_and_label(con):
     assert {"ptp_created_ts", "label_broken", "golden_customer_id"} <= cols(con, "promises_enriched")
+
+
+EXPECTED_TABLES = {
+    "customer_xref", "c360_customer", "c360_account", "decisioning_customer", "promises_enriched",
+    "customer_safeguards", "bucket_transitions", "customer_timeline", "text_features", "nba_decisions",
+    "nba_overrides", "audit_log",
+}
+
+
+def test_exact_table_set(con):
+    names = {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='gold'").fetchall()}
+    assert names == EXPECTED_TABLES
+
+
+def test_decisioning_customer_is_history_with_both_timestamps(con):
+    assert {"valid_from", "available_from"} <= cols(con, "decisioning_customer")
+    assert "feature_ts" not in cols(con, "decisioning_customer")
+
+
+def test_outcome_columns_exist_and_follow_the_marker(con):
+    c = cols(con, "promises_enriched")
+    assert PROMISE_OUTCOME_COLUMNS <= c
+    order = [r[0] for r in con.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='gold' "
+                                       "AND table_name='promises_enriched' ORDER BY ordinal_position").fetchall()]
+    first_outcome = min(order.index(x) for x in PROMISE_OUTCOME_COLUMNS)
+    assert not (set(order[:first_outcome]) & PROMISE_OUTCOME_COLUMNS)
+
+
+def test_rag_dataclasses_carry_user_id_and_i6_fields():
+    assert {f.name for f in dataclasses.fields(RagRequest)} == {
+        "question", "question_type", "user_role", "user_id", "as_of_date", "golden_customer_id"}
+    assert {f.name for f in dataclasses.fields(RagResponse)} == {
+        "answer", "evidence", "citations", "confidence", "not_found", "coverage"}
+    RagRequest("q", "rag_corpus", "analyst", "U1", date(2026, 9, 28))
+
+
+def test_apply_stubs_flags_an_older_table():
+    c = duckdb.connect(":memory:")
+    c.execute("CREATE SCHEMA gold; CREATE TABLE gold.nba_overrides (recommendation_id VARCHAR)")
+    with pytest.raises(StubMismatch):
+        apply_stubs(c)
+
+
+def test_fixtures_load_and_are_consistent():
+    c = duckdb.connect(":memory:")
+    load_fixtures(c)
+    load_fixtures(c)  # re-runnable
+    ids = {r[0] for r in c.execute("SELECT golden_customer_id FROM gold.c360_customer").fetchall()}
+    for t in ("decisioning_customer", "promises_enriched", "customer_safeguards"):
+        assert {r[0] for r in c.execute(f"SELECT golden_customer_id FROM gold.{t}").fetchall()} <= ids
+    card = json.loads(c.execute("SELECT decision_card FROM gold.nba_decisions").fetchone()[0])
+    assert set(card) == {f.name for f in dataclasses.fields(DecisionCard)}
