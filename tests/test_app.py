@@ -3,7 +3,6 @@
 Needs the warehouse with gold.nba_decisions written (python -m trustissues.nba.queue --write-gold); skipped otherwise.
 The app opens the warehouse for writing, so the connection is closed at the end for the tests that follow.
 """
-import re
 import sys
 
 import duckdb
@@ -84,17 +83,14 @@ def test_ask_page_metric_and_refusal_as_a_team_lead(ui):
 
 def test_ask_page_case_question_as_the_assigned_agent(ui):
     c = ui.con()
-    # a queue case the agent also holds on the as-of date (Ask follows the assignment, not today's allocation)
-    agent, case = c.execute(f"""SELECT n.agent_id, n.case_id FROM gold.nba_decisions n
-                                JOIN curated.case_assignment_history h ON h.case_id = n.case_id AND h.agent_id = n.agent_id
-                                 AND h.assigned_ts < TIMESTAMP '{config.AS_OF_DATE} 23:59:59'
-                                 AND (h.unassigned_ts IS NULL OR h.unassigned_ts > TIMESTAMP '{config.AS_OF_DATE} 23:59:59')
-                                WHERE n.as_of_date = DATE '{config.AS_OF_DATE}' AND n.action = 'agent_call'
-                                ORDER BY n.recommendation_id LIMIT 1""").fetchone()
-    at = _run("pages/1_Ask.py", user_id=agent)
+    # a case today's queue gives the agent although nobody is assigned to it: Ask follows the queue too
     from trustissues.ask.rag.customer_path import case_assignee
-    named = [m.group(0) for btn in at.button for m in [re.search(r"CS-\d{4}-\d+", btn.label)] if m]
-    assert named and case_assignee(c, named[0], config.AS_OF_DATE) == agent  # the example names a case the agent holds
+    agent, case = next((a, k) for a, k in c.execute(f"""SELECT agent_id, case_id FROM gold.nba_decisions
+                            WHERE as_of_date = DATE '{config.AS_OF_DATE}' AND action = 'agent_call'
+                            ORDER BY recommendation_id LIMIT 200""").fetchall()
+                       if case_assignee(c, k, config.AS_OF_DATE) != a)
+    at = _run("pages/1_Ask.py", user_id=agent)
+    assert any("on case CS-" in b.label for b in at.button)  # the example names one of the agent's queue cases
     _ask(at, f"Summarise the most recent recorded call on case {case}: what did the customer say and agree to?")
     assert any("Customer history" in m.value for m in at.markdown)  # routed and allowed; the answer itself needs the model
     other = c.execute("SELECT agent_id FROM curated.agents WHERE role = 'agent' AND status = 'active' AND agent_id <> ? "

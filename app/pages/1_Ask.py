@@ -17,7 +17,6 @@ import streamlit as st
 from ui import AS_OF, acting_as, con
 
 from trustissues.ask.access import case_customer_resolver
-from trustissues.ask.rag.customer_path import case_assignee
 from trustissues.ask.rag_handler import make_rag_handler
 from trustissues.ask.service import ask
 from trustissues.ask.types import UserContext
@@ -106,12 +105,11 @@ if index is None:
 
 examples = list(EXAMPLES[role])
 if role == "agent":
-    # Ask follows the case assignment on the as-of date; a case the queue allocated today without assigning it is
-    # refused (open question, merge.md §6), so the example uses a case this agent holds.
+    # an agent may ask about any case in today's queue (assigned to them or allocated to them today)
     mine = agent_view.agent_queue(c, staff["agent_id"], AS_OF)
-    held = next((k for k in mine["case_id"].head(50) if case_assignee(c, k, AS_OF) == staff["agent_id"]), None)
-    if held:
-        examples.insert(0, f"Summarise the most recent recorded call on case {held}: what did the customer say and agree to?")
+    if len(mine):
+        examples.insert(0, f"Summarise the most recent recorded call on case {mine['case_id'].iloc[0]}: "
+                           "what did the customer say and agree to?")
 cols = st.columns(len(examples))
 for col, q in zip(cols, examples):
     if col.button(q, use_container_width=True):

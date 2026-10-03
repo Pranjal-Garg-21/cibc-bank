@@ -105,6 +105,21 @@ def test_team_leads_may_read_a_customer_whose_open_case_nobody_holds(con):
     assert not can_view_customer(con, user_role="team_lead", user_id="TL-9", golden_customer_id="G-1", as_of=AS_OF)
 
 
+def test_todays_queue_counts_like_an_assignment(con):
+    """An agent the NBA queue sends to the customer today may read their history (the Decision Card's rule), and so
+    may that agent's team lead; a queue row from another day does not count."""
+    con.execute("""CREATE TABLE gold.nba_decisions (recommendation_id VARCHAR, golden_customer_id VARCHAR, case_id VARCHAR,
+                   agent_id VARCHAR, as_of_date DATE)""")
+    con.execute("INSERT INTO curated.agents VALUES ('AG-QUEUE', 'TL-Q')")
+    con.execute(f"INSERT INTO gold.nba_decisions VALUES ('R-1', 'G-1', '{CASE}', 'AG-QUEUE', '{AS_OF}'), "
+                "('R-0', 'G-1', 'OLD-CASE', 'AG-YESTERDAY', '2026-09-27')")
+    view = lambda role, uid: can_view_customer(con, user_role=role, user_id=uid, golden_customer_id="G-1", as_of=AS_OF)
+    assert view("agent", "AG-QUEUE") and view("team_lead", "TL-Q")
+    assert not view("agent", "AG-YESTERDAY") and not view("agent", "AG-OTHER") and not view("analyst", "AG-QUEUE")
+    assert view("agent", "AG-NOW")  # the assignment still counts
+    assert cp.queue_agent(con, CASE, AS_OF) == "AG-QUEUE" and cp.queue_agent(con, "OLD-CASE", AS_OF) is None
+
+
 def test_missing_assignment_tables_mean_no_access():
     c = duckdb.connect(":memory:")
     assert not can_view_customer(c, user_role="agent", user_id="AG-NOW", golden_customer_id="G-1", as_of=AS_OF)

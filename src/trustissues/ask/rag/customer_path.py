@@ -86,10 +86,13 @@ def _end_of(as_of: date) -> datetime:
 def can_view_customer(con, *, user_role: str, user_id: str | None, golden_customer_id: str, as_of: date) -> bool:
     """True if this user may read this customer's history on the as-of date. No AI, no text from the question.
 
-    agent:     one of the customer's cases is assigned to this agent on the as-of date
-    team_lead: one of the customer's cases is assigned to an agent whose team lead is this user, or the customer has
-               an open case that nobody is assigned to (17% of open cases on 2026-09-28: unallocated work sits with
-               the leads who allocate it; TEAM DECISION, see docs/p4_customer_path_build.md)
+    agent:     one of the customer's cases is assigned to this agent on the as-of date, or today's NBA queue
+               (gold.nba_decisions on the as-of date) sends this agent to the customer: the Decision Card already
+               shows them that case (decided 4 Oct, merge.md §6)
+    team_lead: one of the customer's cases is assigned to an agent whose team lead is this user, or today's queue
+               sends one of their agents to the customer, or the customer has an open case that nobody is assigned
+               to (17% of open cases on 2026-09-28: unallocated work sits with the leads who allocate it; TEAM
+               DECISION, see docs/p4_customer_path_build.md)
     others:    never (analysts work on aggregates; the router does not send them here either)
     Missing tables mean no decision can be made, which counts as no.
     """
@@ -111,9 +114,16 @@ def can_view_customer(con, *, user_role: str, user_id: str | None, golden_custom
     try:
         if con.execute(assigned, [golden_customer_id, user_id, end, end]).fetchone():
             return True
-        return user_role == "team_lead" and con.execute(
-            unassigned, [golden_customer_id, end, end, end, end]).fetchone() is not None
+        if user_role == "team_lead" and con.execute(unassigned, [golden_customer_id, end, end, end, end]).fetchone():
+            return True
     except Exception:  # a table is missing or unreadable: refuse rather than guess
+        return False
+    queue_who = "agent_id = ?" if user_role == "agent" else \
+        "agent_id IN (SELECT agent_id FROM curated.agents WHERE team_lead_id = ?)"
+    queued = f"""SELECT 1 FROM gold.nba_decisions WHERE golden_customer_id = ? AND as_of_date = ? AND {queue_who} LIMIT 1"""
+    try:  # separate: a warehouse without the queue table still decides on the assignments above
+        return con.execute(queued, [golden_customer_id, as_of, user_id]).fetchone() is not None
+    except Exception:
         return False
 
 
@@ -290,6 +300,16 @@ def answer_customer(req: RagRequest, *, con, llm: LLM, **kw) -> RagResponse:
 def resolve_case(con, case_id: str) -> str | None:
     """Case ID -> golden customer ID, through gold.case_customer (a case names its customer through several keys)."""
     row = con.execute("SELECT golden_customer_id FROM gold.case_customer WHERE case_id = ?", [case_id]).fetchone()
+    return row[0] if row else None
+
+
+def queue_agent(con, case_id: str, as_of: date) -> str | None:
+    """The agent today's NBA queue sends to this case (gold.nba_decisions on the as-of date), or None."""
+    try:
+        row = con.execute("""SELECT agent_id FROM gold.nba_decisions WHERE case_id = ? AND as_of_date = ?
+                             AND agent_id IS NOT NULL LIMIT 1""", [case_id, as_of]).fetchone()
+    except Exception:  # no queue table (a fixture, or before the first queue run): assignment alone decides
+        return None
     return row[0] if row else None
 
 

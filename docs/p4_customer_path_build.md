@@ -8,7 +8,7 @@ Settings: `customer_path:` in `config/settings.yaml`.
 
 | Step | State |
 |---|---|
-| Access re-check (agent: assigned case; team lead: own team's case or an unassigned open case) | Done, tested, checked on real data |
+| Access re-check (agent: assigned case, or today's queue sends them to the customer; team lead: own team's case or queue item, or an unassigned open case) | Done, tested, checked on real data |
 | Fetch `gold.customer_timeline` by golden ID, point in time | Done, tested, checked on real data |
 | Text filter: only items with eligible text, scrubbed again; later outcomes dropped for past dates | Done, tested |
 | A named case limits the history to that case's items (P2's spec, decided 4 Oct); token budget newest first (D15) | Done, tested |

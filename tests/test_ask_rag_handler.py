@@ -102,9 +102,22 @@ def test_ask_refuses_every_hidden_case_the_same_way(con, tmp_path, user, case):
     assert card.refused and card.refusal_reason == "access" and card.answer == NOT_VISIBLE and be.calls == []
 
 
+def test_an_agent_the_queue_sends_to_the_case_may_ask_about_it(con, tmp_path):
+    con.execute("""CREATE TABLE gold.nba_decisions (recommendation_id VARCHAR, golden_customer_id VARCHAR, case_id VARCHAR,
+                   agent_id VARCHAR, as_of_date DATE)""")
+    con.execute(f"INSERT INTO gold.nba_decisions VALUES ('R-1', 'G-1', '{CASE}', 'AG-QUEUE', '{AS_OF}')")
+    assert case_customer_resolver(con, AS_OF)(CASE).queue_agent_id == "AG-QUEUE"
+    reply = {"answer": "Promised $95 on 14 Oct.", "not_found": False, "confidence": 0.9, "conflict_note": None,
+             "evidence": [{"source": "S4", "quote": "inbound | Promise to pay | promise made"}]}
+    llm, _ = make_llm(tmp_path, reply)
+    card = ask(Q.format(CASE), UserContext("AG-QUEUE", "agent"), as_of_date=AS_OF,
+               rag=rag_handler.make_rag_handler("IDX", llm, con=con), resolver=case_customer_resolver(con, AS_OF))
+    assert card.path == "rag_customer" and not card.refused and card.answer == "Promised $95 on 14 Oct."
+
+
 def test_case_customer_resolver_reads_the_assignment_on_the_as_of_date(con):
     owner = case_customer_resolver(con, AS_OF)(CASE)
-    assert (owner.golden_customer_id, owner.assigned_agent_id) == ("G-1", "AG-NOW")
+    assert (owner.golden_customer_id, owner.assigned_agent_id, owner.queue_agent_id) == ("G-1", "AG-NOW", None)
     assert case_customer_resolver(con, date(2026, 9, 10))(CASE).assigned_agent_id == "AG-OLD"
     assert case_customer_resolver(con, AS_OF)("CS-2026-999999") is None
 

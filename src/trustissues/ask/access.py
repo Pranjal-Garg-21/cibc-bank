@@ -32,6 +32,7 @@ NOT_VISIBLE = "Case not found or not visible."
 class CaseOwner:
     golden_customer_id: str
     assigned_agent_id: str | None
+    queue_agent_id: str | None = None  # the agent today's NBA queue sends to this case (gold.nba_decisions), if any
 
 
 class CaseResolver(Protocol):
@@ -49,7 +50,8 @@ def check_case(user: UserContext, case_id: str, resolver: CaseResolver) -> CaseO
     owner = resolver(case_id)
     if owner is None:
         raise AccessDenied(NOT_VISIBLE)  # same wording for both: no existence oracle
-    if user.role == "agent" and owner.assigned_agent_id != user.user_id:
+    # an agent may ask about a case assigned to them, or one today's queue gave them (the Decision Card's rule)
+    if user.role == "agent" and user.user_id not in {owner.assigned_agent_id, owner.queue_agent_id}:
         raise AccessDenied(NOT_VISIBLE)
     return owner
 
@@ -61,12 +63,13 @@ def query_policy(user: UserContext, *, row_cap: int = 500) -> QueryPolicy:
 
 def case_customer_resolver(con, as_of: date) -> Callable[[str], CaseOwner | None]:
     """Resolve cases from the published warehouse: the customer from gold.case_customer (the account holder when the
-    case's CRM ID disagrees) and the agent assigned on the as-of date, using the customer path's own lookups."""
-    from .rag.customer_path import case_assignee, resolve_case
+    case's CRM ID disagrees), the agent assigned on the as-of date, and the agent today's queue sends to the case,
+    using the customer path's own lookups."""
+    from .rag.customer_path import case_assignee, queue_agent, resolve_case
 
     def resolve(case_id: str) -> CaseOwner | None:
         golden = resolve_case(con, case_id)
-        return CaseOwner(golden, case_assignee(con, case_id, as_of)) if golden else None
+        return CaseOwner(golden, case_assignee(con, case_id, as_of), queue_agent(con, case_id, as_of)) if golden else None
     return resolve
 
 
