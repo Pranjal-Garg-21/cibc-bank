@@ -27,12 +27,13 @@ def main() -> int:
     ap.add_argument("--min", type=float, default=0.0)
     ap.add_argument("--llm", action="store_true", help="let the model place questions the rules could not")
     ap.add_argument("--heldout", action="store_true", help="score eval/router_heldout.csv (never tune against it)")
+    ap.add_argument("--cases", help="score another labelled file, e.g. eval/router_fresh.csv")
     a = ap.parse_args()
     llm = None
     if a.llm:
         from trustissues.common.llm import LLM
         llm = LLM()
-    rows = list(csv.DictReader(open(HELDOUT if a.heldout else CASES, encoding="utf-8")))
+    rows = list(csv.DictReader(open(a.cases or (HELDOUT if a.heldout else CASES), encoding="utf-8")))
     by: dict[str, list[bool]] = defaultdict(list)
     misses = []
     for r in rows:
