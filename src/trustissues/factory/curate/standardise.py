@@ -101,7 +101,7 @@ def parse_phone(raw: str | None) -> dict:
 # ---------- names ----------
 
 def strip_accents(s: str) -> str:
-    s = s.replace("�", "")  # broken encoding: drop the replacement character, do not guess the letter
+    s = s.replace("�", "")  # defensive only: this release has no replacement characters (checked on the real data)
     return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 
@@ -201,7 +201,7 @@ def normalise_employer(raw: str | None) -> str | None:
         return None
     s = re.sub(r"\([^)]*\)", " ", str(raw))
     s = strip_accents(s).upper()
-    s = re.sub(r"\bLT\b", " ", s)  # 'Lt�e' loses its tail once the replacement char is dropped
+    s = re.sub(r"\bLT\b", " ", s)  # a stray 'LT' left behind by a truncated 'Ltee'
     s = re.sub(_LEGAL, " ", s)
     s = re.sub(r"[^A-Z0-9& ]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()

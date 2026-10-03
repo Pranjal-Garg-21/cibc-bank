@@ -22,6 +22,12 @@ Details: [`curation.md`](curation.md) (results), [`documentation.md`](documentat
 
 **P3: `curated.promises_to_pay` exists** and takes seconds to build on your machine: `python -m trustissues.factory.curate.build_curated --only promises_to_pay` (after the raw load).
 
+## 2b. Data quality report (new)
+
+`reports/data_quality_report.md` lists every issue found, how many records it affected and how it was handled (53 issues, 20 clean checks). It is **generated** from `config/dq_checks.yaml` by `python -m trustissues.factory.quality.dq_report`. **The plan assigns `dq_report.py` to P2.** Anushka built it first so the submission item exists; P2 should extend `config/dq_checks.yaml` (for example with the unmatched records and open review items the identity step will produce) instead of writing a second one.
+
+The run also added columns to the curated tables. **Use these instead of the originals:** `contact_history.channel_resolved` (not `channel`), `deposit_accounts.cif10` (not `src_customer_ref`, which lost its leading zeros in 20% of rows), `customers.salutation_std`. **Flag columns** (`dq_*`, listed in the report) mark rows with problems that cannot be repaired, such as `external.dq_inquiries_inconsistent` and `deposit_accounts.dq_non_cad`. Rows pointing at a CRM customer that does not exist are listed in `curated.dq_orphan_customer_refs`.
+
 ## 3. What to know before matching identities (from the real data)
 
 - **Duplicates are business-level**, not exact rows. 5,950 CRM records are flagged `duplicate_of_crm_id`.

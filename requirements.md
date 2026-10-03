@@ -58,7 +58,7 @@ Check you have `maple_data/maple_collections_release/data/customers.csv` and `ma
 
 ## 4. Build
 
-One command runs ingest, dictionary, curate and labels, and prints a timing for each stage:
+One command runs ingest, dictionary, curate, data quality and labels, and prints a timing for each stage:
 
 ```bash
 python -m trustissues.factory.pipeline
@@ -70,6 +70,7 @@ Or stage by stage:
 python -m trustissues.factory.ingest.load_raw        # source files -> raw.*     (about 35 min on the reference machine)
 python -m trustissues.factory.ingest.dictionary      # data dictionary -> raw._dictionary + config/sensitivity.yaml
 python -m trustissues.factory.curate.build_curated   # raw.* -> curated.*        (SLOW: see section 4a)
+python -m trustissues.factory.quality.dq_report      # flags + derived columns + reports/data_quality_report.md (about 20 seconds)
 python -m trustissues.factory.ingest.dictionary      # again, so derived std_* columns get sensitivity labels
 ```
 

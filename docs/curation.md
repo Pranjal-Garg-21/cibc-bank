@@ -2,6 +2,8 @@
 
 **Status: complete on the real data (2026-10-03).** All 31 tables are built, `scripts/verify_warehouse.py` passes every check, and the 35 unit tests pass. This file is the record of what the curated layer does, what the real data showed, and what is still open. Setup and run commands: [`../requirements.md`](../requirements.md). Component reference: [`documentation.md`](documentation.md).
 
+**The data quality report** (`reports/data_quality_report.md`) is the full account of the issues in the data, how many records each affected and how each was handled. This file covers how curation works; that one covers what was wrong with the data. Curation findings that appear in both agree.
+
 ## 1. What curated is
 
 `raw.*` holds every source table exactly as received (all text). `curated.*` is the same data made usable:
@@ -102,7 +104,7 @@ Both match the setting in `config/curate.yaml`. Two more findings: `deposit_acco
 
 | Field | Columns | Rule |
 |---|---|---|
-| Name | `std_name_first`, `_middle_initials`, `_last`, `_first_is_initial`, `_key` | Uppercase, accents stripped, broken characters dropped. A comma means last-first; trailing single letters mean last-first; ALL-CAPS two words follow the source's setting; otherwise left ambiguous. `_key` is the sorted token set, so word order does not matter |
+| Name | `std_name_first`, `_middle_initials`, `_last`, `_first_is_initial`, `_key` | Uppercase, accents stripped (the data is valid UTF-8; accents are real). A comma means last-first; trailing single letters mean last-first; ALL-CAPS two words follow the source's setting; otherwise left ambiguous. `_key` is the sorted token set, so word order does not matter |
 | Date of birth | `std_dob`, `std_dob_alt`, `std_dob_ambiguous` | Year-first and month-name forms are unambiguous. A day above 12 resolves the order. If both readings are valid both are kept (`/` ranked month-first, `-` and `.` day-first). Impossible dates give NULL |
 | Phone | `std_phone_<label>_e164`, `_masked`, `_prefix`, `_suffix` | `+1` plus ten digits. A masked phone has no full number, only its visible prefix and suffix. Phone alone never links records |
 | Postal | `std_postal`, `std_fsa` | `A1A1A1`, and the first three characters. `external` takes the postal code from the end of the address |
