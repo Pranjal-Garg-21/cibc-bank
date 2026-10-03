@@ -25,7 +25,7 @@ from trustissues.common import config
 from .policy_ingest import Chunk
 
 MODES = ("bm25", "hybrid", "hybrid_rerank", "whole_corpus")
-DEFAULTS = {"mode": "hybrid_rerank", "embedding_model": "intfloat/multilingual-e5-small",
+DEFAULTS = {"mode": "whole_corpus", "embedding_model": "intfloat/multilingual-e5-small",
             "reranker_model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", "n_candidates": 20, "top_k": 5}
 
 

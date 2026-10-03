@@ -192,3 +192,9 @@ BQ-002 moves from rank 4 to 1. BQ-026 stays at rank 2 (the FAQ's contradicting e
 prefers the hardship table and notes the conflict). Paraphrases that keyword search missed entirely (proof of
 earnings, a bereaved customer) are now found. Still to do once the API key has credit: `--answers`, which compares
 answer quality between hybrid_rerank and whole_corpus, then pick the default.
+
+**Answers compared (free Nemotron 3 Super, `--answers`):** whole_corpus cited the correct section on 16/16 questions,
+hybrid_rerank on 13/16 (it answered P-03, a complaint question, with hardship steps, and cited a weaker source for BQ-026
+and P-05). Answer time was the same (2-3 s). **Default changed to `whole_corpus`.** The corpus is ~4K tokens, so the
+model reading all of it is cheaper than a wrong answer; the version, role and province filters still run first. Search
+(hybrid_rerank) stays as the option for when the corpus grows past what fits comfortably in a prompt.
