@@ -188,7 +188,7 @@ checks:
     how: "Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. To be treated as weak evidence in matching (the design rule is that a phone alone never links two records); the identity layer is not built yet."
   - id: F10
     area: format
-    title: "CRM postal code written with and without a space, or truncated"
+    title: "CRM postal code written with and without a space, in lower case, or both"
     tables: [customers]
     severity: low
     status: standardised
@@ -197,13 +197,14 @@ checks:
     how: "Normalised into `std_postal` (A1A1A1) and `std_fsa`."
   - id: F11
     area: format
-    title: "CRM postal code invalid after cleaning (truncated, e.g. `A 9A9`, `A9A9`)"
+    title: "CRM postal code typed with the letter O where the digit 0 belongs (`VOC2S8`, `L6X OZ4`)"
     tables: [customers]
     severity: low
-    status: flagged
+    status: fixed
     table: curated.customers
-    where: "postal_code_raw is not null and trim(postal_code_raw) <> '' and std_postal is null"
-    how: "`std_postal` is NULL and the original stays in `postal_code_raw`. Not repaired."
+    where: "std_postal_repaired"
+    evidence: "select 'the repair reproduces the CRM column postal_code in ' || format('{:,}', count(*) filter (where std_postal = replace(upper(postal_code), ' ', ''))) || ' of ' || format('{:,}', count(*)) || ' repaired codes' from curated.customers where std_postal_repaired"
+    how: "The letter O in a digit position can only be a zero. Repaired into `std_postal` (`std_postal_repaired` = true); `postal_code_raw` is unchanged. An earlier version of this report called these codes truncated and left them empty; that description was wrong."
   - id: F12
     area: format
     title: "Deposit customer key lost its leading zeros (7 or 8 digits instead of the 10-digit CIF)"
@@ -536,6 +537,7 @@ checks:
     how: "Not changed."
 
 clean_checks:   # checks that found nothing; listed so the coverage is visible
+  - {id: C23, title: "Postal code still invalid after cleaning (customers, cards, loans, deposits)", sql: "select (select count(*) filter (where postal_code_raw is not null and trim(postal_code_raw) <> '' and std_postal is null) from curated.customers) + (select count(*) filter (where cardholder_postal_raw is not null and trim(cardholder_postal_raw) <> '' and std_postal is null) from curated.card_accounts) + (select count(*) filter (where borrower_postal_raw is not null and trim(borrower_postal_raw) <> '' and std_postal is null) from curated.loan_accounts) + (select count(*) filter (where holder_postal_raw is not null and trim(holder_postal_raw) <> '' and std_postal is null) from curated.deposit_accounts), (select count(*) from curated.customers) + (select count(*) from curated.card_accounts) + (select count(*) from curated.loan_accounts) + (select count(*) from curated.deposit_accounts)"}
   - {id: C21, title: "Date of birth still ambiguous after resolution (customers, cards, loans, deposits, bureau)", sql: "select (select count(*) filter (where std_dob_ambiguous) from curated.customers) + (select count(*) filter (where std_dob_ambiguous) from curated.card_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.loan_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.deposit_accounts) + (select count(*) filter (where std_dob_ambiguous) from curated.external), (select count(*) from curated.customers) + (select count(*) from curated.card_accounts) + (select count(*) from curated.loan_accounts) + (select count(*) from curated.deposit_accounts) + (select count(*) from curated.external)"}
   - {id: C22, title: "CRM date_of_birth disagrees with the only possible reading of dob_raw", sql: "select count(*) filter (where date_of_birth is distinct from reading), count(*) from (select date_of_birth, case when try_cast(split_part(dob_raw, '/', 1) as int) > 12 then try_strptime(dob_raw, '%d/%m/%Y')::date else try_strptime(dob_raw, '%m/%d/%Y')::date end as reading from curated.customers where regexp_matches(dob_raw, '^[0-9]{2}/[0-9]{2}/[0-9]{4}$') and date_of_birth is not null and (try_cast(split_part(dob_raw, '/', 1) as int) > 12 or try_cast(split_part(dob_raw, '/', 2) as int) > 12))"}
   - {id: C1, title: "Exact duplicate rows removed (all tables)", sql: "select coalesce(sum(dupes_removed), 0), coalesce(sum(raw_rows), 0) from curated._build_log"}

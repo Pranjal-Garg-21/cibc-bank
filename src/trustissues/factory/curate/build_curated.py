@@ -89,7 +89,7 @@ def register_udfs(con) -> None:
     reg = [
         ("std_phone", S.parse_phone, ["VARCHAR"],
          "STRUCT(phone_e164 VARCHAR, phone_masked BOOLEAN, phone_prefix VARCHAR, phone_suffix VARCHAR)"),
-        ("std_postal", S.parse_postal, ["VARCHAR"], "STRUCT(postal VARCHAR, fsa VARCHAR)"),
+        ("std_postal", S.parse_postal, ["VARCHAR"], "STRUCT(postal VARCHAR, fsa VARCHAR, repaired BOOLEAN)"),
         ("std_employer", S.normalise_employer, ["VARCHAR"], "VARCHAR"),
     ]
     for name, fn, params, ret in reg:
@@ -163,7 +163,7 @@ def identity_select(table: str, cfg: dict, dob_convention: str | None = None) ->
                   f"{c}.phone_prefix AS std_phone_{label}_prefix", f"{c}.phone_suffix AS std_phone_{label}_suffix"]
     if cfg.get("postal"):
         c = f"std_postal(raw_{cfg['postal']})"
-        items += [f"{c}.postal AS std_postal", f"{c}.fsa AS std_fsa"]
+        items += [f"{c}.postal AS std_postal", f"{c}.fsa AS std_fsa", f"{c}.repaired AS std_postal_repaired"]
     if cfg.get("postal_from_address"):
         items += [f"std_postal_from_address(raw_{cfg['postal_from_address']}) AS std_postal",
                   f"left(std_postal_from_address(raw_{cfg['postal_from_address']}), 3) AS std_fsa"]

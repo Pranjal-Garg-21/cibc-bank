@@ -199,14 +199,26 @@ def parse_name(raw: str | None, order: str = "auto", caps_default: str | None = 
 
 # ---------- postal codes ----------
 
+_POSTAL = re.compile(r"[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\d[ABCEGHJ-NPRSTV-Z]\d")
+
+
 def parse_postal(raw: str | None) -> dict:
-    """-> {postal, fsa}. Valid Canadian postal codes only: A1A1A1 (no space) and its first 3 chars."""
-    out = {"postal": None, "fsa": None}
+    """-> {postal, fsa, repaired}. Valid Canadian postal codes only: A1A1A1 (no space) and its first 3 chars.
+
+    One repair is made, and only because it is certain: the letter O in a DIGIT position (2nd, 4th, 6th)
+    can only be a zero (`VOC2S8` -> `V0C2S8`). Checked on the real data: it reproduces the CRM's own
+    cleaned postal code in 1,887 of 1,887 cases. Any other invalid code stays empty; `repaired` marks the fix.
+    """
+    out = {"postal": None, "fsa": None, "repaired": False}
     if raw is None:
         return out
     p = re.sub(r"[\s\-]", "", str(raw).upper())
-    if re.fullmatch(r"[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\d[ABCEGHJ-NPRSTV-Z]\d", p):
+    if _POSTAL.fullmatch(p):
         out["postal"], out["fsa"] = p, p[:3]
+    elif len(p) == 6:
+        fixed = "".join("0" if i in (1, 3, 5) and ch == "O" else ch for i, ch in enumerate(p))
+        if _POSTAL.fullmatch(fixed):
+            out["postal"], out["fsa"], out["repaired"] = fixed, fixed[:3], True
     return out
 
 

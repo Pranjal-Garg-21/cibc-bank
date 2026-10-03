@@ -5,9 +5,9 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 ## 1. Summary
 
 - **51 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
-- **22 further checks found nothing** (section 10), so the coverage is visible.
+- **23 further checks found nothing** (section 10), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **flagged** 20, **documented** 13, **standardised** 12, **fixed** 4, **deferred to identity layer** 1, **excluded from current view** 1.
+- How each issue was handled: **flagged** 19, **documented** 13, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
 - **Schema drift:** the loader recorded 6 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
@@ -62,7 +62,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | K3 | App outage 14 Sep: payments not posted, late fees charged in error; late-fee disputes about 3x baseline 15-22 Sep | 31 | 4.29% | medium | Documented |
 | F8 | CRM phone numbers in 10 different formats | 1,004,777 | 98.5% | low | Standardised |
 | F5 | Deposit date of birth in YYYYMMDD (every filled value) | 764,244 | 98.0% | low | Standardised |
-| F10 | CRM postal code written with and without a space, or truncated | 735,266 | 72.1% | low | Standardised |
+| F10 | CRM postal code written with and without a space, in lower case, or both | 737,153 | 72.3% | low | Standardised |
 | F4 | Loan date of birth in YYYY/MM/DD (every filled value) | 400,468 | 99.0% | low | Standardised |
 | F17 | Customer salutation spelled several ways (`Mr.`, `mr`, `MR.`; 20 spellings of 7 values) | 128,680 | 12.6% | low | Standardised |
 | M4 | Bureau date of birth blank | 39,543 | 3.95% | low | Documented |
@@ -73,7 +73,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | M1 | CRM date of birth blank | 5,026 | 0.49% | low | Documented |
 | M2 | Loan date of birth blank | 4,032 | 1.00% | low | Documented |
 | R11 | CRM record marked deleted (change-data operation D) | 2,115 | 0.21% | low | Excluded from current view |
-| F11 | CRM postal code invalid after cleaning (truncated, e.g. `A 9A9`, `A9A9`) | 1,887 | 0.18% | low | Flagged |
+| F11 | CRM postal code typed with the letter O where the digit 0 belongs (`VOC2S8`, `L6X OZ4`) | 1,887 | 0.18% | low | Fixed |
 | L10 | Card utilisation outside 0 to 1.5 | 33 | 0.01% | low | Documented |
 | L9 | Bureau: file-since date is after the pull date | 17 | 0.00% | low | Documented |
 | M8 | CRM employer name blank | 359,829 | 35.3% | info | Documented |
@@ -189,17 +189,19 @@ Every source system writes dates of birth, phones, postal codes and names in its
 
 **Handling (flagged).** Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. To be treated as weak evidence in matching (the design rule is that a phone alone never links two records); the identity layer is not built yet.
 
-### F10. CRM postal code written with and without a space, or truncated
+### F10. CRM postal code written with and without a space, in lower case, or both
 
-**Affected:** 735,266 of 1,020,000 (72.1%) · **Tables:** `customers` · **Severity:** low
+**Affected:** 737,153 of 1,020,000 (72.3%) · **Tables:** `customers` · **Severity:** low
 
 **Handling (standardised).** Normalised into `std_postal` (A1A1A1) and `std_fsa`.
 
-### F11. CRM postal code invalid after cleaning (truncated, e.g. `A 9A9`, `A9A9`)
+### F11. CRM postal code typed with the letter O where the digit 0 belongs (`VOC2S8`, `L6X OZ4`)
 
 **Affected:** 1,887 of 1,020,000 (0.18%) · **Tables:** `customers` · **Severity:** low
 
-**Handling (flagged).** `std_postal` is NULL and the original stays in `postal_code_raw`. Not repaired.
+*Evidence:* the repair reproduces the CRM column postal_code in 1,887 of 1,887 repaired codes.
+
+**Handling (fixed).** The letter O in a digit position can only be a zero. Repaired into `std_postal` (`std_postal_repaired` = true); `postal_code_raw` is unchanged. An earlier version of this report called these codes truncated and left them empty; that description was wrong.
 
 ### F12. Deposit customer key lost its leading zeros (7 or 8 digits instead of the 10-digit CIF)
 
@@ -470,6 +472,7 @@ Partly, and the difference matters.
 
 | ID | Check | Rows checked |
 |---|---|---:|
+| C23 | Postal code still invalid after cleaning (customers, cards, loans, deposits) | 2,864,500 |
 | C21 | Date of birth still ambiguous after resolution (customers, cards, loans, deposits, bureau) | 3,864,500 |
 | C22 | CRM date_of_birth disagrees with the only possible reading of dob_raw | 213,884 |
 | C1 | Exact duplicate rows removed (all tables) | 68,162,322 |
