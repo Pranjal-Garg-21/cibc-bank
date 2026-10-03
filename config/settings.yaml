@@ -31,6 +31,15 @@ text_controls:
   note_redaction_statuses: [auto_redacted, none]
   scrub_pii: true      # regex-scrub phones, emails, card and account numbers from every text before it leaves the machine
 
+policy_rag:
+  # How policy questions find their sources (ask/rag/retrievers.py). Compared on the dev questions by
+  # scripts/compare_policy_modes.py; see docs/p4_policy_rag_build.md section 8.
+  mode: hybrid_rerank          # bm25 | hybrid | hybrid_rerank | whole_corpus
+  embedding_model: intfloat/multilingual-e5-small            # local, EN + FR
+  reranker_model: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1  # local, multilingual
+  n_candidates: 20
+  top_k: 5
+
 customer_path:
   # Long context, no vector search (design D1). One customer's history is small: median 11 timeline events, 99th
   # percentile 73, largest 149; a transcript is ~1,000 characters. So the budget is rarely reached.

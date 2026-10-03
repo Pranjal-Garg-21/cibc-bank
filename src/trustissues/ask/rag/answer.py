@@ -191,17 +191,26 @@ class PolicyRun:
 
 
 def run_policy(question: str, index, *, llm: LLM, as_of: date, user_role: str, user_id: str | None = None,
-               language: str | None = None, province: str | None = None, **search_kw) -> PolicyRun:
+               language: str | None = None, province: str | None = None, mode: str | None = None,
+               **search_kw) -> PolicyRun:
     """Policy path end to end. English documents are the reference; the answer is in the question's language.
 
+    `mode` (bm25 | hybrid | hybrid_rerank | whole_corpus) defaults to config `policy_rag.mode`.
     `language` and `province` are normally left unset: language is detected from the question; the province is the
     one the question names, or the caller's (the customer's province) when known. Pass province="" to apply none.
     A province-specific document (the Quebec annex) is always included when its province is known.
     """
     language = (language or detect_language(question)).upper()
     province = detect_province(question) if province is None else (province or None)
+    from . import retrievers
+
+    mode = mode or retrievers.settings()["mode"]
     query = policy_query(question, language, llm, user_role=user_role, user_id=user_id)
-    result = index.search(query, as_of, language=language, province=province, **search_kw)
+    if mode == "whole_corpus":
+        result = index.whole_corpus(query, as_of, language=language, province=province, **search_kw)
+    else:
+        kw = {**retrievers.hooks(mode), **search_kw}
+        result = index.search(query, as_of, language=language, province=province, **kw)
     response = answer_question(question, policy_sources(result), llm=llm, as_of=as_of, user_role=user_role,
                                user_id=user_id, language=language, kind="rag")
     return PolicyRun(language, province, query, result, response)

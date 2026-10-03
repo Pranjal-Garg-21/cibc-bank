@@ -142,3 +142,31 @@ def test_province_specific_document_is_always_included_for_that_province():
     assert qc[0].doc_id == "REG-QC" and qc[0].pinned and {s.doc_id for s in qc} == {"REG-QC", "POL-1"}
     assert {s.doc_id for s in ix.search(q, province="ON", with_hardship=False).sections} == {"POL-1"}  # not applicable
     assert not any(s.pinned for s in ix.search(q, with_hardship=False).sections)  # no province: normal search only
+
+
+# ---- retrieval modes (retrievers.py) and whole corpus -------------------------------------------
+def test_reranker_order_decides_the_sections():
+    a = mk("A", "1", "2026-01-01", "§1", "alpha one")
+    b = mk("B", "1", "2026-01-01", "§1", "alpha two")
+    b_first = lambda q, cands: sorted(cands, key=lambda c: c.doc_id != "B")
+    r = PolicyIndex([a, b]).search("alpha", rerank_fn=b_first, with_hardship=False)
+    assert [s.doc_id for s in r.sections] == ["B", "A"]
+
+
+def test_whole_corpus_returns_every_section_in_force_after_the_filters():
+    qc = mk("REG-QC", "1", "2026-01-01", "§1", "no calls on sunday", prov=("QC",))
+    other = mk("POL-9", "1", "2026-01-01", "§9.1", "holidays")
+    ix = PolicyIndex([V41, V42, qc, other])
+    got = ix.whole_corpus("anything", date(2026, 9, 28), with_hardship=False)
+    assert {s.doc_id for s in got.sections} == {"POL-4", "REG-QC", "POL-9"}  # the superseded v4.1 never appears
+    assert {s.doc_id for s in ix.whole_corpus("x", date(2026, 9, 28), province="ON", with_hardship=False).sections} \
+        == {"POL-4", "POL-9"}
+    pinned = ix.whole_corpus("x", date(2026, 9, 28), province="QC", with_hardship=False).sections
+    assert [s.doc_id for s in pinned if s.pinned] == ["REG-QC"]
+
+
+def test_unknown_mode_is_refused():
+    from trustissues.ask.rag import retrievers
+    with pytest.raises(ValueError):
+        retrievers.hooks("magic")
+    assert retrievers.hooks("bm25") == {}

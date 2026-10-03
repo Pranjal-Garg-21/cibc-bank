@@ -13,8 +13,9 @@ Order of operations (design D4, D11, D12, D5):
 5. Attach  - hardship programme rows are read from `hardship_programs` by SQL for the version
              valid on the as-of date. Where text and table disagree the table wins (D5).
 
-Nothing here calls an LLM. The vector and rerank steps are hooks because the embedding provider
-and reranker model are still open (D10, D12).
+Nothing here calls an LLM. The vector and rerank steps are hooks; the models that fill them are in
+`retrievers.py` (local multilingual embeddings and a cross-encoder). `whole_corpus()` skips search and returns
+every section in force, for comparison with retrieval.
 """
 from __future__ import annotations
 
@@ -176,6 +177,25 @@ class PolicyIndex:
         else:
             sections = sections[:top_k]
         rows = self._hardship_rows(sections, as_of, query, product) if with_hardship else []
+        return SearchResult(sections, rows, as_of.isoformat(), len(pool))
+
+    def whole_corpus(self, query: str, as_of: date | None = None, *, language: str | None = None,
+                     product: str | None = None, province: str | None = None,
+                     confidentiality=DEFAULT_CONFIDENTIALITY, doc_types: set[str] | None = None,
+                     with_hardship: bool = True, english_reference: bool = True, **_ignored) -> SearchResult:
+        """No search: every section in force on the as-of date, after the same filters as search().
+
+        The corpus is ~2,500 words (51 chunks, ~4K tokens), so the model can read all of it. Nothing can be missed by
+        ranking; the version, role, product and province filters still apply, so superseded rules never reach it.
+        """
+        as_of = as_of or config.AS_OF_DATE
+        pool = self.eligible(as_of, confidentiality, product, province, doc_types, english_reference)
+        pool = sorted(pool, key=lambda c: (c.doc_id, c.chunk_id))
+        sections = self._expand(pool, {}, language)
+        if province:
+            for sec in sections:
+                sec.pinned = any(_specific_to(c, province) for c in pool if c.chunk_id in sec.chunk_ids)
+        rows = self._hardship_rows(sections, as_of, query, product, max_rows=50) if with_hardship else []
         return SearchResult(sections, rows, as_of.isoformat(), len(pool))
 
     @staticmethod

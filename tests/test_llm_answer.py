@@ -247,7 +247,7 @@ def test_french_question_is_translated_for_search_and_answered_in_french(tmp_pat
           "evidence": [{"source": "S1", "quote": "does not block collection calls"}], "conflict_note": None}
     llm, be = make(tmp_path, "Does the National Do Not Call List stop collection calls?", ok)
     r = answer_policy("La liste nationale de numéros exclus bloque-t-elle les appels de recouvrement?", ix,
-                      llm=llm, as_of=date(2026, 9, 28), user_role="agent", with_hardship=False)
+                      llm=llm, as_of=date(2026, 9, 28), user_role="agent", with_hardship=False, mode="bm25")
     assert be.calls[0]["model"] == "m-bulk" and "Translate" in be.calls[0]["system"]  # step 1: cheap translation
     assert "French" in be.calls[1]["system"] and "Do Not Call" in be.calls[1]["user"]  # step 2: answer in French
     assert r.answer.startswith("Non") and r.evidence == ["does not block collection calls"]  # quote stays English

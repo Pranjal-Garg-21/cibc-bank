@@ -168,3 +168,27 @@ The 19 documents use four layouts, and each is handled:
 | Citations are real | Built only from the sources whose quotes survived, in the I6 `Citation` shape |
 | Table beats text (D5) | Hardship rows are labelled AUTHORITATIVE in the prompt; a disagreement is added to the answer as a note |
 | Everything is logged (D20) | Each call, including cache hits, writes a row to `gold.audit_log` |
+
+## 8. Retrieval upgrade: vector search, reranker, whole corpus (2026-10-03)
+
+`ask/rag/retrievers.py` fills the two hooks with local models (no network call, no cost per question):
+`intfloat/multilingual-e5-small` embeddings (EN + FR) and the `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`
+reranker. With 51 chunks the vectors are an in-memory matrix cached in `warehouse/rag/policy_vectors.json`, not a
+Chroma collection (D9 changed: same result, one fewer service). `PolicyIndex.whole_corpus()` skips search and gives the
+model every section in force (40 sections, ~4K tokens), after the same version, role and province filters.
+Mode is `policy_rag.mode` in `config/settings.yaml`, or `mode=` on `run_policy`.
+
+Comparison on 16 questions with a known correct section (`scripts/compare_policy_modes.py`,
+`reports/policy_retrieval_comparison.md`):
+
+| mode | correct section in the 5 the model reads | MRR | search time |
+|---|---:|---:|---:|
+| bm25 | 13/16 | 0.61 | 2 ms |
+| hybrid | 13/16 | 0.74 | 0.2 s |
+| hybrid_rerank (default) | 15/16 | 0.82 | 1.7 s (CPU) |
+| whole_corpus | 16/16 by construction | - | - |
+
+BQ-002 moves from rank 4 to 1. BQ-026 stays at rank 2 (the FAQ's contradicting entry is still first; the answer step
+prefers the hardship table and notes the conflict). Paraphrases that keyword search missed entirely (proof of
+earnings, a bereaved customer) are now found. Still to do once the API key has credit: `--answers`, which compares
+answer quality between hybrid_rerank and whole_corpus, then pick the default.
