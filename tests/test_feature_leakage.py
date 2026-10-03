@@ -96,7 +96,7 @@ def test_sample_exercises_the_features(con, sample):
     full = _features(con, sample)
     assert any(f["contacts_30d"] for f in full.values())
     assert any(f["resolved_ptp_all"] for f in full.values())
-    assert any(f["snapshots_observed_12m"] for f in full.values())
+    assert any(f["worst_dpd_12m"] is not None for f in full.values())
 
 
 @pytest.fixture(scope="module")

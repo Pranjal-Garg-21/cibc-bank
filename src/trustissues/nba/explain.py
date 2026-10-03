@@ -99,7 +99,6 @@ TEMPLATES = {
     "days_since_last_contact": lambda v: f"Last contacted {_n(v, 'day')} ago",
     "grace_days": lambda v: f"{_n(v, 'grace day')} after the due date",
     "resolved_ptp_all": lambda v: f"{_n(v, 'earlier promise')} resolved",
-    "snapshots_observed_12m": lambda v: f"{_n(v, 'account snapshot')} in the last year",
     "days_since_snapshot": lambda v: f"Last account snapshot {_n(v, 'day')} old",
     "snapshot_account_level": lambda v: "Snapshot for the promised account" if v else "Snapshot across all accounts",
     "overlimit_last_snapshot": lambda v: "Over the limit at the last snapshot" if v else "Within the limit at the last snapshot",

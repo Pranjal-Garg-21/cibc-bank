@@ -41,16 +41,16 @@ Reliability (score deciles):
 ## v0 LightGBM vs the incumbent
 
 Trained on 127,642 promises created before 2026-05-01, early-stopped
-(best iteration 576) and isotonic-calibrated on the 12,140 promises created
-from then until 2026-06-30. 45 features from `features/sql/`.
+(best iteration 431) and isotonic-calibrated on the 12,140 promises created
+from then until 2026-06-30. 44 features from `features/sql/`.
 Same 32,869 holdout promises for both models.
 
 | Metric | Incumbent ptp_break | v0 (calibrated) | v0 (raw) | v0 without amount features |
 |---|---|---|---|---|
-| AUC | 0.6946 | 0.9503 | 0.9506 | 0.6907 |
-| Brier score | 0.2293 | 0.0857 | 0.0858 | 0.2193 |
-| Calibration error | 0.1120 | 0.0177 | 0.0128 | 0.0873 |
-| Caught in riskiest 20% | 27.0% | 32.5% | 32.5% | 26.1% |
+| AUC | 0.6946 | 0.9499 | 0.9501 | 0.6891 |
+| Brier score | 0.2293 | 0.0861 | 0.0862 | 0.2192 |
+| Calibration error | 0.1120 | 0.0182 | 0.0125 | 0.0849 |
+| Caught in riskiest 20% | 27.0% | 32.5% | 32.5% | 26.0% |
 | Promises | 32,869 | 32,869 | 32,869 | 32,869 |
 
 The riskiest 20% can hold at most 20% / 61.4% = 32.5% of
@@ -73,10 +73,10 @@ Calibration matters here: the broken rate is 61.4% on the holdout, against
 |---|---|
 | Promises scored | 32,869 |
 | Broken rate (actual) | 61.4% |
-| Mean score | 0.628 |
-| AUC | **0.9503** |
-| Brier score (lower is better) | 0.0857 |
-| Expected calibration error | 0.0177 |
+| Mean score | 0.629 |
+| AUC | **0.9499** |
+| Brier score (lower is better) | 0.0861 |
+| Expected calibration error | 0.0182 |
 | Broken promises caught in riskiest 20% | **32.5%** |
 | Broken rate inside riskiest 20% | 100.0% |
 
@@ -84,38 +84,38 @@ Reliability (score deciles):
 
 | Decile | Promises | Mean score | Actual broken rate |
 |---|---|---|---|
-| 1 | 6,273 | 0.002 | 0.003 |
-| 2 | 2,247 | 0.178 | 0.203 |
-| 3 | 4,433 | 0.439 | 0.405 |
-| 4 | 3,295 | 0.739 | 0.705 |
-| 5 | 3,267 | 0.800 | 0.744 |
-| 6 | 2,731 | 0.965 | 0.944 |
-| 7 | 10,623 | 0.999 | 0.997 |
+| 1 | 6,175 | 0.000 | 0.000 |
+| 2 | 3,683 | 0.200 | 0.215 |
+| 3 | 3,288 | 0.537 | 0.493 |
+| 4 | 735 | 0.700 | 0.664 |
+| 5 | 5,768 | 0.789 | 0.738 |
+| 6 | 2,287 | 0.961 | 0.937 |
+| 7 | 10,933 | 0.999 | 0.997 |
 
 ### SHAP check (mean |SHAP| on a holdout sample, top 20)
 
 | Rank | Feature | Mean abs SHAP (log-odds) |
 |---|---|---|
-| 1 | `ptp_to_overdue_ratio` | 4.6680 |
-| 2 | `dpd_at_creation` | 0.6902 |
-| 3 | `ptp_amount` | 0.2824 |
-| 4 | `product` | 0.2269 |
-| 5 | `min_due_to_ptp_amount` | 0.1676 |
-| 6 | `overdue_at_creation` | 0.1472 |
-| 7 | `balance_to_limit` | 0.0958 |
-| 8 | `card_utilisation` | 0.0953 |
-| 9 | `days_to_due_at_creation` | 0.0563 |
-| 10 | `payment_made_last_snapshot` | 0.0395 |
-| 11 | `contacts_30d` | 0.0377 |
-| 12 | `days_since_snapshot` | 0.0312 |
-| 13 | `calls_30d` | 0.0281 |
-| 14 | `salary_change_pct` | 0.0276 |
-| 15 | `days_since_last_contact` | 0.0276 |
-| 16 | `ptp_amount_to_salary` | 0.0275 |
-| 17 | `salary_last` | 0.0273 |
-| 18 | `dpd_last_snapshot` | 0.0247 |
-| 19 | `days_since_last_broken` | 0.0233 |
-| 20 | `snapshots_observed_12m` | 0.0214 |
+| 1 | `ptp_to_overdue_ratio` | 4.5657 |
+| 2 | `dpd_at_creation` | 0.6605 |
+| 3 | `ptp_amount` | 0.2489 |
+| 4 | `product` | 0.2131 |
+| 5 | `overdue_at_creation` | 0.1565 |
+| 6 | `min_due_to_ptp_amount` | 0.1357 |
+| 7 | `card_utilisation` | 0.0953 |
+| 8 | `balance_to_limit` | 0.0839 |
+| 9 | `days_to_due_at_creation` | 0.0573 |
+| 10 | `contacts_30d` | 0.0471 |
+| 11 | `payment_made_last_snapshot` | 0.0386 |
+| 12 | `calls_30d` | 0.0275 |
+| 13 | `days_since_snapshot` | 0.0230 |
+| 14 | `salary_change_pct` | 0.0224 |
+| 15 | `ptp_amount_to_salary` | 0.0214 |
+| 16 | `salary_last` | 0.0208 |
+| 17 | `days_since_last_contact` | 0.0197 |
+| 18 | `dpd_last_snapshot` | 0.0195 |
+| 19 | `payment_method_promised` | 0.0173 |
+| 20 | `days_since_last_broken` | 0.0172 |
 <!-- /section:v0 -->
 
 <!-- section:action_values -->
@@ -181,29 +181,29 @@ interval includes zero, so cheap channels the customer responds to win, and a ca
 
 | Action | Best before capacity | Final | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
-| `wait` | 33,276 | 33,734 | 0.70 | 0.00 | 0 |
-| `email_reminder` | 15,984 | 16,163 | 0.63 | 5.54 | 16,163 |
-| `push_reminder` | 14,112 | 14,136 | 0.64 | 5.32 | 14,136 |
+| `wait` | 33,276 | 33,735 | 0.70 | 0.00 | 0 |
+| `email_reminder` | 15,968 | 16,141 | 0.63 | 5.53 | 16,141 |
+| `push_reminder` | 14,120 | 14,143 | 0.64 | 5.31 | 14,143 |
 | `support_call` | 12,357 | 12,357 | 0.72 | 0.00 | 12,357 |
-| `sms_reminder` | 5,329 | 5,415 | 0.63 | 10.46 | 5,415 |
-| `letter` | 3,833 | 3,000 | 0.71 | 8.50 | 39 |
-| `agent_call` | 1,168 | 1,254 | 0.67 | 16.13 | 41 |
+| `sms_reminder` | 5,326 | 5,420 | 0.63 | 10.48 | 5,420 |
+| `letter` | 3,834 | 3,000 | 0.71 | 8.48 | 39 |
+| `agent_call` | 1,178 | 1,263 | 0.67 | 15.95 | 41 |
 
 Capacity on 2026-09-28 (`channel_capacity`; 720 agents on shift with
-62,028 outbound calls between them, 48,417 left unused):
+62,028 outbound calls between them, 48,408 left unused):
 
 | Channel | Capacity | Used |
 |---|---|---|
-| email | 60,000 | 16,163 |
+| email | 60,000 | 16,141 |
 | mail | 3,000 | 3,000 |
-| phone | 68,976 | 13,611 |
-| push | 30,000 | 14,136 |
-| sms | 40,000 | 5,415 |
+| phone | 68,976 | 13,620 |
+| push | 30,000 | 14,143 |
+| sms | 40,000 | 5,420 |
 
 | Approval reason | Cases |
 |---|---|
-| none | 37,908 |
-| digital_batch | 35,539 |
+| none | 37,918 |
+| digital_batch | 35,529 |
 | hardship | 6,841 |
 | vulnerability | 5,516 |
 | high_balance | 255 |
@@ -228,13 +228,13 @@ A support call was due but a contact rule blocked it:
 
 | Rule | Cases |
 |---|---|
-| `consent` | 2,251 |
+| `consent` | 2,252 |
 | `contact_limit` | 1,066 |
 | `open_dispute` | 672 |
 | `represented_by_third_party` | 552 |
 | `cease_contact` | 386 |
 | `experiment_holdout` | 268 |
-| `do_not_call` | 216 |
+| `do_not_call` | 215 |
 | `insolvency` | 1 |
 
 Cases where a rule (or capacity) removed at least one action:
@@ -248,7 +248,7 @@ Cases where a rule (or capacity) removed at least one action:
 | `cease_contact` | 2,412 |
 | `experiment_holdout` | 1,667 |
 | `do_not_call` | 950 |
-| `no_capacity` | 833 |
+| `no_capacity` | 834 |
 | `insolvency` | 3 |
 
 Example decision card:
@@ -257,26 +257,26 @@ Example decision card:
 {
   "recommended_action": "agent_call",
   "channel": "phone",
-  "risk_score": 0.8254,
+  "risk_score": 0.7864,
   "top_reasons": [
     {
       "feature": "primary_product",
       "text": "Product: personal_loan",
-      "contribution": 0.2608
+      "contribution": 0.2444
     },
     {
       "feature": "open_ptp_to_overdue_ratio",
       "text": "No open promise to pay",
-      "contribution": 0.127
+      "contribution": 0.1598
     },
     {
       "feature": "balance_to_limit",
       "text": "Balance at 17% of the limit",
-      "contribution": 0.1172
+      "contribution": 0.0879
     }
   ],
   "runner_up_action": "push_reminder",
-  "why_beat_runner_up": "Expected net $16.61 vs $14.49 for push_reminder ($2.11 more after contact cost)",
+  "why_beat_runner_up": "Expected net $15.71 vs $13.81 for push_reminder ($1.90 more after contact cost)",
   "blocked_actions": [
     {
       "action": "email_reminder",
@@ -286,7 +286,7 @@ Example decision card:
   "evidence": [],
   "requires_approval": false,
   "approval_reason": null,
-  "summary": "High risk of not being paid up in 30 days (0.83): Product: personal_loan; No open promise to pay. Call the customer.",
+  "summary": "High risk of not being paid up in 30 days (0.79): Product: personal_loan; No open promise to pay. Call the customer.",
   "support_reason": null,
   "hardship_options": []
 }
@@ -301,15 +301,15 @@ Every collections case open at a month-end is a row; label 1 = it was **not** pa
 (the promise model only covers cases with one). Trained on 133,921 rows with month-ends before
 2026-04-30, early-stopped and isotonic-calibrated on 34,786 rows up to 2026-06-30,
 tested on the 77,966 rows of the month-ends the bank scored (2026-06-30 onwards).
-53 features: the case so far (`case_state.sql`) plus the promise history, arrears, liquidity,
+52 features: the case so far (`case_state.sql`) plus the promise history, arrears, liquidity,
 payday and contact-response groups shared with the promise model. Same 74,008 case-month rows
 for both models; the bank's score is turned into a risk as 1 - `cure_30d`.
 
 | Metric | Incumbent cure_30d | Case v0 (calibrated) |
 |---|---|---|
-| AUC | 0.7250 | 0.8373 |
-| Brier score | 0.2180 | 0.1278 |
-| Calibration error | 0.2508 | 0.0873 |
+| AUC | 0.7250 | 0.8382 |
+| Brier score | 0.2180 | 0.1276 |
+| Calibration error | 0.2508 | 0.0868 |
 | Caught in riskiest 20% | 23.4% | 24.9% |
 | Promises | 74,008 | 74,008 |
 
@@ -320,10 +320,10 @@ The not-cured rate drifts upward: 41.1% in train, 62.3% in valid,
 |---|---|
 | Promises scored | 77,966 |
 | Broken rate (actual) | 80.3% |
-| Mean score | 0.716 |
-| AUC | **0.8372** |
-| Brier score (lower is better) | 0.1278 |
-| Expected calibration error | 0.0873 |
+| Mean score | 0.717 |
+| AUC | **0.8383** |
+| Brier score (lower is better) | 0.1276 |
+| Expected calibration error | 0.0868 |
 | Broken promises caught in riskiest 20% | **24.9%** |
 | Broken rate inside riskiest 20% | 99.9% |
 
@@ -331,39 +331,39 @@ Reliability (score deciles):
 
 | Decile | Promises | Mean score | Actual broken rate |
 |---|---|---|---|
-| 1 | 7,146 | 0.274 | 0.406 |
-| 2 | 8,160 | 0.459 | 0.566 |
-| 3 | 7,717 | 0.548 | 0.656 |
-| 4 | 2,495 | 0.635 | 0.723 |
-| 5 | 11,481 | 0.652 | 0.783 |
-| 6 | 7,331 | 0.748 | 0.870 |
-| 7 | 9,641 | 0.828 | 0.940 |
-| 8 | 6,516 | 0.919 | 0.977 |
-| 9 | 3,047 | 0.977 | 0.996 |
-| 10 | 14,432 | 0.998 | 1.000 |
+| 1 | 7,612 | 0.281 | 0.418 |
+| 2 | 7,047 | 0.463 | 0.575 |
+| 3 | 8,309 | 0.539 | 0.628 |
+| 4 | 2,793 | 0.640 | 0.743 |
+| 5 | 12,556 | 0.667 | 0.791 |
+| 6 | 6,953 | 0.749 | 0.874 |
+| 7 | 8,150 | 0.827 | 0.948 |
+| 8 | 8,218 | 0.928 | 0.982 |
+| 9 | 7,262 | 0.993 | 0.998 |
+| 10 | 9,066 | 0.999 | 1.000 |
 
 ### SHAP check (mean |SHAP| on a holdout sample, top 20)
 
 | Rank | Feature | Mean abs SHAP (log-odds) |
 |---|---|---|
-| 1 | `card_utilisation` | 0.3855 |
-| 2 | `open_ptp_to_overdue_ratio` | 0.1828 |
-| 3 | `case_age_days` | 0.1377 |
-| 4 | `balance_to_limit` | 0.1200 |
-| 5 | `primary_product` | 0.1108 |
-| 6 | `case_rpc` | 0.0759 |
-| 7 | `overdue_vs_entry` | 0.0714 |
-| 8 | `dpd_now` | 0.0553 |
-| 9 | `days_to_open_ptp_due` | 0.0474 |
-| 10 | `call_rpc_rate_30d` | 0.0268 |
-| 11 | `days_since_last_contact` | 0.0240 |
-| 12 | `case_contacts` | 0.0229 |
-| 13 | `days_since_last_broken` | 0.0224 |
-| 14 | `salary_last` | 0.0217 |
-| 15 | `contacts_30d` | 0.0194 |
-| 16 | `overdue_now` | 0.0186 |
-| 17 | `days_since_case_contact` | 0.0140 |
-| 18 | `entry_overdue` | 0.0106 |
-| 19 | `payment_made_last_snapshot` | 0.0100 |
-| 20 | `dpd_change_since_open` | 0.0089 |
+| 1 | `card_utilisation` | 0.4628 |
+| 2 | `open_ptp_to_overdue_ratio` | 0.2351 |
+| 3 | `case_age_days` | 0.1560 |
+| 4 | `balance_to_limit` | 0.1279 |
+| 5 | `primary_product` | 0.1157 |
+| 6 | `overdue_vs_entry` | 0.0836 |
+| 7 | `dpd_now` | 0.0685 |
+| 8 | `case_rpc` | 0.0641 |
+| 9 | `days_to_open_ptp_due` | 0.0533 |
+| 10 | `call_rpc_rate_30d` | 0.0449 |
+| 11 | `case_contacts` | 0.0348 |
+| 12 | `salary_last` | 0.0295 |
+| 13 | `overdue_now` | 0.0278 |
+| 14 | `days_since_last_broken` | 0.0278 |
+| 15 | `contacts_30d` | 0.0231 |
+| 16 | `days_since_last_contact` | 0.0211 |
+| 17 | `days_since_case_contact` | 0.0193 |
+| 18 | `payment_made_last_snapshot` | 0.0156 |
+| 19 | `entry_overdue` | 0.0154 |
+| 20 | `dpd_change_since_open` | 0.0152 |
 <!-- /section:case_v0 -->

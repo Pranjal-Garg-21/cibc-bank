@@ -159,15 +159,15 @@ python -m pytest tests -q
 |---|---|
 | 1 Spine | train 127,642 · valid 12,140 · holdout 32,869 (= every resolved promise the incumbent scored). Broken rate 36.9% / 51.4% / 61.4% |
 | 2 Incumbent | AUC **0.695**, Brier 0.229, top-20% capture 27.0% (ceiling at a 61% broken rate is 32.5%) |
-| 3 Features | 45 features, 6 SQL files, leakage test passes (and catches an injected 1-day look-ahead) |
-| 4 v0 | AUC **0.950**, Brier 0.086, top-20% capture 32.5%. **Without the promise-amount features: AUC 0.690**, level with the incumbent. See below |
+| 3 Features | 44 features (45 until `snapshots_observed_12m` was dropped, see the fairness check), 6 SQL files, leakage test passes (and catches an injected 1-day look-ahead) |
+| 4 v0 | AUC **0.950**, Brier 0.086, top-20% capture 32.5%. **Without the promise-amount features: AUC 0.689**, level with the incumbent. See below |
 | 5 Feast | `feast apply` works; historical retrieval = computed features for 20 promises × 6 views. Redis online store removed (step 5) |
 | 6 Rules, hardship | Pure logic with tests (hard stops, consent default-deny, contact cap, hours; hardship never harsher, programme eligibility) |
 | 7 Action data | `warehouse/p3/action_values.parquet` + report section |
 | NBA queue | `nba/actions.py` (values), `nba/allocate.py` (capacity), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`; every case has a case-model risk. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
 | Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and 36,020 hardship / vulnerability / high-balance cases each waiting for an approval before the hardship routing fix, **8,306 after it** (see below); 12,612 after the Do Not Call fix |
 | Fairness | `nba/fairness.py` → `reports/fairness_report.md`: both models (ours and the bank's, same holdout rows) and the morning queue compared across gender, age band, marital status, citizenship, newcomer programme, accessibility needs, dependants and preferred language, plus a proxy audit. Protected attributes are read only here (`sources.protected_attributes`, enforced by a test). See "Fairness check (3 Oct)" below |
-| Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.837 vs the bank's `cure_30d` 0.725 |
+| Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.838 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):
 
@@ -208,7 +208,7 @@ For each open case: rules → case risk → value each allowed action → hardsh
 
 - **Risk (every case)**: the case model `case_nocure_v0`, the chance an open case is *not* paid up and closed
   within 30 days. Rows = every case open at a month-end since Jan 2024 (246,673); features = `case_state.sql`
-  plus the shared promise-history, arrears, liquidity, payday and contact groups. Holdout AUC **0.837 vs 0.725**
+  plus the shared promise-history, arrears, liquidity, payday and contact groups. Holdout AUC **0.838 vs 0.725**
   for the bank's `cure_30d` on the same case-months, better calibrated too. Point-in-time tested (incl. the
   day-k arrears, which are only used once known). The promise model still scores open promises; its break
   risk is shown on the card.
@@ -321,29 +321,54 @@ still unused. The contact-limit count rises because those calls are no longer bl
 `python -m trustissues.nba.fairness` writes `reports/fairness_report.md` (12 seconds). Protected attributes come from
 the CRM through one source, `sources.protected_attributes` (`use="fairness"`), the only source allowed protected
 columns; a test fails if any module other than `nba/fairness.py` reads it. The report shows aggregates of groups of at
-least 100 people. It is a screen for review (thresholds in the module docstring), not a legal test. Vulnerability is
-not compared: it is a safeguard that deliberately changes treatment.
+least 100 people. It is a screen for review (thresholds in the module docstring), not a legal test. A model flag
+needs the difference to pass the threshold **and** be at least 1.96 standard errors (two-proportion test for the
+ratios, sampling error for calibration; AUC only with 100+ rows of each outcome): without that, groups of a few
+hundred rows flagged and unflagged at random between two retrains of the same model. Vulnerability is not compared:
+it is a safeguard that deliberately changes treatment.
 
-**What it found on the 28 Sep data.**
+**What it found on the 28 Sep data** (after the retrain below).
 - **Morning queue: no flags.** For cases without a hardship or vulnerability flag, every group gets collections
   contact at 1.00–1.06 times what its risk alone predicts. Raw contact rates differ (marital status 33–50%) because
   hardship and vulnerability flags differ by group, and those cases get support calls instead.
 - **Our models are better calibrated across groups than the bank's.** The bank's case score understates the risk of
-  separated customers by 0.31 (overall 0.25) and of customers 65+ by 0.18; its promise score understates Arabic
-  speakers' by 0.16. Flags: promise model 4 ours / 7 the bank's; case model 8 ours / 2 the bank's.
-- **Most of our flags are selection differences that follow real outcome differences**: e.g. 19.4% of 55–64s are in
-  our riskiest 20% against 24.4% of 25–34s, and their actual not-cured rates are 73.0% and 82.9%. Each flag in the
-  report shows the actual rates next to it.
-- **To review:** small language groups. The case model's AUC is 0.783 for Tagalog speakers (332 rows; overall 0.837),
-  and it catches 25.0% of Punjabi speakers' uncured cases against 34.3% of Arabic speakers' although Punjabi
-  speakers fail to cure more often (80.4% vs 75.5%).
-- **Proxy audit:** the case model's features predict newcomer-programme membership with AUC 0.653, mostly through
-  `entry_overdue`, `snapshots_observed_12m` and `balance_to_limit`. `snapshots_observed_12m` measures how much account
-  history there is (short for newcomers); it was already noted as a feature that tracks the data period rather than
-  the customer. Next step: retrain the case model without it and compare AUC and this proxy AUC. Every other attribute
-  is at 0.50–0.58.
+  separated customers by 0.31 (overall 0.25) and of customers 65+ by 0.18; its promise score understates separated
+  customers' by 0.16. Flags: promise model 5 ours / 3 the bank's; case model 8 ours / 2 the bank's. The bank's flags
+  are calibration errors; most of ours are selection differences.
+- **Most of our flags follow real outcome differences**: e.g. 18.0% of 55–64s are in our case model's riskiest 20%
+  against 22.8% of 25–34s, and their actual not-cured rates are 73.0% and 82.9%. Each flag shows the actual rates.
+- **To review** (they go against the outcomes, in small groups):
+  - Promise model, Arabic speakers (197 rows): it catches 33.1% of their broken promises against 45.7% for Punjabi
+    speakers, although they break more often (69.0% vs 59.9%), and its score is 0.053 below the actual rate.
+  - Case model, Punjabi speakers (912 rows): 18.2% in the riskiest 20% against 24.7% of Arabic speakers, although
+    they fail to cure more often (80.4% vs 75.5%).
+  - Case model, 3+ dependants (170 rows): 14.1% in the riskiest 20% against 22.6% with 2 dependants, at similar
+    actual rates (78.2% vs 81.7%).
+- **Proxy audit:** the case model's features predict newcomer-programme membership with AUC 0.643, every other
+  attribute 0.50–0.58. See the follow-up below.
 - **Not a protected group, but found here:** 2,568 open cases point at a CRM customer that does not exist (DQ check
   R1). They get no contact at all (no consent record, so the rules default to deny), and the case model understates
   their risk (gap −0.146 vs −0.087 overall) because the customer-keyed features are missing. Identity resolution
   (the golden record) fixes both.
 
+**Follow-up: `snapshots_observed_12m` removed (3 Oct).** The first run of the proxy audit put this feature (how many
+quarterly account snapshots the customer had in the 12 months before) among the top carriers of newcomer status
+(AUC 0.653). It also tracks the data period: the snapshot history starts at the end of 2023, so 21% of 2024 rows
+have all four snapshots against 65% in 2025. Retrained both models without it:
+
+| | With it | Without it |
+|---|---|---|
+| Promise model holdout AUC (calibrated) | 0.9506 | 0.9499 |
+| Case model holdout AUC | 0.8373 | 0.8382 |
+| Newcomer proxy AUC, case model features | 0.653 | 0.643 |
+| Newcomer proxy AUC, promise model features | 0.722 | 0.713 |
+
+No accuracy lost, so it was removed from `features/sql/delinquency.sql` (one definition, so from both models and
+the Feast view); 203 of 86,059 queue decisions changed. But the proxy barely moved, and the first explanation was
+wrong: newcomers have *more* snapshots on average (2.76 vs 2.22), not fewer. No single feature carries newcomer
+status (removing any one of the top eight leaves the proxy at 0.72–0.73). For the promise features much of it is
+timing: the newcomer share of customers rose from 7.6% to 11.5% over 2025–26, so the date alone predicts it at 0.663.
+Within a single quarter the features still reach 0.66–0.68, spread over ordinary financial features (amounts,
+balances). Removing features cannot take that out without removing the model; the safeguard is the outcome check
+above, which shows both models calibrated for newcomers (no newcomer calibration flag for ours; the bank's promise
+score has one).

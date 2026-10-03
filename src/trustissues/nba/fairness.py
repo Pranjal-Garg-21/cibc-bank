@@ -18,7 +18,11 @@ They are joined back here, and only here, by crm_customer_id (`sources.protected
 Screening thresholds (a screen for review, not a legal test): calibration gap more than CALIBRATION_TOLERANCE
 away from overall; group AUC more than AUC_TOLERANCE below overall; selection or true positive rate ratio
 (lowest / highest group) below FOUR_FIFTHS; contact observed / expected outside [FOUR_FIFTHS, 1 / FOUR_FIFTHS];
-proxy AUC at least PROXY_AUC_FLAG. Only aggregates are written; groups under MIN_GROUP people are left out.
+proxy AUC at least PROXY_AUC_FLAG. A model flag also needs the difference to be clear of noise: Z or more standard
+errors (two-proportion test for the ratios, the group's sampling error for calibration), and an AUC flag needs
+MIN_AUC_CLASS rows of each outcome in the group. Without this, small groups (a few hundred rows) flagged and
+unflagged at random between two retrains of the same model. Only aggregates are written; groups under MIN_GROUP
+people are left out.
 Vulnerability is not compared: it is a safeguard that deliberately changes treatment (nba/hardship.py).
 """
 from __future__ import annotations
@@ -39,6 +43,8 @@ CALIBRATION_TOLERANCE = 0.05
 AUC_TOLERANCE = 0.05
 FOUR_FIFTHS = 0.8
 PROXY_AUC_FLAG = 0.60
+Z = 1.96  # a flagged difference must be at least this many standard errors (5% two-sided)
+MIN_AUC_CLASS = 100  # rows of each outcome a group needs before its AUC can be flagged
 NOT_RECORDED = "not recorded"
 NOT_IN_CRM = "not in CRM"  # the case points at a CRM customer that does not exist (DQ check R1): not a protected group
 COLLECTIONS = ("agent_call", "sms_reminder", "email_reminder", "push_reminder", "letter")
@@ -124,7 +130,7 @@ def model_by_group(df: pd.DataFrame, groups: pd.DataFrame, attr: str) -> tuple[p
     for g, x in d.groupby(attr):
         if len(x) < MIN_GROUP:
             continue
-        r = {"group": g, "n": len(x), "actual": x["label"].mean()}
+        r = {"group": g, "n": len(x), "actual": x["label"].mean(), "pos": int(x["label"].sum())}
         for m in ("ours", "bank"):
             pos = x[x["label"] == 1]
             r |= {f"mean_{m}": x[m].mean(), f"cal_{m}": x[m].mean() - x["label"].mean(),
@@ -134,22 +140,33 @@ def model_by_group(df: pd.DataFrame, groups: pd.DataFrame, attr: str) -> tuple[p
     return pd.DataFrame(rows).sort_values("n", ascending=False), overall
 
 
+def _clear(p1: float, n1: int, p2: float, n2: int) -> bool:
+    """Two-proportion z-test: is the difference at least Z standard errors?"""
+    p = (p1 * n1 + p2 * n2) / (n1 + n2)
+    se = np.sqrt(p * (1 - p) * (1 / n1 + 1 / n2))
+    return se > 0 and abs(p1 - p2) / se >= Z
+
+
 def model_flags(t: pd.DataFrame, overall: dict, m: str) -> list[str]:
     """Screening flags across the recorded groups (missing attribute and not-in-CRM rows are shown, not screened)."""
     t = t[~t["group"].isin((NOT_IN_CRM, NOT_RECORDED))].set_index("group")
     flags = []
     cal = (t[f"cal_{m}"] - overall[m]["cal"]).abs()
-    if len(cal) and cal.max() > CALIBRATION_TOLERANCE:
+    se = np.sqrt(t["actual"] * (1 - t["actual"]) / t["n"])
+    cal = cal[(cal > CALIBRATION_TOLERANCE) & (cal > Z * se)]
+    if len(cal):
         g = cal.idxmax()
         flags.append(f"calibration gap {t.loc[g, f'cal_{m}']:+.3f} for {g} (n={t.loc[g, 'n']:,}; overall "
                      f"{overall[m]['cal']:+.3f})")
-    aucs = t[f"auc_{m}"].dropna()
+    sized = (t["pos"] >= MIN_AUC_CLASS) & (t["n"] - t["pos"] >= MIN_AUC_CLASS)
+    aucs = t.loc[sized, f"auc_{m}"].dropna()
     if len(aucs) and overall[m]["auc"] - aucs.min() > AUC_TOLERANCE:
         g = aucs.idxmin()
         flags.append(f"AUC {aucs.min():.3f} for {g} (n={t.loc[g, 'n']:,}; overall {overall[m]['auc']:.3f})")
-    for k, name in (("sel", "riskiest-20% rate"), ("tpr", "bad outcomes caught")):
+    for k, name, size in (("sel", "riskiest-20% rate", t["n"]), ("tpr", "bad outcomes caught", t["pos"])):
         v = t[f"{k}_{m}"].dropna()
-        if len(v) > 1 and v.max() > 0 and v.min() / v.max() < FOUR_FIFTHS:
+        if len(v) > 1 and v.max() > 0 and v.min() / v.max() < FOUR_FIFTHS \
+                and _clear(v.min(), size[v.idxmin()], v.max(), size[v.idxmax()]):
             lo, hi = v.idxmin(), v.idxmax()
             flags.append(f"{name} {v.min():.1%} for {lo} (actual {t.loc[lo, 'actual']:.1%}) vs {v.max():.1%} for {hi} "
                          f"(actual {t.loc[hi, 'actual']:.1%}), ratio {v.min() / v.max():.2f}")
@@ -305,7 +322,9 @@ def build_report(con) -> str:
       f"calibration more than {CALIBRATION_TOLERANCE} away from overall, AUC more than {AUC_TOLERANCE} below "
       f"overall, a lowest / highest group ratio below {FOUR_FIFTHS} (the four-fifths rule of thumb), contact more "
       f"than {1 / FOUR_FIFTHS - 1:.0%} away from what the group's risk predicts, or features that predict an "
-      f"attribute with AUC {PROXY_AUC_FLAG} or more. Groups differ in how often they break promises or fail to cure, "
+      f"attribute with AUC {PROXY_AUC_FLAG} or more. A model flag also needs the difference to be at least {Z} "
+      f"standard errors, and an AUC flag {MIN_AUC_CLASS} rows of each outcome, so small groups are shown but not "
+      "flagged on noise. Groups differ in how often they break promises or fail to cure, "
       "so different selection rates are expected (each flag shows the groups' actual rates next to them); calibration "
       "within each group, and accuracy, are what say a score treats a group fairly.")
     w("")

@@ -64,3 +64,12 @@ def test_report_holds_aggregates_only():
     assert not ids & set(re.findall(r"\b[A-Z]{3}-\d{4}\b", text))
     for label in fairness.ATTRIBUTES.values():
         assert label in text
+
+
+def test_a_small_noisy_difference_is_shown_but_not_flagged():
+    """Two well-scored groups, one small: chance differences in a few hundred rows must not raise a flag."""
+    df, groups = _rows({"F": 3000, "M": 3000, "X": 150}, seed=5)
+    t, overall = fairness.model_by_group(df, groups, "gender_code")
+    assert "X" in set(t["group"])
+    for m in ("ours", "bank"):
+        assert not [f for f in fairness.model_flags(t, overall, m) if "for X" in f], fairness.model_flags(t, overall, m)
