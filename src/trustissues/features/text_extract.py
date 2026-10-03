@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from trustissues.common import config
-from trustissues.common.llm import LLM, LLMError
+from trustissues.common.llm import LLM, LLMError, LLMNotConfigured
 
 PROMPT_VERSION = "text_features_v1"
 
@@ -312,6 +312,11 @@ def run(con, items: list[TextItem], llm: LLM, *, workers: int = 6, note_batch: i
             b = futures[fut]
             try:
                 rows = fut.result()
+            except LLMNotConfigured as e:  # no key, no credit, limit reached: stop instead of failing every batch
+                for f in futures:
+                    f.cancel()
+                progress(f"  stopped: {str(e)[:200]}")
+                break
             except LLMError as e:
                 failed += len(b)
                 progress(f"  batch of {len(b)} failed: {str(e)[:120]}")

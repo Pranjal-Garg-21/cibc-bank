@@ -105,6 +105,8 @@ class OpenAICompatibleBackend:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 payload = json.load(resp)
         except urllib.error.HTTPError as e:  # keep the server's reason; never include the key
+            if e.code in (401, 402, 403):  # bad key, no credit, spending limit reached: retrying cannot help
+                raise LLMNotConfigured(f"HTTP {e.code} from {self.url}: {e.read()[:300].decode(errors='replace')}") from e
             raise LLMError(f"HTTP {e.code} from {self.url}: {e.read()[:300].decode(errors='replace')}") from e
         if payload.get("error"):  # some routers return 200 with an error object
             raise LLMError(f"provider error: {str(payload['error'])[:300]}")
