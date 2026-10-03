@@ -86,7 +86,7 @@ EXPECTED_NON_METRIC = {
     "BQ-001": "rag_corpus", "BQ-002": "rag_corpus", "BQ-005": "rag_corpus", "BQ-009": "rag_corpus",
     "BQ-019": "rag_corpus", "BQ-020": "rag_corpus", "BQ-026": "rag_corpus", "BQ-033": "rag_corpus",
     "BQ-016": "rag_customer", "BQ-021": "rag_customer", "BQ-022": "rag_customer",
-    "BQ-030": "incident", "BQ-035": "sql",
+    "BQ-030": "drivers", "BQ-035": "sql",
 }
 REFUSED = {"BQ-018", "BQ-023", "BQ-024", "BQ-029", "BQ-031"}
 

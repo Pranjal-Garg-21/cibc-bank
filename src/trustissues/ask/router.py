@@ -17,6 +17,8 @@ CALL_WORDS = r"\b(call|conversation|transcript|spoke|said|agree[ds]?|summari[sz]
 # Wording that asks for a rule or an instruction even when it contains analytic words.
 POLICY_ASK = r"\b(how long|can we|can (?:the )?agent|should|must|is .{1,40} needed|allowed|permitted to|what happens)\b"
 ANALYTIC = r"\b(what share|how many|rate|average|percentage|count of|compare|rank)\b"
+DRIVER_WORDS = (r"\b(what (?:drove|is driving|explains|caused)|drivers? of|"
+                r"why (?:did|has|have|was|were|is)\b.{0,80}\b(?:drop|fall|fell|dip|decline|decrease|rise|rose|increase|spike|change|improv\w*|worse\w*))")
 COUNT_WORDS = r"\b(how many|number of|count|share|rate|average|total|percentage|compare|rank|by)\b"
 
 
@@ -35,10 +37,14 @@ def route(question: str) -> Route:
     # A case ID plus call wording is a customer-specific RAG question; an ID alone is not enough.
     if case and re.search(CALL_WORDS, q, re.I) and not metric:
         return Route("rag_customer", case_id=case[0].upper(), why="case id with call wording")
+    if re.search(DRIVER_WORDS, q, re.I):
+        if re.search(r"(?:call|contact|outbound)\s+volume|number of (?:calls|contacts)", q, re.I):
+            return Route("drivers", metric_id="contact_volume", why="change in call volume")
+        if metric:
+            return Route("drivers", metric_id=metric, why=f"change in {metric}")
+        return Route("incident", why="explanation needs metric evidence plus cited incident records")
     if metric:
         return Route("metric", metric_id=metric, why=f"trigger for {metric}")
-    if re.search(r"\bwhy did\b.{0,60}\b(drop|fall|fell|dip|spike|rise|increase|decrease)\w*", q, re.I):
-        return Route("incident", why="explanation needs metric evidence plus cited incident records")
     policy = re.search(POLICY_WORDS, q, re.I)
     if policy and (re.search(POLICY_ASK, q, re.I) or not re.search(ANALYTIC, q, re.I)):
         return Route("rag_corpus", why="policy wording")

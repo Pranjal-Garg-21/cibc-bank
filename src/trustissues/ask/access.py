@@ -13,6 +13,7 @@ from .types import UserContext
 PATH_ROLES = {
     "metric": {"team_lead", "analyst"},
     "sql": {"team_lead", "analyst"},
+    "drivers": {"team_lead", "analyst"},
     "rag_corpus": {"agent", "team_lead", "analyst"},
     "rag_customer": {"agent", "team_lead"},
 }

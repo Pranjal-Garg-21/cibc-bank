@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date
+from datetime import date, timedelta
 from typing import Callable
 
 from trustissues.common.interfaces import RagRequest, RagResponse
@@ -11,6 +11,8 @@ from trustissues.common.interfaces import RagRequest, RagResponse
 from . import injection, refusal
 from .access import AccessDenied, CaseResolver, check_case, check_path, query_policy
 from .catalog import Unsupported, build_call
+from . import drivers as drivers_mod
+from .asof import parse_periods
 from .data.execute import QueryTimeout, execute
 from .data.metric_templates import render_metric
 from .data.validator import ValidationError, validate
@@ -78,6 +80,8 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
                         columns=fb.result.columns, rows=fb.result.rows, sources=["gold.semantic_*"],
                         notes=["Uncertified: this query was generated for this question and checked by the validator, "
                                "not by a reviewed metric definition."] + (["The first query needed one repair."] if fb.attempts > 1 else []))
+        if r.path == "drivers":
+            return _drivers(question, user, as_of_date, r, con, database, card)
         if r.path == "incident":
             check_path(user, "sql")
             return card("Explaining why a number changed needs incident and operations records, which are not "
@@ -121,3 +125,46 @@ def _metric(question, user, as_of, r, con, database, card) -> AnswerCard:
                     columns=res.columns, notes=call.notes)
     return card(_csv(res.columns, res.rows), "metric", metric_id=r.metric_id, sql=q.sql, parameters=q.parameters, certified=True,
                 columns=res.columns, rows=res.rows, notes=call.notes, sources=["gold.semantic_*"])
+
+
+def _drivers(question, user, as_of, r, con, database, card) -> AnswerCard:
+    check_path(user, "drivers")
+    periods = parse_periods(question, as_of)
+    if not periods:
+        return card("Which period moved? e.g. 'in September 2026' or 'on 23-24 September 2026'.", "cannot_answer",
+                    metric_id=r.metric_id)
+    # two periods named: the later one is the period being explained
+    ordered = sorted(periods[:2], key=lambda p: p.start)
+    current = ordered[-1]
+    explicit = ordered[0] if len(ordered) == 2 else None
+    previous = drivers_mod.comparison_period(current, explicit)
+    clamped = min(current.end, as_of + timedelta(days=1))  # no data exists after the as-of date
+    cut = clamped < current.end
+    current = type(current)(current.start, clamped, current.label)
+    notes = [] if explicit else [f"Compared with {previous.label} ({previous.start} to {previous.end - timedelta(days=1)})."]
+    if cut:
+        notes.append(f"The period is cut at the as-of date ({as_of}).")
+    params: dict = {}
+    call = None
+    if r.metric_id != "contact_volume":
+        call = build_call(question, r.metric_id, as_of)
+        if isinstance(call, Unsupported):
+            return card(call.reason, "cannot_answer", metric_id=r.metric_id)
+        params = call.parameters
+    try:
+        rep = drivers_mod.explain_metric(r.metric_id, params, current, previous, query_policy(user), con=con,
+                                         database=database, variant=call.variant if call else "default",
+                                         cap_at=call.cap_at if call else None)
+    except (drivers_mod.DriversUnsupported, ValueError, ValidationError, QueryTimeout) as e:
+        return card(f"I can't split this change reliably: {e}", "cannot_answer", metric_id=r.metric_id)
+    cols = ("rank", "dimension", "value", "contribution", "rate_effect", "mix_effect", "share_of_change", "before", "after")
+    rows = tuple((i + 1, s.dimension, s.value, round(s.contribution, 4), round(s.rate_effect, 4), round(s.mix_effect, 4),
+                  None if s.share_of_change is None else round(s.share_of_change, 3),
+                  None if s.before is None else round(s.before, 4), None if s.after is None else round(s.after, 4))
+                 for i, s in enumerate(rep.segments))
+    def num(x, sign=False):
+        return f"{x:{'+' if sign else ''},.0f}" if abs(x) >= 1000 else f"{x:{'+' if sign else ''}.4g}"
+    head = (f"summary: {r.metric_id.replace('_', ' ')} moved from {num(rep.total_before)} to {num(rep.total_after)} "
+            f"({num(rep.change, True)}).")
+    return card(head + "\n" + _csv(cols, rows), "drivers", metric_id=r.metric_id, certified=r.metric_id != "contact_volume",
+                columns=cols, rows=rows, sources=["gold.semantic_*"], notes=notes + rep.notes)
