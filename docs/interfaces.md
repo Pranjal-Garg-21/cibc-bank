@@ -39,3 +39,6 @@ Proposed shapes, taken from `implementation_plan.md` §7.1 and the `p1`–`p4` d
 4. **`apply_stubs`:** now raises `StubMismatch` if an existing table is missing a stub column or has a different type. Extra columns are allowed.
 5. **Tests:** the exact table set, history columns, outcome-column ordering, I6 dataclass fields, the mismatch check and the fixtures are covered. Still not done: types of every column, and checking the protected and PII lists against the generated `sensitivity.yaml`, which is not on `main` yet.
 6. **`decision_card` JSON (P3, app):** shape is the `DecisionCard` dataclass (action, channel, risk score, top reasons, runner-up, blocked actions, evidence quotes, approval fields, summary).
+7. **Fixture fixes:** `load_fixtures` refuses a real warehouse (only in-memory or a file named `*fixture*`). Fixture buckets now use the release labels (`1-30`, `31-60`, `61-90`), and the fixture decision card no longer claims email was blocked by consent when consent is `yes`.
+
+Still open: confirm the history grain; P2's `semantic_*` views; P3's explicit feature allow-list (the outcome list alone does not prevent leakage).

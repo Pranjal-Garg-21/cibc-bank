@@ -103,3 +103,28 @@ def test_fixtures_load_and_are_consistent():
         assert {r[0] for r in c.execute(f"SELECT golden_customer_id FROM gold.{t}").fetchall()} <= ids
     card = json.loads(c.execute("SELECT decision_card FROM gold.nba_decisions").fetchone()[0])
     assert set(card) == {f.name for f in dataclasses.fields(DecisionCard)}
+
+
+def test_fixtures_refuse_a_real_warehouse(tmp_path):
+    c = duckdb.connect(str(tmp_path / "trustissues.duckdb"))
+    with pytest.raises(RuntimeError):
+        load_fixtures(c)
+    c2 = duckdb.connect(str(tmp_path / "fixtures.duckdb"))
+    load_fixtures(c2)
+
+
+def test_fixture_buckets_use_release_labels():
+    c = duckdb.connect(":memory:")
+    load_fixtures(c)
+    allowed = {"current", "1-30", "31-60", "61-90", "91-120", "121-150", "151-180", "180+"}
+    used = {r[0] for r in c.execute("SELECT worst_bucket FROM gold.c360_customer UNION SELECT bucket FROM gold.c360_account "
+        "UNION SELECT bucket_start FROM gold.bucket_transitions UNION SELECT bucket_end FROM gold.bucket_transitions").fetchall()}
+    assert used <= allowed | {None}
+
+
+def test_fixture_decision_card_respects_consent():
+    c = duckdb.connect(":memory:")
+    load_fixtures(c)
+    card = json.loads(c.execute("SELECT decision_card FROM gold.nba_decisions").fetchone()[0])
+    consent = c.execute("SELECT consent_email FROM gold.customer_safeguards WHERE golden_customer_id='G-000001'").fetchone()[0]
+    assert not any(b["rule"] == "consent" and b["action"] == "email" for b in card["blocked_actions"]) or consent != "yes"
