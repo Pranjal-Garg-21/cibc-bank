@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import date, timedelta
 from typing import Callable
 
@@ -47,6 +48,24 @@ def classify(question: str, llm=None):
 def fake_rag(request: RagRequest) -> RagResponse:
     """Stand-in until P4's handler is wired: says plainly that it has no sources."""
     return RagResponse(answer=None, not_found=True, coverage="RAG handler not connected")
+
+
+def _natural(value):
+    """Sort key that puts '1-30' before '31-60' and '9' before '10', with missing values last."""
+    if value is None:
+        return (1, ())
+    return (0, tuple((0, int(t), "") if t.isdigit() else (1, 0, t.lower()) for t in re.findall(r"\d+|\D+", str(value))))
+
+
+def stable_rows(columns, rows, *, by: int | None = None):
+    """DuckDB returns grouped rows in a different order from run to run. Sort them by the group columns (those before
+    the first numeric result column, or the first `by` columns) so the same question gives the same table every time."""
+    rows = list(rows)
+    if by is None:
+        by = next((i for i, c in enumerate(columns) if c in ("metric_value", "numerator", "denominator")), 1)
+    if by <= 0 or len(rows) < 2:
+        return rows
+    return sorted(rows, key=lambda r: tuple(_natural(v) for v in r[:by]))
 
 
 def _csv(columns, rows) -> str:
@@ -99,8 +118,9 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
             if fb.result is None:
                 return card(f"I could not answer this reliably: {fb.reason}.", "cannot_answer", sql=fb.sql,
                             notes=["uncertified query rejected"])
-            return card(_csv(fb.result.columns, fb.result.rows), "sql", sql=fb.sql, certified=False,
-                        columns=fb.result.columns, rows=fb.result.rows, sources=["gold.semantic_*"],
+            rows = fb.result.rows if re.search(r"\border\s+by\b", fb.sql or "", re.I) else stable_rows(fb.result.columns, fb.result.rows, by=1)
+            return card(_csv(fb.result.columns, rows), "sql", sql=fb.sql, certified=False,
+                        columns=fb.result.columns, rows=rows, sources=["gold.semantic_*"],
                         notes=["Uncertified: this query was generated for this question and checked by the validator, "
                                "not by a reviewed metric definition."] + (["The first query needed one repair."] if fb.attempts > 1 else []))
         if r.path == "drivers":
@@ -142,7 +162,7 @@ def _metric(question, user, as_of, r, con, database, card) -> AnswerCard:
         if named and len(named) < len(rows):
             rows = named
             call.notes.append("Showing only the strategy cells named in the question.")
-    res = type(res)(res.columns, rows, res.elapsed_ms)
+    res = type(res)(res.columns, stable_rows(res.columns, rows), res.elapsed_ms)
     if not res.rows:
         return card("No rows matched.", "metric", metric_id=r.metric_id, sql=checked.sql, parameters=q.parameters, certified=True,
                     columns=res.columns, notes=call.notes)

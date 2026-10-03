@@ -71,3 +71,13 @@ def test_customer_rag_checks_assignment():
 def test_default_rag_is_honest_about_having_no_sources():
     a = ask("Is CASL express consent needed to send a collections payment reminder by email?", LEAD, as_of_date=AS_OF)
     assert a.path == "rag_corpus" and "do not contain" in a.answer
+
+
+def test_grouped_rows_come_back_in_a_stable_natural_order():
+    from trustissues.ask.service import stable_rows
+    cols = ["reported_bucket", "metric_value", "denominator"]
+    rows = [("61-90", 1, 1), ("1-30", 2, 2), ("180+", 3, 3), ("31-60", 4, 4), (None, 5, 5), ("121-150", 6, 6)]
+    got = [r[0] for r in stable_rows(cols, rows)]
+    assert got == ["1-30", "31-60", "61-90", "121-150", "180+", None]
+    assert stable_rows(cols, list(reversed(rows))) == stable_rows(cols, rows)
+    assert stable_rows(["metric_value"], [(2,), (1,)]) == [(2,), (1,)]  # no group column: left alone

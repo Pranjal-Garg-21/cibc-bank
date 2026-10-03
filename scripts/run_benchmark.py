@@ -17,6 +17,7 @@ def main() -> None:
     ap.add_argument("--out", default="submission.csv")
     ap.add_argument("--split", choices=["dev", "test", "all"], default="all")
     ap.add_argument("--llm", action="store_true", help="use the language model: policy answers and the SQL fallback")
+    ap.add_argument("--no-cache", action="store_true", help="bypass the LLM response cache: every model call is made fresh")
     ap.add_argument("--only", nargs="*", help="question ids to run")
     a = ap.parse_args()
     qs = B.read_questions(maple_data_dir() / "data" / "benchmark_questions.csv")
@@ -30,6 +31,8 @@ def main() -> None:
         from trustissues.ask.rag.policy_search import PolicyIndex
         from trustissues.ask.rag_handler import make_rag_handler
         llm = LLM()
+        if a.no_cache:
+            llm.cache = None
         kw = {"llm": llm, "rag": make_rag_handler(PolicyIndex.load(), llm)}
     rows = B.run(qs, database=Path(a.database), **kw)
     B.write_submission(rows, Path(a.out))
