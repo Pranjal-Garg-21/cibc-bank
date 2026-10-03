@@ -137,6 +137,7 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
                         columns=fb.result.columns, rows=rows, sources=["gold.semantic_*"],
                         notes=["Uncertified: this query was generated for this question and checked by the validator, "
                                "not by a reviewed metric definition."] + (["The first query needed one repair."] if fb.attempts > 1 else [])
+                              + ([f"Interpretation: {fb.assumptions}"] if fb.assumptions else [])
                               + _after_as_of_note(question, as_of_date))
         if r.path == "drivers":
             return _drivers(question, user, as_of_date, r, con, database, card)

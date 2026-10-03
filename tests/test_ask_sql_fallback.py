@@ -223,3 +223,13 @@ def test_repair_error_text_carries_no_numbers_from_the_data():
     from trustissues.ask.sql_fallback import _redact
     msg = _redact("Conversion Error: Could not convert 1e+30 to INT32 for value 42.5 at 'x'")
     assert "1e+30" not in msg and "42.5" not in msg and "'x'" not in msg
+
+
+def test_model_stated_interpretation_reaches_the_card_notes(con):
+    reply = dict(GOOD, assumptions="Read 'late stage' as the late_stage queue.")
+    card = ask(Q, LEAD, as_of_date=AS_OF, con=con, llm=ScriptedLLM(reply))
+    assert card.path == "sql" and "Interpretation: Read 'late stage' as the late_stage queue." in card.notes
+    plain = ask(Q, LEAD, as_of_date=AS_OF, con=con, llm=ScriptedLLM(dict(GOOD, assumptions="")))
+    assert not any(n.startswith("Interpretation") for n in plain.notes)
+    odd = ask(Q, LEAD, as_of_date=AS_OF, con=con, llm=ScriptedLLM(dict(GOOD, assumptions=["x"])))
+    assert not any(n.startswith("Interpretation") for n in odd.notes)

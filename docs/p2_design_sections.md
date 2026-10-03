@@ -54,12 +54,12 @@ The record holds what a screen needs: parsed parameters, the executed SQL, the s
 
 - **Safety layers are heuristics.** The rules and the model screen both pass what they do not recognise; the screen is told to allow when unsure, and a model failure leaves the rules' decision. Each layer can miss a request, and the screen can refuse a legitimate one (seen once).
 - **Certified does not mean correctly interpreted.** A certified card shows a reviewed template ran. It does not show the template answers the question as asked. Open cases: "touches per open case" can select the average-days-past-due metric; a request for a historical period the data cannot support (delinquency in August 2025) is answered at the as-of snapshot; a filter to one case on a portfolio metric is dropped. These are in the catalogue parser and are on the fix list.
-- **Generated SQL is tested on 30 questions**, mostly single-table or simple joins, and every answer is uncertified. The channel, direction and label checks are heuristics: a query can satisfy them and still use the wrong definition. "Late stage" can be read as the late-stage queue or the last two delinquency buckets, and the card does not yet say which. The 500-row cap limits returned rows, not rows scanned.
+- **Generated SQL is tested on 30 questions**, mostly single-table or simple joins, and every answer is uncertified. The channel, direction and label checks are heuristics: a query can satisfy them and still use the wrong definition. "Late stage" can be read as the late-stage queue or the last two delinquency buckets; the model is asked to state how it read an ambiguous word, and the card shows it as an "Interpretation" note, but the note is the model's own sentence and is not checked. The 500-row cap limits returned rows, not rows scanned.
 - **Reads outside the validator.** The case resolver and the policy retrieval query their tables directly.
 - **Certified history scans.** The roll-rate template joins the 12.6 million-row snapshot view twice.
 - **Concurrency is unmeasured.** Execution is serialised by a lock. The latency figures are single-user.
 - **Customer-call questions** wait for P4's function. One metric variant (BQ-014) is unsupported.
-- **Model-backed stages need the provider key at run time**, and the embedding matcher needs its model files (see the table above).
+- **Model-backed stages need the provider key at run time** (the configured model is the free tier of Nemotron 3 Super on OpenRouter, which is rate-limited), and the embedding matcher needs its model files (`fastembed` is in the main requirements; run `scripts/setup_router.py` once to download them).
 - **Not built:** the Ask screens, small-group disclosure limits for tiny breakdowns, the DeBERTa classifier, a compressed Radix Trie and a learned schema pruner that earlier drafts described.
 
 ---

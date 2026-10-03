@@ -7,7 +7,7 @@ name = "trustissues"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = ["duckdb>=1.1", "pyyaml", "openpyxl", "sqlglot", "networkx", "rank-bm25", "rich",
-                "splink>=5.0", "scipy", "pyarrow", "anthropic"]
+                "splink>=5.0", "scipy", "pyarrow", "anthropic", "fastembed==0.8.1", "pyahocorasick==2.3.1"]
 
 [project.optional-dependencies]
 dev = ["pytest"]

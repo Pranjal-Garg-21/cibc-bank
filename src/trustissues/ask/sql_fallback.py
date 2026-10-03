@@ -22,7 +22,7 @@ from .data.semantic import SCHEMAS
 from .data.validator import SAFE_FUNCTIONS, QueryPolicy, ValidationError, validate
 from .join_context import prompt_join_context
 
-PROMPT_VERSION = "ask_sql_v1"
+PROMPT_VERSION = "ask_sql_v2"
 
 TABLE_NOTES = {
     "gold.semantic_cases": "one row per collections case. Open case = outcome IS NULL. reported_bucket is the STORED "
@@ -52,11 +52,14 @@ Rules:
 9. Aggregate in the top-level SELECT. Do not wrap an aggregate query in an outer SELECT or subquery.
 10. 'Current bucket' always means the stored column reported_bucket, never canonical_bucket.
 11. If the schema cannot answer the question, return {{"sql": null, "reason": "<why>"}}.
+12. If a word in the question could mean more than one thing in this schema (for example 'late stage' could be a queue or
+    a delinquency bucket range), choose the most literal reading and say which in "assumptions", in one short sentence.
+    Use "" when nothing was ambiguous.
 
 Schema:
 {schema}
 
-Reply with JSON only: {{"sql": string or null, "reason": string}}"""
+Reply with JSON only: {{"sql": string or null, "reason": string, "assumptions": string}}"""
 
 
 def _schema_text() -> str:
@@ -198,14 +201,17 @@ class FallbackResult:
     result: QueryResult | None
     reason: str = ""
     attempts: int = 0
+    assumptions: str = ""  # how the model resolved an ambiguous word in the question, in its own words
 
 
-def _generate(llm, system: str, user: str, ctx: dict) -> tuple[str | None, str]:
+def _generate(llm, system: str, user: str, ctx: dict) -> tuple[str | None, str, str]:
     res = llm.complete(system=system, user=user, prompt_version=PROMPT_VERSION, tier="answer", json_output=True,
                        max_tokens=1200, audit_ctx=ctx)
     data = res.data if isinstance(res.data, dict) else {}
     sql = data.get("sql")
-    return (sql.strip().rstrip(";") if isinstance(sql, str) and sql.strip() else None), str(data.get("reason", ""))
+    note = data.get("assumptions")
+    note = " ".join(note.split())[:300] if isinstance(note, str) else ""
+    return (sql.strip().rstrip(";") if isinstance(sql, str) and sql.strip() else None), str(data.get("reason", "")), note
 
 
 def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=None, database=None,
@@ -219,7 +225,7 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
     ctx = {"kind": "sql", "input_text": question, "user_role": policy.role, "user_id": user_id, "sources": []}
     user = f"Question: {question}"
     try:
-        sql, reason = _generate(llm, system, user, ctx)
+        sql, reason, assumed = _generate(llm, system, user, ctx)
     except LLMError as e:
         return FallbackResult(None, None, f"the language model is unavailable ({type(e).__name__})", 1)
     attempts, last_sql = 1, sql
@@ -231,7 +237,7 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
             if problem:
                 raise ValueError(problem)
             checked = validate(sql, policy)
-            return FallbackResult(checked.sql, execute(checked, None, con=con, database=database), "", attempts)
+            return FallbackResult(checked.sql, execute(checked, None, con=con, database=database), "", attempts, assumed)
         except (ValidationError, QueryTimeout, ValueError) as e:
             err = f"{type(e).__name__}: {e}"
         except Exception as e:  # duckdb binder / conversion errors: also worth one repair, never a crash
@@ -246,7 +252,7 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
                     "No outer SELECT, no FROM (SELECT ...), no UNION.\n")
         hint += column_hint(err)
         try:
-            sql, reason = _generate(llm, system, f"Question: {question}\n\nYour previous SQL failed.\nSQL: {sql}\nError: {err}\n"
+            sql, reason, assumed = _generate(llm, system, f"Question: {question}\n\nYour previous SQL failed.\nSQL: {sql}\nError: {err}\n"
                                     f"{hint}Return a corrected query in the same JSON shape.", ctx)
         except LLMError as e:
             return FallbackResult(last_sql, None, f"the language model is unavailable ({type(e).__name__})", attempts)
