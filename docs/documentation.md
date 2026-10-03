@@ -26,16 +26,16 @@ Layer 1, Data Product Factory (owner P1). Legend: ✅ done and tested · 🟡 bu
 | 3.1 | `ingest/load_raw.py` (CSV, Parquet, transcript JSON) | 🟡 full load running (CSV tables done, large Parquet tables in progress) |
 | 3.1 | `ingest/manifest.py` | ✅ |
 | 3.1 | `ingest/schema_drift.py` | ✅ |
-| 3.1 | `ingest/dictionary.py` → `config/sensitivity.yaml` | 🟡 ran once on the real data. Since then added hand overrides and label inheritance for `std_*` columns (3 unit tests); **not yet re-run on the real data** |
+| 3.1 | `ingest/dictionary.py` → `config/sensitivity.yaml` | ✅ re-run on the real data after curation: overdraft decision applied, `std_*` columns inherit labels (3 unit tests), proxy false positive gone |
 | 3.2 | `curate/standardise.py` | ✅ 18 unit tests |
-| 3.2 | `curate/build_curated.py` + `config/curate.yaml` (generic, replaces per-table `sql/*.sql`, see D6) | 🟡 **Ran on 16 of 31 real tables** with no errors (0 exact duplicates, 0 cast failures except 1 column). Crashed on `external` (see D8), fixed with a regression test; the remaining 15 tables are being built |
+| 3.2 | `curate/build_curated.py` + `config/curate.yaml` (generic, replaces per-table `sql/*.sql`, see D6) | ✅ **Complete on the real data: all 31 tables**, verified by `scripts/verify_warehouse.py`. 0 exact duplicates; the one real defect (mixed date formats, 10% of `account_monthly_snapshot`) is recovered. Two bugs found and fixed on the way (D8, D9). Full report: [`curation.md`](curation.md) |
 | 3.2 | `curate/text_controls.py`, `mapping_assistant.py` | ⬜ |
 | 3.3 | identity (`nodes`, `rules`, `splink_model`, `second_opinion`, `review_queue`, `cluster`, `relationships`) | ⬜ |
 | 3.4 | gold (`survivorship`, `build_c360`, views, `publish`) | ⬜ |
 | 3.5 | quality (`contract_checks`, `anomaly`, `dq_report`) | ⬜ |
-| 3.6 | `pipeline.py` (runs ingest, dictionary, curate, labels with timings) | 🟡 written, not yet run end to end |
+| 3.6 | `pipeline.py` (runs ingest, dictionary, curate, labels with timings) | 🟡 written; each stage has been run on the real data separately, the single command has not been run end to end |
 | 3.6 | `contracts/c360_customer.yaml` | ⬜ |
-| — | `scripts/verify_warehouse.py` (row counts vs the release, curated reconciliation) | 🟡 written, not yet run on the real database |
+| — | `scripts/verify_warehouse.py` (row counts vs the release, curated reconciliation) | ✅ run on the real database: all 31 raw tables and all 31 curated tables pass |
 | — | `requirements.md` / `requirements.txt` (rebuild on your own machine) | ✅ |
 
 ## 2. Quick start
@@ -151,6 +151,8 @@ Covered by `tests/test_ingest_dynamic.py` and `tests/test_build_curated.py` (an 
 
 ## 6. Data findings
 
+The curated layer's findings (no exact duplicates, the mixed date formats, how well each identity field parses) are in [`curation.md`](curation.md). The notes below predate it.
+
 **Source of truth:** the dictionary and schema shipped inside `maple_data/maple_collections_release/` (`DATA_DICTIONARY.xlsx`, `schema/schema.json`) and the data files themselves. The `docs/CIBC Hackathon - Data Dictionary.xlsx` is an ideation-phase reference only: it is never read by the code. It differs from the release in `benchmark_questions` only (it has 5 extra grader-side columns).
 
 **What "classified" means.** The dictionary's `Sensitivity` column gives each column one label: `Direct PII` (38 columns, e.g. names, DOB, phone, email, address, national-ID hash, free-text notes and transcripts), `Quasi-identifier` (20, e.g. postal code, FSA, city, age, age band, geo coordinates, employer name), `Protected attribute` (12: gender, marital status, citizenship, household size, dependants, newcomer flag and arrival date, accessibility flag and type, vulnerability type, `ccb_deposit_flag`, customer accent region) or blank. Blank is read as `none` (1,347 columns). A column the dictionary does not list is `unclassified` and restricted.
@@ -193,12 +195,14 @@ Facts learned from the real data, recorded as we find them.
 | D5 | Rename suggestions use name similarity for now | LLM wrapper (`common/llm.py`) is not built; plan assigns LLM ranking later |
 | D6 | Curated is built **generically from `schema.json`** plus `config/curate.yaml`, instead of one hand-written `sql/<table>.sql` per table (plan §3.2) | Keeps the system dynamic: a new table is typed and deduped with no code change. Per-table SQL can still be added where a table needs special logic |
 | D8 | The standardise functions receive their inputs cast to text | The full-data run crashed on `external`: `subject_dob_reported` is a DATE in `schema.json`, and the DOB function only accepted text (`No function matches std_dob(DATE)`). The four earlier identity tables use text columns, so they passed. A regression test now reproduces the exact error on the old code |
+| D9 | Date columns fall back to non-ISO formats, but only when exactly one reading is valid | `account_monthly_snapshot.month_end_date` came in as ISO, `YYYYMMDD`, `DD/MM/YYYY` and `MM/DD/YYYY`; 1,255,152 rows (10%) were NULL after the first build. All are month-end dates, so the day is always above 12 and the reading is certain. Ambiguous values (both parts 12 or less) still stay NULL with their text kept. Recoveries are counted in `curated._format_recoveries` |
 | D7 | Ambiguous dates keep both readings; ambiguous ALL-CAPS names stay unparsed unless the source sets a convention | Never invent identity evidence; wrong merges are worse than missed ones |
 
 ## Changelog
 
 | Date | Slice | Change |
 |---|---|---|
+| 2026-10-03 | Layer 1 · curate | **Curation complete on all 31 tables.** Found and fixed mixed date formats in `account_monthly_snapshot.month_end_date` (D9, 35 tests). Validated the standardised identity columns against the data (name parse 99.5% / 99.9%, ALL-CAPS name order confirmed for cards and loans). Wrote `curation.md` |
 | 2026-10-03 | Layer 1 · curate | First full-data run: 16 tables OK, then crash on `external` (DATE-typed identity column). Fixed (D8) and added a regression test (30 tests total). Documented that the curated build is slow and single-core (requirements.md section 4a) |
 | 2026-10-03 | Layer 1 · tooling | Added `pipeline.py`, `scripts/verify_warehouse.py`, `requirements.md`, `requirements.txt`, `config/sensitivity_overrides.yaml`, label inheritance (3 tests). Merged teammate's `.gitignore`. Aligned setup docs with the updated plan (voice pack, shared DuckDB) |
 | 2026-10-03 | Layer 1 · curate | Added `standardise.py` (18 tests), `build_curated.py`, `config/curate.yaml`, 2 builder tests. Fixed: Parquet `year` partition column no longer reported as schema drift. Documented source formats |

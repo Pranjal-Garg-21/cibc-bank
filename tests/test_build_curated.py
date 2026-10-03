@@ -86,3 +86,28 @@ def test_identity_column_typed_as_date_still_standardises(con):
     B.curate_table(con, "bureau", schema, cfg)
     r = con.execute("SELECT std_dob, std_dob_ambiguous, std_name_last, std_postal, std_fsa FROM curated.bureau").fetchone()
     assert r == ("1996-01-17", False, "NOWAK", "V3X0K6", "V3X")
+
+
+def test_non_iso_dates_recovered_only_when_unambiguous(con):
+    """account_monthly_snapshot.month_end_date arrives as ISO, YYYYMMDD, DD/MM/YYYY and MM/DD/YYYY."""
+    schema = {"snap": {"columns": [{"name": "id", "type": "string"}, {"name": "d", "type": "date"}]}}
+    con.execute("CREATE TABLE raw.snap (id VARCHAR, d VARCHAR, _ingested_at TIMESTAMP, _source_file VARCHAR, "
+                "_batch_id VARCHAR, _row_hash VARCHAR)")
+    cases = [("a", "2024-09-30", "2024-09-30"),   # ISO
+             ("b", "20240930", "2024-09-30"),     # YYYYMMDD
+             ("c", "30/09/2024", "2024-09-30"),   # day first (30 can only be a day)
+             ("d", "09/30/2024", "2024-09-30"),   # month first (30 can only be a day)
+             ("e", "05/06/2024", None),           # both readings valid: must NOT be guessed
+             ("f", "31/02/2024", None),           # impossible date
+             ("g", "not a date", None)]
+    for cid, raw, _ in cases:
+        con.execute("INSERT INTO raw.snap VALUES (?,?, now(),'f','B1',?)", [cid, raw, f"h{cid}"])
+    r = B.curate_table(con, "snap", schema, {})
+    got = {i: (str(d) if d is not None else None) for i, d in con.execute("SELECT id, d FROM curated.snap").fetchall()}
+    assert got == {cid: want for cid, _, want in cases}
+    # the three formats that were recovered are counted and logged, the unrecoverable ones stay visible
+    assert con.execute("SELECT recovered_rows FROM curated._format_recoveries WHERE column_name='d'").fetchone()[0] == 3
+    assert con.execute("SELECT failed_rows FROM curated._cast_failures WHERE column_name='d'").fetchone()[0] == 3
+    raw_kept = dict(con.execute("SELECT id, d__raw FROM curated.snap WHERE d__raw IS NOT NULL").fetchall())
+    assert raw_kept == {"e": "05/06/2024", "f": "31/02/2024", "g": "not a date"}
+    assert r["cols_with_recovered_formats"] == 1

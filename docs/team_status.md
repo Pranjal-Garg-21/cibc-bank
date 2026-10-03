@@ -1,61 +1,46 @@
-# Team status: what is running on Anushka's machine (P1)
+# Team status: Anushka's machine (P1)
 
-**Snapshot: 2026-10-03 about 13:30 IST.** A point-in-time note so nobody repeats work. It goes stale. Ask Anushka before relying on it. Delete this file once the curated build is finished and pushed.
+**Snapshot: 2026-10-03 about 13:50 IST.** Short-lived note so nobody repeats work. Ask Anushka before relying on it; delete it when it stops being useful.
 
-What the code does: [`documentation.md`](documentation.md). How to build on your own machine: [`../requirements.md`](../requirements.md).
+Details: [`curation.md`](curation.md) (results), [`documentation.md`](documentation.md) (what the code does), [`../requirements.md`](../requirements.md) (build on your own machine).
 
 ---
 
-## 1. What is running right now
+## 1. Running now
 
-**One thing: the curated build, resumed after a crash.**
+**Nothing.** The curated build finished and no process is holding the database. Anushka's warehouse (`warehouse/trustissues.duckdb`) is complete and verified, but it is **not shared**: it lives only on that machine and is gitignored. Each teammate builds their own.
 
-| | |
+## 2. Done on Anushka's machine (do not repeat the investigation)
+
+| Done | Result |
 |---|---|
-| What happened | The first run built 16 of 31 tables (1.7 hours), then **crashed on `external`**: a bug in my code (a DATE-typed column was passed to a text-only function). Fixed, regression-tested, and the build was restarted for the 15 remaining tables |
-| Now running | `sh warehouse/resume_curate.sh`: first the small and narrow tables (including `promises_to_pay`), then `external` and `loan_accounts` last |
-| Output | `warehouse/curate2.log` (the first run's output is in `warehouse/curate.log`) |
-| Lock | The running process holds the **only write lock** on `warehouse/trustissues.duckdb`. Nothing else on that machine can open it |
+| Raw load, all 31 tables | All match the release row counts. 25,000 transcript files loaded |
+| Curated build, all 31 tables | `scripts/verify_warehouse.py` passes. **0 exact duplicate rows anywhere.** About 1.8 hours on the reference laptop |
+| Standardised identity columns | Validated on the real data: name parse 99.5% (last) / 99.9% (first) against the CRM's own columns; ALL-CAPS name order confirmed (cards first-last, loans last-first) |
+| One real data defect found and fixed | `account_monthly_snapshot.month_end_date` was in 4 formats (10% non-ISO). Recovered with certainty, 0 NULLs now |
+| Sensitivity labels | Generated; overdraft columns usable (decided); derived columns inherit PII labels |
 
-Nothing else is running. The warehouse file is **not shared**: it lives only on Anushka's machine and is gitignored. Each teammate builds their own.
+**P3: `curated.promises_to_pay` exists** and takes seconds to build on your machine: `python -m trustissues.factory.curate.build_curated --only promises_to_pay` (after the raw load).
 
-**Built so far in the resumed run (all with 0 duplicates, 0 failed casts):** `geo_reference`, `hardship_programs`, `loan_instalments`, `metric_definitions`, `model_scores`, `offers`, `ops_events`, `promises_to_pay`, `qa_checklist`, `reference_documents`. In progress or waiting: `salary_credit_history`, `transactions`, `voice_samples`, then `external` and `loan_accounts` (the wide identity tables, 30+ minutes each).
+## 3. What to know before matching identities (from the real data)
 
-**P3: `curated.promises_to_pay` now exists in Anushka's warehouse** (238,815 rows, built in 2 seconds). On your own machine it takes seconds too: `python -m trustissues.factory.curate.build_curated --only promises_to_pay`.
+- **Duplicates are business-level**, not exact rows. 5,950 CRM records are flagged `duplicate_of_crm_id`.
+- **Card phones are weak evidence:** 58.2% are masked (only a prefix and suffix survive).
+- **36.3% of card dates of birth are ambiguous** (day and month could be swapped); both readings are kept in `std_dob` and `std_dob_alt`.
+- **Deposit names are surname plus initials only** (the first name is just an initial in 99.8% of rows).
+- 3.9% of bureau (`external`) rows have no name.
 
-**Remaining estimate: roughly 1 more hour**, almost all of it `external` and `loan_accounts`. Check the log, not this file, for the true state.
+## 4. GitHub
 
----
+Everything built is on `main` except `config/sensitivity.yaml` (generated; run `python -m trustissues.factory.ingest.dictionary` to make yours) and the data itself (gitignored).
 
-## 2. Already done: please do not repeat
+## 5. Not started (Layer 1, owned by P1)
 
-| Done | Where | Note |
-|---|---|---|
-| Raw load, all 31 tables, verified against the release row counts | Anushka's warehouse | Code is on `main`. **You still run it once on your own machine**, that is expected. About 35 min |
-| Raw ingest, schema-drift check, manifest, dictionary and sensitivity labels | `main` | Do not rewrite |
-| Standardisation functions (DOB, phone, name, postal, employer), 18 tests | `main` | Do not rewrite |
-| Curated builder | `main` | Real-data result so far: 16 tables, **0 exact duplicate rows**, 0 failed casts except 1 column. Duplicate customers are business-level (identity step) |
-| Findings on source formats, dictionary vs data, classification gaps | `documentation.md` section 6 | Ask rather than re-investigate |
-| Dataset download problems (`hf` PATH, one-line command, `tar` instead of `unzip`) | `requirements.md` | Solved |
-| Overdraft columns classified as usable | `config/sensitivity_overrides.yaml` | Decided 2026-10-03 |
+Identity matching (nodes, exact rules, Splink, LLM second opinion, review queue, clusters), gold layer, data-quality checks, `contracts/c360_customer.yaml`, `text_controls.py`, `mapping_assistant.py`, enum validation against `code_lookups`, and the curated build speed-up. **Ask Anushka before starting any of them.** Splink is not installed anywhere yet.
 
-## 3. What is on GitHub
+## 6. Before you run anything
 
-Everything except two things: `config/sensitivity.yaml` (generated; run the dictionary step to make yours) and the `warehouse/` data (gitignored).
-
-## 4. Not started (Layer 1, owned by P1)
-
-Identity matching (nodes, exact rules, Splink, LLM second opinion, review queue, clusters), gold layer, data-quality checks, `contracts/c360_customer.yaml`, `text_controls.py`, `mapping_assistant.py`. **Ask Anushka before starting any of them.** Splink is not installed anywhere yet.
-
-## 5. Before you run anything
-
-- **The curated build is slow and uses about 1 core of 12**, so extra cores do not help. Build only the tables you need with `--only` (see `requirements.md` section 4a). Do not run the full build casually.
-- **One writer per DuckDB file.** Do not share one `.duckdb` file between people; copy it and verify the copy with `python scripts/verify_warehouse.py`.
+- **The curated build is slow and uses about 1 core of 12**, so extra cores do not help. Build only the tables you need with `--only` (`requirements.md` section 4a).
+- **One writer per DuckDB file.** Copy a database rather than sharing one, and check the copy with `python scripts/verify_warehouse.py`.
 - Avoid putting the repo in a OneDrive-synced folder.
 - The dataset is synthetic.
-
-## 6. Open items on Anushka's side
-
-1. Finish the resumed curated build, then re-run the dictionary step, run `scripts/verify_warehouse.py`, write `docs/curation.md` with the final results.
-2. Find out why the curated build uses only one core, and speed it up. Not started beyond ruling out memory, disk and the cast-failure scan.
-3. Plan section 11 data questions (bureau key vs deposit key, `redaction_status = none`, transcript retention source, hardship policy join, test-cell results). Not started.
