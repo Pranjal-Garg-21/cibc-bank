@@ -13,7 +13,7 @@ from entities import promise
 from trustissues.common import config
 from trustissues.features.compute import GROUPS, VIEWS_DIR
 
-KEYS = {"ptp_id", "crm_customer_id", "event_ts"}
+KEYS = {"ptp_id", "golden_customer_id", "crm_customer_id", "event_ts"}
 TTL = timedelta(days=3650)  # promise features never expire for a promise
 
 

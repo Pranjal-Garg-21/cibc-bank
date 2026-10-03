@@ -19,8 +19,8 @@ For each open case on AS_OF_DATE:
    hardship, high balance, or the daily digital batch
 
 risk_score holds the case model's risk. --write-gold needs the warehouse write lock, so run it as a stage
-after the Layer 1 pipeline, never alongside it. golden_customer_id holds crm_customer_id until identity
-resolution publishes golden IDs.
+after the Layer 1 pipeline, never alongside it. golden_customer_id is the case's person from gold.case_customer
+(P1's identity resolution); the 9 open cases it could not tie to anyone keep their CRM ID there.
 """
 from __future__ import annotations
 
@@ -248,7 +248,7 @@ def load_cases(con, as_of) -> list[dict]:
                            AND response_ts >= TIMESTAMP '{as_of}' - INTERVAL 90 DAY) AS broken_plan_90d
             FROM src_hardship_offers WHERE offer_ts < TIMESTAMP '{as_of}' GROUP BY 1
         )
-        SELECT c.case_id, c.crm_customer_id, c.assigned_agent_id, c.assigned_team, c.total_overdue,
+        SELECT c.case_id, c.golden_customer_id, c.crm_customer_id, c.assigned_agent_id, c.assigned_team, c.total_overdue,
                c.current_ptp_id, c.primary_product, coalesce(c.current_dpd, 0) AS current_dpd,
                coalesce(c.hardship_flag, false) AS hardship_flag, c.hardship_source,
                coalesce(c.vulnerable_customer_flag, false) OR coalesce(f.vulnerability_flag, false) AS vulnerable,
@@ -288,7 +288,7 @@ def case_input(c: dict, flags: rules.CaseFlags, programs: list[dict], uses: dict
                                   insolvency=flags.insolvency, broken_plan_90d=c["broken_plan_90d"],
                                   uses_12m=uses.get(c["case_id"], {}))
     return CaseInput(
-        case_id=c["case_id"], customer_id=c["crm_customer_id"], assigned_agent_id=c["assigned_agent_id"],
+        case_id=c["case_id"], customer_id=c["golden_customer_id"] or c["crm_customer_id"], assigned_agent_id=c["assigned_agent_id"],
         agent_certified=bool(c["agent_certified"]), amount=float(c["total_overdue"] or 0.0), flags=flags,
         signal=hardship.HardshipSignal(level, bool(c["vulnerable"])), team=c["assigned_team"],
         history=hardship.HardshipHistory(c["plan_end"], bool(c["ever_offered"]), c["last_offer_ts"]),

@@ -7,7 +7,7 @@ WITH sal AS (
     SELECT s.row_id, a.month_end_date, sum(a.salary_credit_amount) AS salary,
            max(a.month_end_date) OVER (PARTITION BY s.row_id) AS last_month
     FROM spine s
-    JOIN src_account_snapshots a ON a.crm_customer_id = s.crm_customer_id
+    JOIN src_account_snapshots a ON a.golden_customer_id = s.golden_customer_id
     WHERE a.salary_credit_amount IS NOT NULL
       AND a.month_end_date < CAST(s.event_ts AS DATE)
       AND a.month_end_date >= CAST(s.event_ts AS DATE) - INTERVAL 12 MONTH

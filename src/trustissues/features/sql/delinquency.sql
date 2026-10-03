@@ -1,6 +1,7 @@
 -- Arrears from account snapshots strictly before the promise date. The snapshots are QUARTERLY
 -- (quarter-ends 2023-12-31 to 2026-06-30), so 12 months = up to 4 snapshots. Account level when the promise
--- names an account with snapshots; otherwise the customer's accounts rolled up per month (worst dpd).
+-- names an account with snapshots; otherwise the customer's accounts (every account the golden customer holds,
+-- through src_account_snapshots) rolled up per month (worst dpd).
 -- No count of snapshots seen: it mostly tracked how far the data reached back (history starts Dec 2023) and
 -- carried a little newcomer status; dropping it cost no accuracy (docs/p3_plan.md, fairness check).
 WITH acct AS (
@@ -13,7 +14,7 @@ WITH acct AS (
 cust AS (
     SELECT s.row_id, a.month_end_date, max(a.dpd) AS dpd
     FROM spine s
-    JOIN src_account_snapshots a ON a.crm_customer_id = s.crm_customer_id
+    JOIN src_account_snapshots a ON a.golden_customer_id = s.golden_customer_id
     WHERE s.row_id NOT IN (SELECT row_id FROM acct)
       AND a.month_end_date < CAST(s.event_ts AS DATE)
       AND a.month_end_date >= CAST(s.event_ts AS DATE) - INTERVAL 12 MONTH

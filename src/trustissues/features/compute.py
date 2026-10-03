@@ -7,14 +7,14 @@ Every file in features/sql/ reads the temp table `spine` plus the src_* views fr
 returns `row_id` plus features, using only data dated strictly before `event_ts`. The spine has one row per
 thing being scored:
 
-    row_id, ptp_id, case_id, crm_customer_id, account_id, event_ts, ptp_amount, ptp_due_date,
+    row_id, ptp_id, case_id, golden_customer_id, crm_customer_id, account_id, event_ts, ptp_amount, ptp_due_date,
     customer_stated_income_date
 
 - promise spine: row_id = ptp_id, event_ts = when the promise was made, promise columns from that promise
 - case spine: row_id = case_id@date, event_ts = that date, promise columns from the promise open then (if any)
 
 Writes (promise model, the Feast offline sources):
-- warehouse/p3/feature_views/<group>.parquet: ptp_id, crm_customer_id, event_ts + that group's features
+- warehouse/p3/feature_views/<group>.parquet: ptp_id, golden_customer_id, crm_customer_id, event_ts + that group's features
 - warehouse/p3/features.parquet: the spine (label, split) joined with every group
 Writes (case model): warehouse/p3/case_features.parquet
 """
@@ -47,7 +47,7 @@ def register_spine(con, spine_sql: str) -> None:
     """Promise spine. spine_sql returns ptp_id and event_ts; promise columns come from the untruncated promises."""
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE spine AS
-        SELECT sp.ptp_id AS row_id, sp.ptp_id, p.case_id, p.crm_customer_id, p.account_id, sp.event_ts,
+        SELECT sp.ptp_id AS row_id, sp.ptp_id, p.case_id, p.golden_customer_id, p.crm_customer_id, p.account_id, sp.event_ts,
                p.ptp_amount, p.ptp_due_date, p.customer_stated_income_date
         FROM ({spine_sql}) sp JOIN ({sources.sql("promises")}) p USING (ptp_id)""")
 
@@ -65,7 +65,8 @@ def register_case_spine(con, spine_sql: str) -> None:
              AND NOT (p.ptp_status <> 'open' AND p.status_ts < sp.event_ts)  -- not resolved yet (case_state.sql)
             GROUP BY sp.row_id
         )
-        SELECT sp.row_id, o.ptp_id, sp.case_id, c.crm_customer_id, c.primary_account_id AS account_id, sp.event_ts,
+        SELECT sp.row_id, o.ptp_id, sp.case_id, c.golden_customer_id, c.crm_customer_id, c.primary_account_id AS account_id,
+               sp.event_ts,
                p.ptp_amount, p.ptp_due_date, p.customer_stated_income_date
         FROM sp
         JOIN ({sources.sql("case_history")}) c USING (case_id)
@@ -118,13 +119,13 @@ def run_promise(con) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for g, names in cols.items():
         sel = ", ".join(f'f."{c}"' for c in names)
-        con.execute(f"""COPY (SELECT s.row_id AS ptp_id, s.crm_customer_id, s.event_ts, {sel}
+        con.execute(f"""COPY (SELECT s.row_id AS ptp_id, s.golden_customer_id, s.crm_customer_id, s.event_ts, {sel}
                               FROM spine s JOIN feat_{g} f USING (row_id) ORDER BY s.event_ts)
                         TO '{(out_dir / f"{g}.parquet").as_posix()}' (FORMAT PARQUET)""")
 
     out = config.p3_dir() / FEATURES_FILE
     con.execute(f"""COPY (SELECT l.label, l.split, j.* RENAME (row_id AS ptp_id)
-                          FROM ({joined_sql(cols, ", s.crm_customer_id, s.event_ts")}) j
+                          FROM ({joined_sql(cols, ", s.golden_customer_id, s.crm_customer_id, s.event_ts")}) j
                           JOIN read_parquet('{spine_path}') l ON l.ptp_id = j.row_id ORDER BY j.event_ts)
                     TO '{out.as_posix()}' (FORMAT PARQUET)""")
     print(f"wrote {out} and {len(cols)} feature views in {out_dir}")
@@ -137,7 +138,7 @@ def run_case(con) -> None:
     cols = compute(con, CASE_GROUPS)
     out = config.p3_dir() / CASE_FEATURES_FILE
     con.execute(f"""COPY (SELECT l.label, l.split, l.as_of_date, j.*
-                          FROM ({joined_sql(cols, ", s.case_id, s.crm_customer_id, s.event_ts")}) j
+                          FROM ({joined_sql(cols, ", s.case_id, s.golden_customer_id, s.crm_customer_id, s.event_ts")}) j
                           JOIN read_parquet('{spine_path}') l USING (row_id) ORDER BY j.event_ts, j.row_id)
                     TO '{out.as_posix()}' (FORMAT PARQUET)""")
     print(f"wrote {out}")

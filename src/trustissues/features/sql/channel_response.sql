@@ -3,7 +3,7 @@
 WITH c AS (
     SELECT s.row_id, s.event_ts, h.*
     FROM spine s
-    JOIN src_contacts h ON h.crm_customer_id = s.crm_customer_id
+    JOIN src_contacts h ON h.golden_customer_id = s.golden_customer_id
     WHERE h.contact_ts < s.event_ts
       AND h.contact_ts >= s.event_ts - INTERVAL 30 DAY
 )

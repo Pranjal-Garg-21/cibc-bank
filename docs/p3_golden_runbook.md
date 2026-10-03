@@ -107,13 +107,13 @@ or `duckdb -readonly warehouse/trustissues.duckdb`.
 
 ## Step 2. The customer becomes the golden customer (2–3 h)
 
-- [ ] Spines carry `golden_customer_id`: `features/build_training_set.py`, `features/build_case_training_set.py`,
+- [x] Spines carry `golden_customer_id`: `features/build_training_set.py`, `features/build_case_training_set.py`,
       `features/compute.py` (`register_spine`, `register_case_spine`).
-- [ ] Customer-keyed SQL joins on it: `promise_history.sql`, `channel_response.sql`, and the customer fallbacks in
+- [x] Customer-keyed SQL joins on it: `promise_history.sql`, `channel_response.sql`, and the customer fallbacks in
       `delinquency.sql`, `liquidity.sql`, `payday.sql` (accounts through `c360_account`).
-- [ ] `nba/queue.py`: `golden_customer_id` in `gold.nba_decisions` is the real golden ID.
-- [ ] Feast: customer entity → `golden_customer_id` in `feature_repo/entities.py`; `cd feature_repo && feast apply`.
-- [ ] `make train` (no new features yet), then `make nightly`.
+- [x] `nba/queue.py`: `golden_customer_id` in `gold.nba_decisions` is the real golden ID.
+- [x] Feast: customer entity → `golden_customer_id` in `feature_repo/entities.py`; `cd feature_repo && feast apply`.
+- [x] `make train` (no new features yet), then `make nightly`.
 
 **Done when:** holdout AUC and calibration no worse than before beyond noise (case 0.838, promise 0.950);
 `tests/test_feast_offline.py` green.

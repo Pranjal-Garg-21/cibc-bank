@@ -51,7 +51,8 @@ class Join:
 class Source:
     table: str
     # output column -> (source column, type). Type is a DuckDB type, or JSON_LIST for a JSON array of strings.
-    # A source column is a column of the main table, or `alias.column` of one of the joins.
+    # A source column is a column of the main table, `alias.column` of one of the joins, or an SQL expression over
+    # `alias.column`s (anything with a parenthesis), which must then be listed in label_as.
     columns: dict[str, tuple[str, str]]
     use: str  # features | label | rules | evaluation | actions | fairness
     event_ts: str | None = None  # output column: when the row became known (for as_of)
@@ -84,6 +85,9 @@ def _c(*names: str, type_: str = "VARCHAR") -> dict[str, tuple[str, str]]:
 GOLDEN_ID_LABEL = "customers.crm_customer_id"
 # A case's person: P1 resolves it from the account holders, so cases whose CRM ID does not exist still get one.
 CASE_PERSON = Join("cc", "case_customer", "cc.case_id = t.case_id", schema="gold")
+CRM_PERSON = Join("x", "customer_xref", "x.node_id = 'crm|' || t.crm_customer_id", schema="gold")
+# A collections record belongs to its case's person, else to its CRM record's person (P1's rule, gold/views.py _owner).
+RECORD_PERSON = "coalesce(cc.golden_customer_id, x.golden_customer_id)"
 
 SOURCES: dict[str, Source] = {
     # gold.promises_enriched is curated.promises_to_pay with the golden ID added; reminder_scheduled_flag is not in
@@ -138,8 +142,12 @@ SOURCES: dict[str, Source] = {
         table="account_monthly_snapshot",
         use="features",
         event_ts="month_end_date",
+        # the account holder (gold.c360_account), not the snapshot's CRM ID, 2.6% of which do not exist (DQ R6)
+        joins=(Join("o", "c360_account", "o.account_id = t.account_id", schema="gold"),),
+        label_as={"o.golden_customer_id": GOLDEN_ID_LABEL},
         columns={
             **_c("account_id", "crm_customer_id", "product_type", "account_status", "dpd_bucket"),
+            "golden_customer_id": ("o.golden_customer_id", "VARCHAR"),
             "month_end_date": ("month_end_date", "DATE"),
             **_c("balance", "limit_or_original_amount", "minimum_due", "payment_made", "salary_credit_amount",
                  type_="DOUBLE"),
@@ -151,9 +159,12 @@ SOURCES: dict[str, Source] = {
         table="contact_history",
         use="features",
         event_ts="contact_ts",
+        joins=(CASE_PERSON, CRM_PERSON),
+        label_as={RECORD_PERSON: GOLDEN_ID_LABEL},
         columns={
             **_c("contact_id", "case_id", "crm_customer_id", "account_id", "direction", "treatment_code",
                  "test_cell", "bucket_at_contact"),
+            "golden_customer_id": (RECORD_PERSON, "VARCHAR"),
             # channel_resolved = coalesce(channel_v2, channel): `channel` is empty from 26 Sep 2026 (REL-0926, data
             # quality check K1). Derived in curated by factory/quality/dq_report.py, so not available on raw.
             "channel": ("channel_resolved", "VARCHAR"),
@@ -385,9 +396,16 @@ SOURCES: dict[str, Source] = {
 }
 
 
+def _is_sql(src_col: str) -> bool:
+    return "(" in src_col
+
+
 def _expr(src_col: str, type_: str) -> str:
-    alias, _, name = src_col.rpartition(".")
-    col = f'{alias or "t"}."{name}"'
+    if _is_sql(src_col):
+        col = src_col
+    else:
+        alias, _, name = src_col.rpartition(".")
+        col = f'{alias or "t"}."{name}"'
     if type_ == "JSON_LIST":
         return f"CAST(from_json({col}, '[\"VARCHAR\"]') AS VARCHAR[])"
     if type_ == "VARCHAR":
@@ -423,8 +441,9 @@ def source_tables() -> dict[tuple[str, str], set[str]]:
             c for c in re.findall(r"(?:CAST\(|\bt\.)?\b(\w+)\s*(?:AS VARCHAR\)\s*)?(?:=|LIKE)", s.where or "")
             if c not in ("t", "VARCHAR"))
         for src_col, _ in s.columns.values():
-            alias, _, col = src_col.rpartition(".")
-            tables.setdefault(aliases[alias or "t"], set()).add(col)
+            for alias, col in (re.findall(r"\b(\w+)\.(\w+)", src_col) if _is_sql(src_col)
+                               else [src_col.rpartition(".")[::2]]):
+                tables.setdefault(aliases[alias or "t"], set()).add(col)
         for j in s.joins:
             for alias, col in re.findall(r"\b(\w+)\.(\w+)", j.on):
                 tables.setdefault(aliases[alias], set()).add(col)

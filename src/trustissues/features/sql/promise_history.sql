@@ -1,4 +1,4 @@
--- The customer's earlier promises. A promise counts as broken/kept only once its status was known
+-- The customer's (golden customer: all their CRM records and cases) earlier promises. A promise counts as broken/kept only once its status was known
 -- (status_ts strictly before the event time); "made" counts use the creation time.
 SELECT
     s.row_id,
@@ -19,6 +19,6 @@ SELECT
               s.event_ts) AS days_since_last_broken
 FROM spine s
 LEFT JOIN src_promises q
-       ON q.crm_customer_id = s.crm_customer_id
+       ON q.golden_customer_id = s.golden_customer_id
       AND q.ptp_created_ts < s.event_ts
 GROUP BY s.row_id, s.event_ts

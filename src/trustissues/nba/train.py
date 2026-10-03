@@ -28,7 +28,7 @@ from trustissues.nba import evaluate
 
 MODEL_NAME = "ptp_break_v0"
 CASE_MODEL_NAME = "case_nocure_v0"
-NON_FEATURES = {"ptp_id", "crm_customer_id", "event_ts", "label", "split", "row_id", "case_id", "as_of_date"}
+NON_FEATURES = {"ptp_id", "golden_customer_id", "crm_customer_id", "event_ts", "label", "split", "row_id", "case_id", "as_of_date"}
 PARAMS = {
     "objective": "binary",
     "metric": "auc",

@@ -31,7 +31,7 @@ def spine_sql() -> str:
     return f"""
         WITH scored AS (SELECT DISTINCT ptp_id FROM src_incumbent_ptp_scores),
         labelled AS (
-            SELECT p.ptp_id, p.crm_customer_id, p.account_id, p.case_id,
+            SELECT p.ptp_id, p.golden_customer_id, p.crm_customer_id, p.account_id, p.case_id,
                    p.ptp_created_ts AS event_ts,
                    CAST(p.ptp_status IN ({broken}) AS INTEGER) AS label,
                    CASE WHEN s.ptp_id IS NOT NULL THEN 'holdout'

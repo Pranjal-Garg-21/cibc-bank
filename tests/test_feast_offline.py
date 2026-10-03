@@ -38,7 +38,7 @@ def _same(a, b):
 @pytest.mark.parametrize("group", GROUPS)
 def test_historical_retrieval_equals_computed_features(fs, group):
     df = pd.read_parquet(config.p3_dir() / VIEWS_DIR / f"{group}.parquet").sample(N, random_state=3)
-    feats = [c for c in df.columns if c not in ("ptp_id", "crm_customer_id", "event_ts")]
+    feats = [c for c in df.columns if c not in ("ptp_id", "golden_customer_id", "crm_customer_id", "event_ts")]
     entity_df = pd.DataFrame({"ptp_id": df["ptp_id"], "event_timestamp": pd.to_datetime(df["event_ts"])})
     got = fs.get_historical_features(entity_df=entity_df, features=[f"{group}:{c}" for c in feats]).to_df()
     got = got.set_index("ptp_id")

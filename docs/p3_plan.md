@@ -555,3 +555,41 @@ insolvency.
 **Result.** 191 tests pass. `make features`: training spine 172,651 and case spine 246,673 rows, as before; every
 feature value equal to the curated run within 1e-9 (the 4,020 promise and 7,451 case rows an exact comparison flags
 differ by float summation order only).
+
+### Golden records, Step 2: the customer is the golden customer (3 Oct)
+
+**What changed.** Every customer-keyed join uses `golden_customer_id`. The promise and case spines carry it (from
+`promises_enriched` and `case_customer`), and so do every feature file and Feast view (`feature_views/*.parquet`,
+`features.parquet`, `case_features.parquet`, with `crm_customer_id` kept beside it for the fairness check). Sources:
+`contacts` gets the person by P1's rule (the case's person, else the CRM record's; 99.96% of 2.69 M contacts);
+`account_snapshots` gets the account holder from `gold.c360_account` (all 12.6 M rows, including the 2.6% whose CRM ID
+does not exist). Feature SQL: `promise_history`, `channel_response`, and the customer fallbacks in `delinquency`,
+`liquidity` and `payday` join on the golden ID. Source columns may now be an SQL expression with declared lineage.
+`train.py` `NON_FEATURES` and the Feast `KEYS` exclude the new key; the Feast customer entity is
+`golden_customer_id`. `nba/queue.py` writes the case's golden ID to `gold.nba_decisions` (the 9 open cases with no
+person keep their CRM ID).
+
+Identity is today's resolution applied to history: a merge found now is used for promises made before it. Accepted
+(the links are facts about people, not outcomes), and noted here.
+
+**Features.** Same rows and the same 44 / 52 features. 0–5% of rows changed per feature; most: `salary_snapshots_12m`
+3.6% of promises (5.1% of case rows), `card_utilisation` 3.1% (4.4%), `contacts_30d` 3.0%. Deposits and cards now
+reach the person when the promise names no account.
+
+| Holdout | Before (curated) | After (golden) |
+|---|---|---|
+| Promise model AUC (calibrated) | 0.9499 | **0.9502** |
+| Promise model Brier | 0.0861 | 0.0859 |
+| Case model AUC | 0.8383 | **0.8398** |
+| Case model Brier | 0.1276 | 0.1275 |
+| Bank (ptp_break / cure_30d) | 0.6946 / 0.7250 | unchanged |
+
+No worse anywhere, as the step requires. `tests/test_feast_offline.py` passes (its key list now has the golden ID).
+
+**Queue** (`make nightly --skip-pipeline`, with Step 1's safeguards): support calls 12,359 -> 12,727, waits 33,702 ->
+33,863, push 13,943 -> 13,581, email 16,103 -> 16,007, calls 1,497 -> 1,458. Mostly Step 1: 7,928 more people are
+vulnerable through another of their records, so their cases go to certified agents. **Every open case belongs to a
+different person** (86,050 people, plus the 9 unresolved cases), so a same-day duplicate contact cannot happen on
+this snapshot; Step 3 still adds the rule. Fairness: case model 6 screening flags (was 8); a new one for the promise
+model, preferred language TL (riskiest-20% ratio 0.64, small group). Monitoring: `card_utilisation` drift PSI 0.26
+(was 0.24, now "act"), as cards newly link to the person. Both for Step 7.
