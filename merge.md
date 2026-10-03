@@ -52,7 +52,7 @@ Both are known to be changed on the P4 branch as well as on `main`.
 
 ## 3. The identity LLM second opinion should go through `common/llm.py`
 
-**On hold (4 Oct, P4 merge):** `common/llm.py` is now on `main`, but its default provider is OpenRouter's free Nemotron and identity pairs carry unmasked PII. Decided to leave `second_opinion.py` unchanged and not run it against any provider (Anthropic included) until the team agrees which provider may receive these pairs. Grey-zone pairs stay with human review (the safe default).
+**On hold (4 Oct, P4 merge):** `common/llm.py` is now on `main`, but its default provider is OpenRouter's free Nemotron and identity pairs carry unmasked PII. Decided to leave `second_opinion.py` unchanged and not run it against any provider (Anthropic included) until the team agrees which provider may receive these pairs. Grey-zone pairs stay with human review (the safe default). Instead, the second opinion is being done by hand (agent labellers working only from the two records): `scripts/second_opinion_manual.py` exports the pairs and imports checked verdicts into `identity.llm_verdicts` without any API call (`docs/identity.md` §4 step 6).
 
 `src/trustissues/factory/identity/second_opinion.py` (on `main`) calls the Anthropic SDK directly, because `common/llm.py` did not exist when it was written. The plan says every LLM call goes through `common/llm.py` (caching, prompt version, audit).
 
