@@ -11,10 +11,10 @@ Settings: `customer_path:` in `config/settings.yaml`.
 | Access re-check (agent: assigned case; team lead: own team's case or an unassigned open case) | Done, tested, checked on real data |
 | Fetch `gold.customer_timeline` by golden ID, point in time | Done, tested, checked on real data |
 | Text filter: only items with eligible text, scrubbed again; later outcomes dropped for past dates | Done, tested |
-| Token budget newest-first, asked-about case first (D15) | Done, tested |
+| A named case limits the history to that case's items (P2's spec, decided 4 Oct); token budget newest first (D15) | Done, tested |
 | Answer with checked quotes and the customer `not_found` (shared `answer.py`) | Done, tested with a scripted stand-in. **Not yet run against the real model** (no key on this machine) |
 | `coverage` line in the I6 response | Done |
-| I6 entry `answer_customer(RagRequest)` | Done. P2's `rag_handler.py` still returns "not connected": one line to swap, see section 5 |
+| I6 entry `answer_customer(RagRequest)` | Done, called by P2's `rag_handler.py` since the P2 merge (4 Oct) |
 
 ## 2. Run it
 
@@ -83,9 +83,9 @@ RagResponse {answer, evidence[], citations[kind=note|transcript|contact|..., sou
 
 ## 5. Open items
 
-1. **Wire into Ask (P2).** In `ask/rag_handler.py`, replace the "not connected" line with
-   `return customer_path.answer_customer(req, con=con, llm=llm)`, and treat `PermissionError` as a refusal
-   (`service.py` catches only its own `AccessDenied`). P2's `RagRequest` already has `case_id`; this branch adds the same field.
+1. ~~**Wire into Ask (P2).**~~ Done in the P2 merge (4 Oct): `make_rag_handler(index, llm, con=...)` calls
+   `answer_customer` and re-raises `CustomerAccessDenied` as P2's `AccessDenied` with the router's wording. A named case
+   now limits the history to that case (P2's spec; `docs/interfaces.md` "Case to call").
 2. **Access rule for team leads: confirm.** Today: own team's cases, plus any customer with an unassigned open case.
    P2's `check_case` currently lets a team lead see any case; the two should agree. Also decide which user the benchmark
    runner asks as.

@@ -69,7 +69,7 @@ No production publisher or gold views were installed by this handoff. The untrac
 
 P1 should provide the contract path/schema/version, staging table names, required fields, approved decisioning fields, and where pre-publish results are persisted. Agree whether the DuckDB/Python checks satisfy the contract or whether Great Expectations is a required deliverable. `load_contract` currently reads YAML but does not compile rules or create GE suites. Binding remains pending until that decision and file exist.
 
-P1 must supply independent source inventory and safety evidence, the batch clock, and dataset as-of date. Wire `run_checks` before publication; block on incomplete blocking rules; use `check_report.write_report` with a separate agreed output path. Preserve Anushka's `dq_report.py` and canonical curated DQ report. Anomaly alerts currently do not influence the contract publish gate; that policy needs agreement. Persist batch observations because the overwritten manifest alone cannot supply history.
+P1 must supply independent source inventory and safety evidence, the batch clock, and dataset as-of date. (Superseded at the P2 merge, 4 Oct: `run_checks` was folded into P1's contract and removed, `merge.md` §6.) Wire `run_checks` before publication; block on incomplete blocking rules; use `check_report.write_report` with a separate agreed output path. Preserve Anushka's `dq_report.py` and canonical curated DQ report. Anomaly alerts currently do not influence the contract publish gate; that policy needs agreement. Persist batch observations because the overwritten manifest alone cannot supply history.
 
 ## 6. Review of Claude's Ask lane and fallback
 

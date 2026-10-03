@@ -8,10 +8,10 @@ the question, a new note is answerable as soon as it lands, and customer text ne
         |  1 access     agents: a case of this customer assigned to them on the as-of date
         |               team leads: a case assigned to an agent on their team; anyone else: refused
         |  2 fetch      gold.customer_timeline by golden ID (CRM duplicates already merged by the xref),
-        |               events dated on or before the as-of date only
+        |               events dated on or before the as-of date only; a named case: that case's items only
         |  3 filter     notes and transcripts with text only (the timeline holds eligible, masked text only),
         |               scrubbed again before leaving the machine; outcomes recorded after a past as-of date dropped
-        |  4 budget     newest first, the asked-about case first, until the token budget is used (D15)
+        |  4 budget     newest first, until the token budget is used (D15)
         |  5 answer     answer.answer_question: quotes checked word for word, not_found instead of guessing
         v
     RagResponse (I6) with `coverage`: the period and number of items the answer was based on
@@ -160,8 +160,12 @@ def _strip_later_outcome(item: TimelineItem) -> TimelineItem:
 
 
 def fetch_history(con, golden_customer_id: str, as_of: date, *, event_types: list[str] | None = None,
-                  scrub_text: bool | None = None) -> tuple[list[TimelineItem], int]:
+                  scrub_text: bool | None = None, case_id: str | None = None) -> tuple[list[TimelineItem], int]:
     """This customer's history on the as-of date, oldest first, and how many items were withheld for having no text.
+
+    With `case_id`, only that case's items (P2's spec, `docs/interfaces.md` "Case to call"): a question about a case
+    is answered from that case or not at all, never from another case's call. A timeline without a case_id column
+    then returns nothing.
 
     Notes and transcripts come with text only when text_controls found them eligible (redaction, retention), so an
     item with no text is withheld, not sent empty. Text is scrubbed once more before it can reach a model.
@@ -176,7 +180,8 @@ def fetch_history(con, golden_customer_id: str, as_of: date, *, event_types: lis
         SELECT event_type, source_id, event_ts, text, {case} AS case_id, channel, {summ} AS summary
         FROM gold.customer_timeline
         WHERE golden_customer_id = ? AND event_ts < ? AND event_type IN ({', '.join('?' * len(types))})
-        ORDER BY event_ts, source_id""", [golden_customer_id, _end_of(as_of), *types]).fetchall()
+          {f"AND {case} = ?" if case_id else ""}
+        ORDER BY event_ts, source_id""", [golden_customer_id, _end_of(as_of), *types, *([case_id] if case_id else [])]).fetchall()
 
     if scrub_text is None:
         scrub_text = config.settings().get("text_controls", {}).get("scrub_pii", True)
@@ -218,17 +223,20 @@ def select_within_budget(items: list[TimelineItem], *, budget: int, chars_per_to
 def describe_coverage(chosen: list[TimelineItem], total: int, withheld: int, as_of: date,
                       case_id: str | None = None) -> str:
     if not chosen:
+        if case_id:
+            return f"No history on case {case_id} for this customer on or before {as_of.isoformat()}."
         return f"No history for this customer on or before {as_of.isoformat()}."
     kinds = sorted({i.event_type for i in chosen}, key=list(KIND_NAMES).index)
     s = (f"Based on {len(chosen)} items ({', '.join(KIND_NAMES[k] for k in kinds)}) from "
          f"{chosen[0].event_ts.date().isoformat()} to {chosen[-1].event_ts.date().isoformat()}")
     if case_id:
-        n = sum(i.case_id == case_id for i in chosen)
-        s += f"; {n} on case {case_id}"
+        s += f", all on case {case_id}"
+        if not any(i.event_type == "transcript" for i in chosen):
+            s += f"; no recorded calls on this case up to {as_of.isoformat()}"
     s += "."
     if len(chosen) < total:
         s += (f" {total - len(chosen)} items were left out to fit the reading limit"
-              + (" (other cases and older items first)." if case_id else " (the oldest)."))
+              + " (the oldest).")
     if withheld:
         s += f" {withheld} notes or calls were withheld (not cleared for use: redaction or retention)."
     return s
@@ -258,11 +266,12 @@ def run_customer(question: str, golden_customer_id: str, *, con, llm: LLM, as_of
 
     cfg = _cfg()
     language = (language or detect_language(question)).upper()
-    items, withheld = fetch_history(con, golden_customer_id, as_of)
+    items, withheld = fetch_history(con, golden_customer_id, as_of, case_id=case_id)
     chosen = select_within_budget(items, budget=budget or cfg.get("token_budget", 20000),
                                   chars_per_token=cfg.get("chars_per_token", 3.5), case_id=case_id)
     coverage = describe_coverage(chosen, len(items), withheld, as_of, case_id)
-    context = f"Customer: {golden_customer_id}." + (f" The question is about case {case_id}." if case_id else "")
+    context = f"Customer: {golden_customer_id}." + (
+        f" The question is about case {case_id}; only that case's items are listed." if case_id else "")
     response = answer_question(
         question, [i.source() for i in chosen], llm=llm, as_of=as_of, user_role=user_role, user_id=user_id,
         language=language, coverage=coverage, kind="rag_customer", system=SYSTEM, prompt_version=PROMPT_VERSION,

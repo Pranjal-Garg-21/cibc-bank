@@ -68,13 +68,14 @@ Q = "Summarise the most recent call on case {}: what did the customer agree to?"
 def test_ask_answers_a_case_question_from_the_customer_history(con, tmp_path):
     """End to end: router -> case resolver (gold.case_customer + assignment) -> P4 customer path -> answer card."""
     reply = {"answer": "Promised $95 on 14 Oct.", "not_found": False, "confidence": 0.9, "conflict_note": None,
-             "evidence": [{"source": "S5", "quote": "inbound | Promise to pay | promise made"}]}
+             "evidence": [{"source": "S4", "quote": "inbound | Promise to pay | promise made"}]}
     llm, be = make_llm(tmp_path, reply)
     card = ask(Q.format(CASE), UserContext("AG-NOW", "agent"), as_of_date=AS_OF,
                rag=rag_handler.make_rag_handler("IDX", llm, con=con), resolver=case_customer_resolver(con, AS_OF))
     assert card.path == "rag_customer" and not card.refused
     assert card.answer == "Promised $95 on 14 Oct." and card.sources == ["contact:C-9"]
-    assert f"The question is about case {CASE}." in str(be.calls[0])  # the case reached the model prompt
+    assert f"The question is about case {CASE}; only that case's items are listed." in be.calls[0]["user"]
+    assert "OLD-CASE" not in be.calls[0]["user"]  # the customer's other case is not read (P2's spec)
 
 
 @pytest.mark.parametrize("user, case", [

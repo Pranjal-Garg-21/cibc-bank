@@ -19,7 +19,7 @@ Paths below are relative to the repository root. Ownership records the agreed im
 | Codex: query safety and execution | `src/trustissues/ask/data/validator.py`, `execute.py` | Structural SQL validation, trusted scopes, row/runtime caps, read-only execution |
 | Codex: metrics and semantic contracts | `src/trustissues/ask/data/semantic.py`, `semantic_adapters.py`, `metric_templates.py`, `metric_sql/*.sql` | Six semantic shapes, isolated development adapters, bounded metric rendering |
 | Codex: relationships | `src/trustissues/ask/data/schema_graph.py` | Dictionary relationship graph, multiplicity, proposed join paths |
-| Codex: quality helpers | `src/trustissues/factory/quality/contract_checks.py`, `anomaly.py`, `check_report.py` | Eight contract checks, statistical anomalies, contract/anomaly Markdown report |
+| Codex: quality helpers (removed at the P2 merge, see §8) | `src/trustissues/factory/quality/contract_checks.py`, `anomaly.py`, `check_report.py` | Eight contract checks, statistical anomalies, contract/anomaly Markdown report |
 | P4 integration dependency | `src/trustissues/ask/rag/*.py`, `src/trustissues/common/llm.py`, `audit.py` | Policy ingestion/search/answering and shared model/audit support; see [P4 build notes](p4_policy_rag_build.md) |
 | P1 integration dependency | `src/trustissues/factory/quality/dq_report.py` | Anushka's curated-data diagnostics/report pipeline; distinct from `check_report.py` |
 
@@ -155,6 +155,8 @@ Customer access wiring is present, but retrieving the latest recorded call for a
 Policy retrieval may attach hardship rows by opening the warehouse. The current handler does not expose the standalone policy CLI's no-hardship option. Consequently the benchmark `--llm` path is not safe to run during the worker lock just because its metric database is isolated.
 
 ## 8. Quality checks, anomalies, and the two reports
+
+**Superseded at the P2 merge (4 Oct).** `run_checks`, `check_report.py` and `ops_anomaly.py` (P2's anomaly helper) were removed: the eight checks repeated P1's contract rules Q1-Q9 one for one, and the two they added were folded into `contracts/c360_customer.yaml` (overdue totals in Q7, build age as Q10). P1's `quality/anomaly.py` is the one anomaly detector. One publish gate: `contract_checks.run()`. See `merge.md` §6. The text below records P2's design.
 
 `contract_checks.run_checks` checks the gold stub-shaped products using two explicit clocks: dataset `as_of_date` for age, and real batch `checked_at` for freshness.
 

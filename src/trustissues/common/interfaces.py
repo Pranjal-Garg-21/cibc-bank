@@ -26,7 +26,7 @@ class RagRequest:
     user_id: str  # agent id / lead id: the router authorises, RAG re-checks the customer against this user
     as_of_date: date
     golden_customer_id: str | None = None  # required for rag_customer
-    case_id: str | None = None  # set when the question names a case (rag_customer): that case's items are read first
+    case_id: str | None = None  # set when the question names a case (rag_customer): answer from that case's items only
 
 
 @dataclass

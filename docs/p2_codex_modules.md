@@ -25,6 +25,8 @@ Historical case/account state cannot be rebuilt from their current snapshot: Cla
 
 ## Quality integration for P1
 
+**Superseded at the P2 merge (4 Oct).** `run_checks`, `check_report.py` and `ops_anomaly.py` (P2's anomaly helper) were removed: the eight checks repeated P1's contract rules Q1-Q9 one for one, and the two they added were folded into `contracts/c360_customer.yaml` (overdue totals in Q7, build age as Q10). P1's `quality/anomaly.py` is the one anomaly detector. One publish gate: `contract_checks.run()`. See `merge.md` §6. The text below records P2's design.
+
 `contract_checks.run_checks(con, as_of_date=..., checked_at=..., source_records=..., source_safety=..., decisioning_allowlist=...)` implements the final design's eight checks. Rules 1–5 block, 6–8 warn. Missing source inventory, safety evidence or approved decisioning allow-list yields `not_checked`; `publish_allowed(results)` fails closed on any incomplete blocking check. Call before publishing a staged product. Current table names follow gold stubs; adapting the staging schema is a P1 integration step.
 
 `source_records` is the complete `(system,source_customer_key)` inventory, not keys derived from the crosswalk itself. `source_safety` is the independently derived per-golden-ID OR of cease/deceased/bankruptcy/dispute flags from sources. Without independent inputs, checks would merely compare a product to itself. `checked_at` is the real batch clock for 24-hour freshness; the dataset as-of date governs DOB/age validation. Customer totals compare the latest account snapshot and tolerate one cent.

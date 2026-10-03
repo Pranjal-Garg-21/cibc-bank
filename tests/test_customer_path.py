@@ -169,7 +169,8 @@ def test_budget_reads_the_asked_about_case_first():
 def test_coverage_states_the_period_and_what_was_left_out():
     chosen = [_item("b", 2, 10, CASE), _item("c", 3, 10)]
     s = describe_coverage(chosen, total=3, withheld=1, as_of=AS_OF, case_id=CASE)
-    assert "2026-09-02 to 2026-09-03" in s and "1 on case" in s and "1 items were left out" in s and "1 notes or calls" in s
+    assert "2026-09-02 to 2026-09-03" in s and f"all on case {CASE}" in s and "1 items were left out" in s and "1 notes or calls" in s
+    assert "no recorded calls on this case up to 2026-09-28" in s  # P2's spec: say so when the case has no call
     assert describe_coverage([], 0, 0, AS_OF) == "No history for this customer on or before 2026-09-28."
 
 
@@ -177,19 +178,20 @@ def test_coverage_states_the_period_and_what_was_left_out():
 def test_answers_from_the_call_with_checked_quotes_and_citations(con, tmp_path):
     reply = {"answer": "Off work sick since July; promised $95 on 14 Oct.", "not_found": False, "confidence": 0.9,
              "conflict_note": None,
-             "evidence": [{"source": "S4", "quote": "customer: I can pay $95 Oct 14."},
-                          {"source": "S4", "quote": "customer: I won the lottery."}]}  # invented: dropped
+             "evidence": [{"source": "S3", "quote": "customer: I can pay $95 Oct 14."},
+                          {"source": "S3", "quote": "customer: I won the lottery."}]}  # invented: dropped
     llm, be = make_llm(tmp_path, reply, audit=AuditLog(con))
     run = run_customer("Summarise the most recent recorded call: what did the customer say and agree to?", "G-1",
                        con=con, llm=llm, as_of=AS_OF, user_role="agent", user_id="AG-NOW", case_id=CASE)
     r = run.response
     assert not r.not_found and r.evidence == ["customer: I can pay $95 Oct 14."]
     assert [(c.kind, c.source_id, c.source_ts) for c in r.citations] == [("transcript", "5010384", "2026-09-27 16:59")]
-    assert "on case CS-2026-000001" in r.coverage
+    assert "all on case CS-2026-000001" in r.coverage
 
     prompt = be.calls[0]["user"]
-    assert "[S4] transcript | 5010384 | 2026-09-27 16:59 | case CS-2026-000001" in prompt
+    assert "[S3] transcript | 5010384 | 2026-09-27 16:59 | case CS-2026-000001" in prompt
     assert "The question is about case CS-2026-000001" in prompt and "N-FUTURE" not in prompt
+    assert "OLD-CASE" not in prompt and "N-1" not in prompt  # another case of the same customer is never read
     kind, version = con.execute("SELECT kind, prompt_version FROM gold.audit_log").fetchone()
     assert (kind, version) == ("rag_customer", cp.PROMPT_VERSION)
 
@@ -219,7 +221,7 @@ def test_french_question_gets_the_french_not_found(con, tmp_path):
 
 def test_i6_entry_point(con, tmp_path):
     reply = {"answer": "Promised $95 on 14 Oct.", "not_found": False, "confidence": 0.9, "conflict_note": None,
-             "evidence": [{"source": "S5", "quote": "inbound | Promise to pay | promise made"}]}
+             "evidence": [{"source": "S4", "quote": "inbound | Promise to pay | promise made"}]}
     llm, _ = make_llm(tmp_path, reply)
     req = RagRequest("What was agreed?", "rag_customer", "agent", "AG-NOW", AS_OF, "G-1", case_id=CASE)
     r = answer_customer(req, con=con, llm=llm)
@@ -236,3 +238,20 @@ def test_a_quote_joining_call_lines_passes_only_if_every_line_is_real(con, tmp_p
     llm, _ = make_llm(tmp_path, reply)
     r = run_customer("What was said?", "G-1", con=con, llm=llm, as_of=AS_OF, user_role="agent", user_id="AG-NOW").response
     assert r.evidence == [stitched]
+
+
+# ---- a named case: that case only (P2's spec, docs/interfaces.md "Case to call") ----------------
+def test_a_named_case_reads_only_that_case(con):
+    items, withheld = fetch_history(con, "G-1", AS_OF, case_id=CASE)
+    assert {i.case_id for i in items} == {CASE} and "N-1" not in {i.source_id for i in items}
+    assert withheld == 1  # N-3 (no text) is on this case
+    assert fetch_history(con, "G-1", AS_OF, case_id="OLD-CASE")[0][0].source_id == "N-1"
+
+
+def test_a_case_with_nothing_on_it_is_not_found_without_reading_other_cases(con, tmp_path):
+    con.execute("INSERT INTO gold.case_customer VALUES ('CS-2026-000002', 'G-1')")
+    llm, be = make_llm(tmp_path)
+    r = run_customer("Summarise the most recent call on this case", "G-1", con=con, llm=llm, as_of=AS_OF,
+                     user_role="agent", user_id="AG-NOW", case_id="CS-2026-000002").response
+    assert r.not_found and not be.calls  # never falls back to G-1's other case
+    assert r.coverage == "No history on case CS-2026-000002 for this customer on or before 2026-09-28."

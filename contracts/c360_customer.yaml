@@ -111,10 +111,14 @@ rules:
       FROM {g}.c360_customer
   - id: Q7
     blocking: false
-    title: balances and max_dpd are not negative; customer totals equal the sum of accounts
+    title: balances and max_dpd are not negative; customer balance and overdue totals equal the sum of accounts
+    # overdue added from P2's rule 7 (P2 merge, 4 Oct); 0 overdue mismatches on the 4 Oct build, so Q7 still counts 18
     sql: >-
-      SELECT count(*) FILTER (WHERE g.total_balance < 0 OR g.max_dpd < 0 OR abs(g.total_balance - coalesce(a.owed, 0)) > 0.01), count(*)
-      FROM {g}.c360_customer g LEFT JOIN (SELECT golden_customer_id, sum(amount_owed) owed FROM {g}.c360_account GROUP BY 1) a USING (golden_customer_id)
+      SELECT count(*) FILTER (WHERE g.total_balance < 0 OR g.max_dpd < 0 OR g.total_overdue < 0
+                              OR abs(g.total_balance - coalesce(a.owed, 0)) > 0.01
+                              OR abs(coalesce(g.total_overdue, 0) - coalesce(a.overdue, 0)) > 0.01), count(*)
+      FROM {g}.c360_customer g LEFT JOIN (SELECT golden_customer_id, sum(amount_owed) owed, sum(overdue_amount) overdue
+                                          FROM {g}.c360_account GROUP BY 1) a USING (golden_customer_id)
   - id: Q8
     blocking: false
     title: bureau score within its scoring model's range (RS-2.4 and RS-3.0 both score 300-850 in this release)
@@ -125,3 +129,12 @@ rules:
     title: source snapshot no more than 24 hours behind AS_OF_DATE
     sql: >-
       SELECT CASE WHEN date_diff('day', (SELECT max(snapshot_date) FROM {g}.c360_account), DATE '{as_of}') > 1 THEN 1 ELSE 0 END, 1
+  - id: Q10
+    blocking: false
+    title: the gold build is no more than 24 hours old when it is checked (batch clock, not the data's as-of date)
+    # from P2's rule 8 (P2 merge, 4 Oct): Q9 checks the data is current, this checks the build is. refresh_ts is
+    # written with the same clock (current_timestamp::TIMESTAMP in build_c360.py)
+    sql: >-
+      SELECT count(*) FILTER (WHERE refresh_ts IS NULL OR refresh_ts > current_timestamp::TIMESTAMP
+                              OR refresh_ts < current_timestamp::TIMESTAMP - INTERVAL 24 HOUR), count(*)
+      FROM {g}.c360_customer
