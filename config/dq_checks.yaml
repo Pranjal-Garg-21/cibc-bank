@@ -364,6 +364,16 @@ checks:
     where: "coalesce(is_deleted, false)"
     how: "Kept in `curated.customers`, excluded from `curated.customers_current`."
 
+  - id: R12
+    area: reference
+    title: "A French document with no English version: the Quebec annex REG-SUM-001-QC"
+    tables: [reference_documents]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where language = 'FR' and not exists (select 1 from curated.reference_documents e where e.language = 'EN' and e.doc_id || '-FR' = d.doc_id)), count(*) filter (where language = 'FR') from curated.reference_documents d"
+    evidence: "select string_agg(doc_id || ' (' || title || '; applies to provinces ' || applies_to_provinces || ')', '; ') from curated.reference_documents d where language = 'FR' and not exists (select 1 from curated.reference_documents e where e.language = 'EN' and e.doc_id || '-FR' = d.doc_id)"
+    how: "Of the 3 French documents, two are summaries of an English document (POL-COLL-001 and POL-COLL-004). The Quebec annex is not: it holds rules that no English document states (no collection calls on Sundays in Quebec, while the English contact policy allows Sunday calls from 13:00 to 17:00 where Sunday contact is permitted, and French service by default). English is the reference language for answers, but this document is kept searchable and is always included when a question or a customer is in Quebec (province QC). Its quotes stay in French. An English version, or confirmation of the Quebec rule, should be requested from the organisers."
+
   # ------------------------------------------------------------------ D. missing values
   - id: M1
     area: missing
@@ -435,6 +445,26 @@ checks:
     table: curated.customers
     where: "employer_name is null"
     how: "May be genuine (not employed). Not imputed."
+
+  - id: M9
+    area: missing
+    title: "Reference documents that exist only in English (no French version)"
+    tables: [reference_documents]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where language = 'EN' and not exists (select 1 from curated.reference_documents f where f.language = 'FR' and f.doc_id = d.doc_id || '-FR')), count(*) filter (where language = 'EN') from curated.reference_documents d"
+    evidence: "select 'languages: ' || string_agg(language || ' ' || n, ', ' order by language) || '; French versions exist only for ' || (select string_agg(left(doc_id, length(doc_id) - 3), ' and ' order by doc_id) from curated.reference_documents where language = 'FR' and doc_id like '%-FR') from (select language, count(*) n from curated.reference_documents group by 1)"
+    how: "Most of the policy, procedure, script, FAQ and incident documents are written in English only. English is therefore the reference language. A French question is translated to English only to search the documents; the answer is written in French, and the quoted evidence stays in English so it can still be checked word for word."
+
+  - id: M10
+    area: missing
+    title: "French versions are condensed summaries: sections of the English document are missing from the French one"
+    tables: [reference_documents]
+    severity: medium
+    status: documented
+    sql: "select coalesce(sum(len(list_filter(from_json(e.section_ids, '[\"VARCHAR\"]'), x -> not list_contains(from_json(f.section_ids, '[\"VARCHAR\"]'), x)))), 0), coalesce(sum(len(from_json(e.section_ids, '[\"VARCHAR\"]'))), 0) from curated.reference_documents f join curated.reference_documents e on e.language = 'EN' and e.doc_id || '-FR' = f.doc_id where f.language = 'FR'"
+    evidence: "select string_agg(doc || ' ' || sec, ', ' order by doc, sec) from (select e.doc_id as doc, unnest(list_filter(from_json(e.section_ids, '[\"VARCHAR\"]'), x -> not list_contains(from_json(f.section_ids, '[\"VARCHAR\"]'), x))) as sec from curated.reference_documents f join curated.reference_documents e on e.language = 'EN' and e.doc_id || '-FR' = f.doc_id where f.language = 'FR')"
+    how: "Counted from the section list in the document metadata (total column is the English sections of the two translated documents). The French text is also about a third of the length and drops details inside the sections it keeps (the Sunday 13:00 to 17:00 window, the 30-day contact pause, the 90-day re-review). No number in a French section differs from its English counterpart, so nothing contradicts; the French is only less complete. The French POL-COLL-004 file also has no section 4.1 although its metadata lists one, so 5 sections are missing in practice, not the count above. Handling: English is the reference, and a French rendering of an English document is not searched, so an answer cannot be built from the shorter text. The organisers should confirm that the English version governs."
 
   # ------------------------------------------------------------------ E. contradictions
   - id: L1

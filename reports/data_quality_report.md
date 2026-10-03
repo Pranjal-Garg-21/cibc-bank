@@ -4,10 +4,10 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 
 ## 1. Summary
 
-- **51 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
+- **54 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
 - **23 further checks found nothing** (section 10), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **flagged** 19, **documented** 13, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
+- How each issue was handled: **flagged** 19, **documented** 16, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
 - **Schema drift:** the loader recorded 6 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
@@ -60,6 +60,9 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | L7 | Promise marked kept but the amount paid is below the promised amount | 2,844 | 1.19% | medium | Flagged |
 | R5 | Call transcript points to a CRM customer that does not exist | 695 | 2.78% | medium | Flagged |
 | K3 | App outage 14 Sep: payments not posted, late fees charged in error; late-fee disputes about 3x baseline 15-22 Sep | 31 | 4.29% | medium | Documented |
+| M9 | Reference documents that exist only in English (no French version) | 14 | 87.5% | medium | Documented |
+| M10 | French versions are condensed summaries: sections of the English document are missing from the French one | 4 | 33.3% | medium | Documented |
+| R12 | A French document with no English version: the Quebec annex REG-SUM-001-QC | 1 | 33.3% | medium | Documented |
 | F8 | CRM phone numbers in 10 different formats | 1,004,777 | 98.5% | low | Standardised |
 | F5 | Deposit date of birth in YYYYMMDD (every filled value) | 764,244 | 98.0% | low | Standardised |
 | F10 | CRM postal code written with and without a space, in lower case, or both | 737,153 | 72.3% | low | Standardised |
@@ -323,6 +326,14 @@ Records that point at something that is not there, and people stored more than o
 
 **Handling (excluded from current view).** Kept in `curated.customers`, excluded from `curated.customers_current`.
 
+### R12. A French document with no English version: the Quebec annex REG-SUM-001-QC
+
+**Affected:** 1 of 3 (33.3%) · **Tables:** `reference_documents` · **Severity:** medium
+
+*Evidence:* REG-SUM-001-QC (Québec Annex; applies to provinces ["QC"]).
+
+**Handling (documented).** Of the 3 French documents, two are summaries of an English document (POL-COLL-001 and POL-COLL-004). The Quebec annex is not: it holds rules that no English document states (no collection calls on Sundays in Quebec, while the English contact policy allows Sunday calls from 13:00 to 17:00 where Sunday contact is permitted, and French service by default). English is the reference language for answers, but this document is kept searchable and is always included when a question or a customer is in Quebec (province QC). Its quotes stay in French. An English version, or confirmation of the Quebec rule, should be requested from the organisers.
+
 ## 6. Missing values
 
 Values that are blank where they should not be. None were imputed.
@@ -376,6 +387,22 @@ Values that are blank where they should not be. None were imputed.
 **Affected:** 359,829 of 1,020,000 (35.3%) · **Tables:** `customers` · **Severity:** info
 
 **Handling (documented).** May be genuine (not employed). Not imputed.
+
+### M9. Reference documents that exist only in English (no French version)
+
+**Affected:** 14 of 16 (87.5%) · **Tables:** `reference_documents` · **Severity:** medium
+
+*Evidence:* languages: EN 16, FR 3; French versions exist only for POL-COLL-001 and POL-COLL-004.
+
+**Handling (documented).** Most of the policy, procedure, script, FAQ and incident documents are written in English only. English is therefore the reference language. A French question is translated to English only to search the documents; the answer is written in French, and the quoted evidence stays in English so it can still be checked word for word.
+
+### M10. French versions are condensed summaries: sections of the English document are missing from the French one
+
+**Affected:** 4 of 12 (33.3%) · **Tables:** `reference_documents` · **Severity:** medium
+
+*Evidence:* POL-COLL-001 §5.3, POL-COLL-001 §5.5, POL-COLL-004 §4.3, POL-COLL-004 §4.4.
+
+**Handling (documented).** Counted from the section list in the document metadata (total column is the English sections of the two translated documents). The French text is also about a third of the length and drops details inside the sections it keeps (the Sunday 13:00 to 17:00 window, the 30-day contact pause, the 90-day re-review). No number in a French section differs from its English counterpart, so nothing contradicts; the French is only less complete. The French POL-COLL-004 file also has no section 4.1 although its metadata lists one, so 5 sections are missing in practice, not the count above. Handling: English is the reference, and a French rendering of an English document is not searched, so an answer cannot be built from the shorter text. The organisers should confirm that the English version governs.
 
 ## 7. Values that contradict each other
 
