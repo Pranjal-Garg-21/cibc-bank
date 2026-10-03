@@ -57,6 +57,10 @@ p3:
     holdout_start: "2026-06-30"
     horizon_days: 30
     incumbent_model: cure_30d
+    # The not-cured rate keeps rising after the Apr 2026 break (DQ T1), so a calibration fitted on Apr-May
+    # under-predicts. true = the saved model is calibrated on the most recent fully observed month-end (the last
+    # holdout month-end); the report shows the test of that: calibrated on the month before, judged on the last.
+    recalibrate_on_latest: true
   # No collection contact on these days (POL-COLL-001 s5.1). Federal statutory holidays: banks are federally
   # regulated. Letters can still be posted. Extend the list when the as-of date moves to another year.
   statutory_holidays: ["2026-01-01", "2026-04-03", "2026-05-18", "2026-07-01", "2026-09-07", "2026-09-30",

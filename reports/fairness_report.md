@@ -6,20 +6,21 @@ This is a screen for review, not a legal test. A flag means a difference large e
 
 ## 1. Findings
 
-- **Promise break risk**: 5 screening flags for our model, 3 for the bank's, across 8 attributes.
+- **Promise break risk**: 6 screening flags for our model, 3 for the bank's, across 8 attributes.
 - **Case risk of not curing in 30 days**: 6 screening flags for our model, 2 for the bank's, across 8 attributes.
 
-- Promise break risk, gender, ours: riskiest-20% rate 20.8% for U (actual 61.4%) vs 28.1% for X (actual 63.0%), ratio 0.74; bad outcomes caught 33.9% for U (actual 61.4%) vs 44.6% for X (actual 63.0%), ratio 0.76
+- Promise break risk, gender, ours: riskiest-20% rate 21.1% for U (actual 61.4%) vs 28.8% for X (actual 63.0%), ratio 0.73; bad outcomes caught 34.4% for U (actual 61.4%) vs 45.8% for X (actual 63.0%), ratio 0.75
 - Promise break risk, age band, the bank's: calibration gap -0.043 for 65+ (n=1,693; overall -0.103)
+- Promise break risk, marital status, ours: riskiest-20% rate 22.6% for widowed (actual 60.4%) vs 28.6% for separated (actual 67.8%), ratio 0.79
 - Promise break risk, marital status, the bank's: calibration gap -0.157 for separated (n=2,689; overall -0.103)
 - Promise break risk, newcomer programme, the bank's: calibration gap -0.053 for yes (n=3,319; overall -0.103)
-- Promise break risk, preferred language, ours: calibration gap -0.054 for AR (n=197; overall +0.015); riskiest-20% rate 17.4% for TL (actual 58.0%) vs 27.2% for PA (actual 59.9%), ratio 0.64; bad outcomes caught 30.0% for TL (actual 58.0%) vs 45.4% for PA (actual 59.9%), ratio 0.66
-- Case risk of not curing in 30 days, age band, ours: calibration gap -0.029 for 65+ (n=3,957; overall -0.088)
+- Promise break risk, preferred language, ours: calibration gap -0.054 for AR (n=197; overall +0.015); riskiest-20% rate 18.1% for TL (actual 58.0%) vs 27.4% for PA (actual 59.9%), ratio 0.66; bad outcomes caught 31.2% for TL (actual 58.0%) vs 45.7% for PA (actual 59.9%), ratio 0.68
+- Case risk of not curing in 30 days, age band, ours: calibration gap +0.064 for 65+ (n=3,957; overall +0.004)
 - Case risk of not curing in 30 days, age band, the bank's: calibration gap -0.177 for 65+ (n=3,957; overall -0.251)
 - Case risk of not curing in 30 days, marital status, the bank's: calibration gap -0.306 for separated (n=6,236; overall -0.251)
-- Case risk of not curing in 30 days, newcomer programme, ours: riskiest-20% rate 17.3% for yes (actual 74.3%) vs 21.8% for no (actual 81.0%), ratio 0.79
-- Case risk of not curing in 30 days, dependants, ours: riskiest-20% rate 14.7% for 3+ (actual 78.2%) vs 22.5% for 2 (actual 81.7%), ratio 0.65; bad outcomes caught 18.8% for 3+ (actual 78.2%) vs 27.6% for 2 (actual 81.7%), ratio 0.68
-- Case risk of not curing in 30 days, preferred language, ours: riskiest-20% rate 19.1% for PA (actual 80.4%) vs 24.3% for AR (actual 75.5%), ratio 0.78; bad outcomes caught 23.7% for PA (actual 80.4%) vs 32.2% for AR (actual 75.5%), ratio 0.74
+- Case risk of not curing in 30 days, newcomer programme, ours: riskiest-20% rate 16.4% for yes (actual 74.3%) vs 20.7% for no (actual 81.0%), ratio 0.79
+- Case risk of not curing in 30 days, dependants, ours: riskiest-20% rate 14.1% for 3+ (actual 78.2%) vs 21.1% for 1 (actual 81.6%), ratio 0.67; bad outcomes caught 18.0% for 3+ (actual 78.2%) vs 25.9% for 1 (actual 81.6%), ratio 0.70
+- Case risk of not curing in 30 days, preferred language, ours: riskiest-20% rate 17.7% for PA (actual 80.4%) vs 22.9% for AR (actual 75.5%), ratio 0.77; bad outcomes caught 22.0% for PA (actual 80.4%) vs 30.4% for AR (actual 75.5%), ratio 0.72
 - Proxy audit: the case model's features predict in the newcomer programme with AUC 0.646 (mostly entry_overdue, balance_to_limit, card_utilisation)
 
 ## 2. The models, by group
@@ -32,14 +33,14 @@ Holdout rows scored by both our model and the bank's. *Gap* = mean score minus a
 
 | Attribute | Groups | AUC range ours | AUC range bank | Largest calibration gap ours | bank | Selection ratio ours | bank | Flags ours | Flags bank |
 |---|---|---|---|---|---|---|---|---|---|
-| Gender | 4 | 0.931–0.959 | 0.674–0.706 | 0.020 | 0.145 | 0.74 | 0.89 | riskiest-20% rate 20.8% for U (actual 61.4%) vs 28.1% for X (actual 63.0%), ratio 0.74; bad outcomes caught 33.9% for U (actual 61.4%) vs 44.6% for X (actual 63.0%), ratio 0.76 | none |
+| Gender | 4 | 0.933–0.959 | 0.674–0.706 | 0.022 | 0.145 | 0.73 | 0.89 | riskiest-20% rate 21.1% for U (actual 61.4%) vs 28.8% for X (actual 63.0%), ratio 0.73; bad outcomes caught 34.4% for U (actual 61.4%) vs 45.8% for X (actual 63.0%), ratio 0.75 | none |
 | Age band | 6 | 0.944–0.960 | 0.686–0.705 | 0.023 | 0.130 | 0.85 | 0.88 | none | calibration gap -0.043 for 65+ (n=1,693; overall -0.103) |
-| Marital status | 7 | 0.945–0.954 | 0.679–0.710 | 0.018 | 0.157 | 0.80 | 0.88 | none | calibration gap -0.157 for separated (n=2,689; overall -0.103) |
-| Citizenship / residency | 4 | 0.947–0.952 | 0.685–0.701 | 0.017 | 0.109 | 0.84 | 0.87 | none | none |
-| Newcomer programme | 2 | 0.950–0.954 | 0.693–0.702 | 0.016 | 0.109 | 0.88 | 0.96 | none | calibration gap -0.053 for yes (n=3,319; overall -0.103) |
-| Accessibility needs | 2 | 0.950–0.952 | 0.668–0.695 | 0.015 | 0.104 | 0.99 | 0.99 | none | none |
-| Dependants | 3 | 0.933–0.952 | 0.689–0.693 | 0.015 | 0.130 | 0.92 | 0.95 | none | none |
-| Preferred language (not protected; checked as a stand-in for origin) | 7 | 0.945–0.977 | 0.589–0.718 | 0.054 | 0.158 | 0.64 | 0.66 | calibration gap -0.054 for AR (n=197; overall +0.015); riskiest-20% rate 17.4% for TL (actual 58.0%) vs 27.2% for PA (actual 59.9%), ratio 0.64; bad outcomes caught 30.0% for TL (actual 58.0%) vs 45.4% for PA (actual 59.9%), ratio 0.66 | none |
+| Marital status | 7 | 0.945–0.954 | 0.679–0.710 | 0.018 | 0.157 | 0.79 | 0.88 | riskiest-20% rate 22.6% for widowed (actual 60.4%) vs 28.6% for separated (actual 67.8%), ratio 0.79 | calibration gap -0.157 for separated (n=2,689; overall -0.103) |
+| Citizenship / residency | 4 | 0.945–0.952 | 0.685–0.701 | 0.017 | 0.109 | 0.83 | 0.87 | none | none |
+| Newcomer programme | 2 | 0.950–0.952 | 0.693–0.702 | 0.016 | 0.109 | 0.88 | 0.96 | none | calibration gap -0.053 for yes (n=3,319; overall -0.103) |
+| Accessibility needs | 2 | 0.950–0.952 | 0.668–0.695 | 0.015 | 0.104 | 1.00 | 0.99 | none | none |
+| Dependants | 3 | 0.934–0.952 | 0.689–0.693 | 0.016 | 0.130 | 0.93 | 0.95 | none | none |
+| Preferred language (not protected; checked as a stand-in for origin) | 7 | 0.944–0.977 | 0.589–0.718 | 0.054 | 0.158 | 0.66 | 0.66 | calibration gap -0.054 for AR (n=197; overall +0.015); riskiest-20% rate 18.1% for TL (actual 58.0%) vs 27.4% for PA (actual 59.9%), ratio 0.66; bad outcomes caught 31.2% for TL (actual 58.0%) vs 45.7% for PA (actual 59.9%), ratio 0.68 | none |
 
 <details><summary>Every group</summary>
 
@@ -47,106 +48,106 @@ Holdout rows scored by both our model and the bank's. *Gap* = mean score minus a
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M | 15,628 | 61.9% | 0.633 (+0.014) | 0.512 (-0.107) | 0.951 | 0.694 | 25.4% | 20.2% | 41.0% | 27.2% |
-| F | 15,322 | 61.1% | 0.626 (+0.015) | 0.512 (-0.099) | 0.950 | 0.695 | 24.8% | 19.7% | 40.6% | 26.8% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
-| U | 308 | 61.4% | 0.627 (+0.013) | 0.523 (-0.090) | 0.931 | 0.706 | 20.8% | 20.5% | 33.9% | 27.0% |
-| not recorded | 288 | 64.2% | 0.645 (+0.003) | 0.507 (-0.135) | 0.958 | 0.685 | 27.8% | 20.1% | 43.2% | 26.5% |
-| X | 281 | 63.0% | 0.649 (+0.020) | 0.485 (-0.145) | 0.959 | 0.674 | 28.1% | 18.1% | 44.6% | 22.0% |
+| M | 15,628 | 61.9% | 0.633 (+0.015) | 0.512 (-0.107) | 0.951 | 0.694 | 25.4% | 20.2% | 41.1% | 27.2% |
+| F | 15,322 | 61.1% | 0.626 (+0.015) | 0.512 (-0.099) | 0.950 | 0.695 | 24.8% | 19.7% | 40.7% | 26.8% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
+| U | 308 | 61.4% | 0.626 (+0.013) | 0.523 (-0.090) | 0.933 | 0.706 | 21.1% | 20.5% | 34.4% | 27.0% |
+| not recorded | 288 | 64.2% | 0.644 (+0.001) | 0.507 (-0.135) | 0.961 | 0.685 | 28.5% | 20.1% | 44.3% | 26.5% |
+| X | 281 | 63.0% | 0.652 (+0.022) | 0.485 (-0.145) | 0.959 | 0.674 | 28.8% | 18.1% | 45.8% | 22.0% |
 
 **Age band**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 25-34 | 8,083 | 63.0% | 0.648 (+0.018) | 0.512 (-0.118) | 0.944 | 0.693 | 25.3% | 19.9% | 40.2% | 26.4% |
-| 35-44 | 7,111 | 64.3% | 0.655 (+0.012) | 0.513 (-0.130) | 0.948 | 0.686 | 26.6% | 20.3% | 41.3% | 26.4% |
-| 18-24 | 6,354 | 58.7% | 0.604 (+0.017) | 0.513 (-0.074) | 0.952 | 0.696 | 23.8% | 20.2% | 40.5% | 28.1% |
-| 45-54 | 5,687 | 62.7% | 0.638 (+0.011) | 0.512 (-0.116) | 0.950 | 0.705 | 26.1% | 19.6% | 41.6% | 26.4% |
-| 55-64 | 2,739 | 57.1% | 0.580 (+0.009) | 0.503 (-0.068) | 0.960 | 0.695 | 22.7% | 19.0% | 39.8% | 27.0% |
-| 65+ | 1,693 | 56.1% | 0.584 (+0.023) | 0.517 (-0.043) | 0.959 | 0.701 | 23.0% | 21.5% | 41.0% | 30.6% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
-| not recorded | 160 | 61.9% | 0.625 (+0.006) | 0.482 (-0.136) | 0.964 | 0.654 | 24.4% | 16.9% | 39.4% | 21.2% |
+| 35-44 | 7,111 | 64.3% | 0.656 (+0.012) | 0.513 (-0.130) | 0.947 | 0.686 | 26.7% | 20.3% | 41.5% | 26.4% |
+| 18-24 | 6,354 | 58.7% | 0.604 (+0.017) | 0.513 (-0.074) | 0.952 | 0.696 | 24.0% | 20.2% | 40.8% | 28.1% |
+| 45-54 | 5,687 | 62.7% | 0.638 (+0.011) | 0.512 (-0.116) | 0.950 | 0.705 | 26.2% | 19.6% | 41.8% | 26.4% |
+| 55-64 | 2,739 | 57.1% | 0.581 (+0.010) | 0.503 (-0.068) | 0.960 | 0.695 | 22.7% | 19.0% | 39.8% | 27.0% |
+| 65+ | 1,693 | 56.1% | 0.584 (+0.023) | 0.517 (-0.043) | 0.959 | 0.701 | 22.8% | 21.5% | 40.7% | 30.6% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
+| not recorded | 160 | 61.9% | 0.628 (+0.009) | 0.482 (-0.136) | 0.965 | 0.654 | 24.4% | 16.9% | 39.4% | 21.2% |
 
 **Marital status**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| married | 9,907 | 61.2% | 0.629 (+0.018) | 0.506 (-0.105) | 0.952 | 0.700 | 25.0% | 19.4% | 40.9% | 26.4% |
-| single | 8,553 | 60.4% | 0.619 (+0.015) | 0.512 (-0.092) | 0.948 | 0.687 | 24.5% | 20.1% | 40.5% | 27.3% |
-| common_law | 4,044 | 60.5% | 0.618 (+0.012) | 0.520 (-0.085) | 0.954 | 0.710 | 24.8% | 21.4% | 40.9% | 29.5% |
-| separated | 2,689 | 67.8% | 0.688 (+0.010) | 0.521 (-0.157) | 0.945 | 0.679 | 28.8% | 20.5% | 42.4% | 25.7% |
-| not recorded | 2,473 | 61.8% | 0.626 (+0.008) | 0.514 (-0.104) | 0.949 | 0.686 | 24.1% | 18.9% | 39.0% | 24.6% |
-| divorced | 1,871 | 61.3% | 0.629 (+0.016) | 0.503 (-0.110) | 0.947 | 0.690 | 25.9% | 19.9% | 42.2% | 26.5% |
-| undisclosed | 1,413 | 61.7% | 0.632 (+0.015) | 0.516 (-0.101) | 0.947 | 0.684 | 25.1% | 20.9% | 40.7% | 28.9% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
-| widowed | 877 | 60.4% | 0.620 (+0.016) | 0.503 (-0.101) | 0.954 | 0.709 | 23.1% | 18.9% | 38.3% | 25.7% |
+| married | 9,907 | 61.2% | 0.630 (+0.018) | 0.506 (-0.105) | 0.952 | 0.700 | 25.2% | 19.4% | 41.2% | 26.4% |
+| single | 8,553 | 60.4% | 0.619 (+0.015) | 0.512 (-0.092) | 0.948 | 0.687 | 24.7% | 20.1% | 40.8% | 27.3% |
+| common_law | 4,044 | 60.5% | 0.618 (+0.013) | 0.520 (-0.085) | 0.954 | 0.710 | 24.8% | 21.4% | 40.9% | 29.5% |
+| separated | 2,689 | 67.8% | 0.688 (+0.010) | 0.521 (-0.157) | 0.946 | 0.679 | 28.6% | 20.5% | 42.1% | 25.7% |
+| not recorded | 2,473 | 61.8% | 0.627 (+0.009) | 0.514 (-0.104) | 0.948 | 0.686 | 23.9% | 18.9% | 38.7% | 24.6% |
+| divorced | 1,871 | 61.3% | 0.630 (+0.017) | 0.503 (-0.110) | 0.945 | 0.690 | 25.8% | 19.9% | 42.1% | 26.5% |
+| undisclosed | 1,413 | 61.7% | 0.632 (+0.015) | 0.516 (-0.101) | 0.948 | 0.684 | 25.5% | 20.9% | 41.3% | 28.9% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
+| widowed | 877 | 60.4% | 0.621 (+0.017) | 0.503 (-0.101) | 0.953 | 0.709 | 22.6% | 18.9% | 37.4% | 25.7% |
 
 **Citizenship / residency**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| citizen | 24,182 | 62.1% | 0.635 (+0.015) | 0.512 (-0.109) | 0.950 | 0.693 | 25.4% | 20.2% | 41.0% | 27.0% |
-| permanent_resident | 4,803 | 59.9% | 0.613 (+0.014) | 0.511 (-0.088) | 0.950 | 0.701 | 24.5% | 19.7% | 40.8% | 27.1% |
-| work_permit | 1,418 | 60.8% | 0.619 (+0.011) | 0.517 (-0.091) | 0.952 | 0.685 | 24.1% | 20.0% | 39.7% | 27.0% |
-| study_permit | 1,100 | 57.1% | 0.588 (+0.017) | 0.499 (-0.072) | 0.947 | 0.696 | 21.3% | 17.5% | 37.3% | 25.6% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
-| not recorded | 324 | 61.4% | 0.640 (+0.025) | 0.517 (-0.097) | 0.962 | 0.703 | 25.3% | 20.1% | 41.2% | 27.1% |
+| citizen | 24,182 | 62.1% | 0.635 (+0.015) | 0.512 (-0.109) | 0.950 | 0.693 | 25.5% | 20.2% | 41.1% | 27.0% |
+| permanent_resident | 4,803 | 59.9% | 0.614 (+0.014) | 0.511 (-0.088) | 0.950 | 0.701 | 24.5% | 19.7% | 40.8% | 27.1% |
+| work_permit | 1,418 | 60.8% | 0.619 (+0.011) | 0.517 (-0.091) | 0.952 | 0.685 | 24.4% | 20.0% | 40.1% | 27.0% |
+| study_permit | 1,100 | 57.1% | 0.588 (+0.017) | 0.499 (-0.072) | 0.945 | 0.696 | 21.2% | 17.5% | 37.1% | 25.6% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
+| not recorded | 324 | 61.4% | 0.640 (+0.026) | 0.517 (-0.097) | 0.963 | 0.703 | 25.9% | 20.1% | 42.2% | 27.1% |
 
 **Newcomer programme**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| no | 28,508 | 62.1% | 0.636 (+0.014) | 0.512 (-0.109) | 0.950 | 0.693 | 25.4% | 20.1% | 40.9% | 26.9% |
-| yes | 3,319 | 56.1% | 0.577 (+0.016) | 0.509 (-0.053) | 0.954 | 0.702 | 22.3% | 19.3% | 39.7% | 27.5% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
+| no | 28,508 | 62.1% | 0.636 (+0.015) | 0.512 (-0.109) | 0.950 | 0.693 | 25.5% | 20.1% | 41.0% | 26.9% |
+| yes | 3,319 | 56.1% | 0.578 (+0.016) | 0.509 (-0.053) | 0.952 | 0.702 | 22.5% | 19.3% | 40.0% | 27.5% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
 
 **Accessibility needs**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| no | 30,939 | 61.6% | 0.630 (+0.015) | 0.512 (-0.104) | 0.950 | 0.695 | 25.1% | 20.0% | 40.8% | 27.0% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
-| yes | 888 | 60.0% | 0.611 (+0.011) | 0.513 (-0.087) | 0.952 | 0.668 | 24.9% | 19.7% | 41.5% | 26.1% |
+| no | 30,939 | 61.6% | 0.630 (+0.015) | 0.512 (-0.104) | 0.950 | 0.695 | 25.2% | 20.0% | 40.9% | 27.0% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
+| yes | 888 | 60.0% | 0.612 (+0.012) | 0.513 (-0.087) | 0.952 | 0.668 | 25.1% | 19.7% | 41.8% | 26.1% |
 
 **Dependants**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 0 | 15,127 | 61.2% | 0.627 (+0.015) | 0.514 (-0.097) | 0.952 | 0.693 | 25.0% | 19.9% | 40.9% | 26.8% |
+| 0 | 15,127 | 61.2% | 0.627 (+0.016) | 0.514 (-0.097) | 0.952 | 0.693 | 25.0% | 19.9% | 40.9% | 26.8% |
 | not recorded | 9,513 | 61.3% | 0.627 (+0.014) | 0.512 (-0.101) | 0.950 | 0.697 | 24.9% | 20.4% | 40.6% | 27.7% |
-| 1 | 6,045 | 62.4% | 0.638 (+0.014) | 0.506 (-0.118) | 0.949 | 0.693 | 25.8% | 19.5% | 41.3% | 26.0% |
-| 2 | 1,063 | 63.5% | 0.650 (+0.015) | 0.505 (-0.130) | 0.933 | 0.689 | 23.7% | 20.4% | 37.3% | 27.9% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
+| 1 | 6,045 | 62.4% | 0.638 (+0.014) | 0.506 (-0.118) | 0.948 | 0.693 | 26.0% | 19.5% | 41.6% | 26.0% |
+| 2 | 1,063 | 63.5% | 0.650 (+0.015) | 0.505 (-0.130) | 0.934 | 0.689 | 24.3% | 20.4% | 38.2% | 27.9% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
 
 **Preferred language (not protected; checked as a stand-in for origin)**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| EN | 24,217 | 61.6% | 0.630 (+0.014) | 0.512 (-0.104) | 0.951 | 0.693 | 25.0% | 20.0% | 40.6% | 26.9% |
-| FR | 6,200 | 61.4% | 0.630 (+0.015) | 0.511 (-0.103) | 0.949 | 0.696 | 25.6% | 19.9% | 41.7% | 27.3% |
-| not in CRM | 1,042 | 59.5% | 0.610 (+0.015) | 0.510 (-0.085) | 0.951 | 0.713 | 22.4% | 21.0% | 37.6% | 29.0% |
-| ZH | 522 | 59.8% | 0.622 (+0.024) | 0.505 (-0.092) | 0.945 | 0.718 | 24.7% | 19.0% | 41.3% | 25.0% |
-| PA | 449 | 59.9% | 0.631 (+0.032) | 0.514 (-0.085) | 0.945 | 0.699 | 27.2% | 21.2% | 45.4% | 29.4% |
-| AR | 197 | 69.0% | 0.636 (-0.054) | 0.532 (-0.158) | 0.948 | 0.687 | 22.8% | 21.8% | 33.1% | 29.4% |
-| TL | 138 | 58.0% | 0.597 (+0.017) | 0.491 (-0.089) | 0.958 | 0.589 | 17.4% | 14.5% | 30.0% | 18.8% |
-| ES | 104 | 57.7% | 0.571 (-0.006) | 0.523 (-0.054) | 0.977 | 0.717 | 20.2% | 22.1% | 35.0% | 31.7% |
+| EN | 24,217 | 61.6% | 0.630 (+0.015) | 0.512 (-0.104) | 0.950 | 0.693 | 25.1% | 20.0% | 40.8% | 26.9% |
+| FR | 6,200 | 61.4% | 0.630 (+0.015) | 0.511 (-0.103) | 0.949 | 0.696 | 25.5% | 19.9% | 41.6% | 27.3% |
+| not in CRM | 1,042 | 59.5% | 0.611 (+0.016) | 0.510 (-0.085) | 0.952 | 0.713 | 23.2% | 21.0% | 39.0% | 29.0% |
+| ZH | 522 | 59.8% | 0.623 (+0.025) | 0.505 (-0.092) | 0.944 | 0.718 | 24.9% | 19.0% | 41.7% | 25.0% |
+| PA | 449 | 59.9% | 0.632 (+0.032) | 0.514 (-0.085) | 0.946 | 0.699 | 27.4% | 21.2% | 45.7% | 29.4% |
+| AR | 197 | 69.0% | 0.636 (-0.054) | 0.532 (-0.158) | 0.945 | 0.687 | 23.9% | 21.8% | 34.6% | 29.4% |
+| TL | 138 | 58.0% | 0.596 (+0.016) | 0.491 (-0.089) | 0.957 | 0.589 | 18.1% | 14.5% | 31.2% | 18.8% |
+| ES | 104 | 57.7% | 0.571 (-0.006) | 0.523 (-0.054) | 0.977 | 0.717 | 19.2% | 22.1% | 33.3% | 31.7% |
 
 </details>
 
 ### Case risk of not curing in 30 days (ours `case_nocure_v0` vs the bank's 1 - `cure_30d`)
 
-74,008 holdout rows; overall AUC 0.840 ours, 0.725 the bank's.
+74,008 holdout rows; overall AUC 0.841 ours, 0.725 the bank's.
 
 | Attribute | Groups | AUC range ours | AUC range bank | Largest calibration gap ours | bank | Selection ratio ours | bank | Flags ours | Flags bank |
 |---|---|---|---|---|---|---|---|---|---|
-| Gender | 4 | 0.838–0.855 | 0.702–0.765 | 0.092 | 0.256 | 0.85 | 0.82 | none | none |
-| Age band | 6 | 0.827–0.846 | 0.717–0.731 | 0.103 | 0.273 | 0.80 | 0.88 | calibration gap -0.029 for 65+ (n=3,957; overall -0.088) | calibration gap -0.177 for 65+ (n=3,957; overall -0.251) |
-| Marital status | 7 | 0.833–0.848 | 0.704–0.739 | 0.129 | 0.306 | 0.83 | 0.90 | none | calibration gap -0.306 for separated (n=6,236; overall -0.251) |
-| Citizenship / residency | 4 | 0.824–0.842 | 0.721–0.734 | 0.091 | 0.256 | 0.84 | 0.92 | none | none |
-| Newcomer programme | 2 | 0.821–0.841 | 0.725–0.729 | 0.091 | 0.256 | 0.79 | 0.91 | riskiest-20% rate 17.3% for yes (actual 74.3%) vs 21.8% for no (actual 81.0%), ratio 0.79 | none |
-| Accessibility needs | 2 | 0.840–0.841 | 0.725–0.752 | 0.088 | 0.251 | 0.98 | 0.99 | none | none |
-| Dependants | 4 | 0.792–0.845 | 0.701–0.729 | 0.094 | 0.263 | 0.65 | 0.88 | riskiest-20% rate 14.7% for 3+ (actual 78.2%) vs 22.5% for 2 (actual 81.7%), ratio 0.65; bad outcomes caught 18.8% for 3+ (actual 78.2%) vs 27.6% for 2 (actual 81.7%), ratio 0.68 | none |
-| Preferred language (not protected; checked as a stand-in for origin) | 7 | 0.787–0.856 | 0.722–0.761 | 0.098 | 0.267 | 0.78 | 0.90 | riskiest-20% rate 19.1% for PA (actual 80.4%) vs 24.3% for AR (actual 75.5%), ratio 0.78; bad outcomes caught 23.7% for PA (actual 80.4%) vs 32.2% for AR (actual 75.5%), ratio 0.74 | none |
+| Gender | 4 | 0.840–0.855 | 0.702–0.765 | 0.015 | 0.256 | 0.87 | 0.82 | none | none |
+| Age band | 6 | 0.829–0.848 | 0.717–0.731 | 0.064 | 0.273 | 0.80 | 0.88 | calibration gap +0.064 for 65+ (n=3,957; overall +0.004) | calibration gap -0.177 for 65+ (n=3,957; overall -0.251) |
+| Marital status | 7 | 0.836–0.849 | 0.704–0.739 | 0.040 | 0.306 | 0.82 | 0.90 | none | calibration gap -0.306 for separated (n=6,236; overall -0.251) |
+| Citizenship / residency | 4 | 0.825–0.844 | 0.721–0.734 | 0.036 | 0.256 | 0.83 | 0.92 | none | none |
+| Newcomer programme | 2 | 0.822–0.843 | 0.725–0.729 | 0.033 | 0.256 | 0.79 | 0.91 | riskiest-20% rate 16.4% for yes (actual 74.3%) vs 20.7% for no (actual 81.0%), ratio 0.79 | none |
+| Accessibility needs | 2 | 0.841–0.843 | 0.725–0.752 | 0.012 | 0.251 | 0.97 | 0.99 | none | none |
+| Dependants | 4 | 0.802–0.845 | 0.701–0.729 | 0.034 | 0.263 | 0.67 | 0.88 | riskiest-20% rate 14.1% for 3+ (actual 78.2%) vs 21.1% for 1 (actual 81.6%), ratio 0.67; bad outcomes caught 18.0% for 3+ (actual 78.2%) vs 25.9% for 1 (actual 81.6%), ratio 0.70 | none |
+| Preferred language (not protected; checked as a stand-in for origin) | 7 | 0.781–0.864 | 0.722–0.761 | 0.050 | 0.267 | 0.77 | 0.90 | riskiest-20% rate 17.7% for PA (actual 80.4%) vs 22.9% for AR (actual 75.5%), ratio 0.77; bad outcomes caught 22.0% for PA (actual 80.4%) vs 30.4% for AR (actual 75.5%), ratio 0.72 | none |
 
 <details><summary>Every group</summary>
 
@@ -154,90 +155,90 @@ Holdout rows scored by both our model and the bank's. *Gap* = mean score minus a
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M | 35,093 | 80.6% | 0.717 (-0.089) | 0.553 (-0.253) | 0.841 | 0.726 | 21.7% | 20.2% | 26.9% | 23.7% |
-| F | 34,651 | 80.1% | 0.713 (-0.087) | 0.553 (-0.248) | 0.838 | 0.724 | 21.1% | 19.9% | 26.4% | 23.3% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
-| X | 712 | 79.8% | 0.706 (-0.092) | 0.542 (-0.256) | 0.840 | 0.765 | 21.2% | 18.4% | 26.6% | 21.7% |
-| not recorded | 680 | 77.8% | 0.699 (-0.079) | 0.536 (-0.242) | 0.828 | 0.746 | 17.5% | 17.8% | 22.5% | 21.4% |
-| U | 670 | 80.0% | 0.717 (-0.083) | 0.545 (-0.255) | 0.855 | 0.702 | 18.5% | 16.6% | 23.1% | 19.6% |
+| M | 35,093 | 80.6% | 0.809 (+0.003) | 0.553 (-0.253) | 0.843 | 0.726 | 20.7% | 20.2% | 25.6% | 23.7% |
+| F | 34,651 | 80.1% | 0.806 (+0.005) | 0.553 (-0.248) | 0.840 | 0.724 | 20.0% | 19.9% | 25.0% | 23.3% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
+| X | 712 | 79.8% | 0.799 (+0.001) | 0.542 (-0.256) | 0.842 | 0.765 | 19.5% | 18.4% | 24.5% | 21.7% |
+| not recorded | 680 | 77.8% | 0.800 (+0.022) | 0.536 (-0.242) | 0.829 | 0.746 | 16.8% | 17.8% | 21.6% | 21.4% |
+| U | 670 | 80.0% | 0.815 (+0.015) | 0.545 (-0.255) | 0.855 | 0.702 | 17.9% | 16.6% | 22.4% | 19.6% |
 
 **Age band**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 25-34 | 18,122 | 82.9% | 0.726 (-0.103) | 0.558 (-0.271) | 0.839 | 0.728 | 22.5% | 20.5% | 27.1% | 23.5% |
-| 35-44 | 16,126 | 82.7% | 0.727 (-0.101) | 0.554 (-0.273) | 0.846 | 0.724 | 22.7% | 20.0% | 27.4% | 23.0% |
-| 18-24 | 14,386 | 78.6% | 0.704 (-0.082) | 0.549 (-0.237) | 0.833 | 0.731 | 19.7% | 19.7% | 25.0% | 23.4% |
-| 45-54 | 12,906 | 81.5% | 0.721 (-0.094) | 0.556 (-0.259) | 0.845 | 0.726 | 22.2% | 20.6% | 27.2% | 24.0% |
-| 55-64 | 5,980 | 73.0% | 0.685 (-0.045) | 0.539 (-0.191) | 0.827 | 0.717 | 18.2% | 19.0% | 24.9% | 23.5% |
-| 65+ | 3,957 | 71.8% | 0.689 (-0.029) | 0.541 (-0.177) | 0.832 | 0.721 | 18.7% | 18.2% | 25.9% | 22.8% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
-| not recorded | 329 | 80.9% | 0.711 (-0.098) | 0.550 (-0.259) | 0.865 | 0.764 | 22.5% | 19.8% | 27.8% | 23.3% |
+| 25-34 | 18,122 | 82.9% | 0.817 (-0.012) | 0.558 (-0.271) | 0.842 | 0.728 | 21.5% | 20.5% | 25.9% | 23.5% |
+| 35-44 | 16,126 | 82.7% | 0.818 (-0.010) | 0.554 (-0.273) | 0.848 | 0.724 | 21.5% | 20.0% | 26.0% | 23.0% |
+| 18-24 | 14,386 | 78.6% | 0.797 (+0.011) | 0.549 (-0.237) | 0.834 | 0.731 | 18.6% | 19.7% | 23.7% | 23.4% |
+| 45-54 | 12,906 | 81.5% | 0.812 (-0.003) | 0.556 (-0.259) | 0.847 | 0.726 | 21.0% | 20.6% | 25.7% | 24.0% |
+| 55-64 | 5,980 | 73.0% | 0.782 (+0.052) | 0.539 (-0.191) | 0.829 | 0.717 | 17.2% | 19.0% | 23.6% | 23.5% |
+| 65+ | 3,957 | 71.8% | 0.782 (+0.064) | 0.541 (-0.177) | 0.833 | 0.721 | 17.7% | 18.2% | 24.6% | 22.8% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
+| not recorded | 329 | 80.9% | 0.801 (-0.007) | 0.550 (-0.259) | 0.868 | 0.764 | 21.3% | 19.8% | 26.3% | 23.3% |
 
 **Marital status**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| married | 22,247 | 80.1% | 0.715 (-0.087) | 0.554 (-0.248) | 0.839 | 0.731 | 21.4% | 20.2% | 26.7% | 23.7% |
-| single | 19,249 | 78.9% | 0.710 (-0.080) | 0.548 (-0.241) | 0.837 | 0.723 | 20.9% | 19.3% | 26.4% | 22.8% |
-| common_law | 8,883 | 79.9% | 0.715 (-0.084) | 0.553 (-0.245) | 0.842 | 0.726 | 21.0% | 20.4% | 26.2% | 24.0% |
-| separated | 6,236 | 87.2% | 0.742 (-0.129) | 0.566 (-0.306) | 0.848 | 0.719 | 23.7% | 21.4% | 27.2% | 23.7% |
-| not recorded | 5,681 | 80.1% | 0.715 (-0.087) | 0.550 (-0.252) | 0.836 | 0.722 | 21.5% | 19.1% | 26.8% | 22.6% |
-| divorced | 4,223 | 79.3% | 0.708 (-0.085) | 0.554 (-0.240) | 0.833 | 0.717 | 20.8% | 20.0% | 26.2% | 23.5% |
-| undisclosed | 3,199 | 80.7% | 0.721 (-0.085) | 0.552 (-0.255) | 0.842 | 0.739 | 22.0% | 20.6% | 27.3% | 24.3% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
-| widowed | 2,088 | 78.2% | 0.703 (-0.079) | 0.544 (-0.238) | 0.842 | 0.704 | 19.7% | 19.5% | 25.2% | 23.5% |
+| married | 22,247 | 80.1% | 0.807 (+0.005) | 0.554 (-0.248) | 0.841 | 0.731 | 20.3% | 20.2% | 25.3% | 23.7% |
+| single | 19,249 | 78.9% | 0.802 (+0.013) | 0.548 (-0.241) | 0.839 | 0.723 | 19.7% | 19.3% | 25.0% | 22.8% |
+| common_law | 8,883 | 79.9% | 0.807 (+0.008) | 0.553 (-0.245) | 0.843 | 0.726 | 19.9% | 20.4% | 24.9% | 24.0% |
+| separated | 6,236 | 87.2% | 0.832 (-0.040) | 0.566 (-0.306) | 0.849 | 0.719 | 22.7% | 21.4% | 26.0% | 23.7% |
+| not recorded | 5,681 | 80.1% | 0.806 (+0.005) | 0.550 (-0.252) | 0.839 | 0.722 | 20.3% | 19.1% | 25.3% | 22.6% |
+| divorced | 4,223 | 79.3% | 0.801 (+0.007) | 0.554 (-0.240) | 0.836 | 0.717 | 19.9% | 20.0% | 25.1% | 23.5% |
+| undisclosed | 3,199 | 80.7% | 0.813 (+0.006) | 0.552 (-0.255) | 0.843 | 0.739 | 21.0% | 20.6% | 26.0% | 24.3% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
+| widowed | 2,088 | 78.2% | 0.796 (+0.014) | 0.544 (-0.238) | 0.845 | 0.704 | 18.6% | 19.5% | 23.8% | 23.5% |
 
 **Citizenship / residency**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| citizen | 54,680 | 81.1% | 0.719 (-0.091) | 0.555 (-0.256) | 0.842 | 0.726 | 21.9% | 20.3% | 27.0% | 23.6% |
-| permanent_resident | 10,822 | 78.1% | 0.704 (-0.077) | 0.545 (-0.236) | 0.834 | 0.722 | 20.0% | 19.1% | 25.5% | 23.1% |
-| work_permit | 3,202 | 78.2% | 0.700 (-0.082) | 0.545 (-0.237) | 0.830 | 0.734 | 18.4% | 18.8% | 23.5% | 22.7% |
-| study_permit | 2,410 | 75.4% | 0.695 (-0.060) | 0.540 (-0.214) | 0.824 | 0.721 | 18.8% | 18.9% | 24.9% | 23.4% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
-| not recorded | 692 | 81.4% | 0.713 (-0.100) | 0.548 (-0.265) | 0.850 | 0.721 | 21.2% | 19.4% | 26.1% | 22.2% |
+| citizen | 54,680 | 81.1% | 0.811 (+0.000) | 0.555 (-0.256) | 0.844 | 0.726 | 20.8% | 20.3% | 25.6% | 23.6% |
+| permanent_resident | 10,822 | 78.1% | 0.797 (+0.016) | 0.545 (-0.236) | 0.835 | 0.722 | 19.1% | 19.1% | 24.4% | 23.1% |
+| work_permit | 3,202 | 78.2% | 0.797 (+0.014) | 0.545 (-0.237) | 0.831 | 0.734 | 17.3% | 18.8% | 22.1% | 22.7% |
+| study_permit | 2,410 | 75.4% | 0.790 (+0.036) | 0.540 (-0.214) | 0.825 | 0.721 | 17.7% | 18.9% | 23.4% | 23.4% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
+| not recorded | 692 | 81.4% | 0.806 (-0.008) | 0.548 (-0.265) | 0.850 | 0.721 | 19.9% | 19.4% | 24.5% | 22.2% |
 
 **Newcomer programme**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| no | 64,427 | 81.0% | 0.719 (-0.091) | 0.554 (-0.256) | 0.841 | 0.725 | 21.8% | 20.2% | 26.9% | 23.5% |
-| yes | 7,379 | 74.3% | 0.680 (-0.064) | 0.537 (-0.206) | 0.821 | 0.729 | 17.3% | 18.4% | 23.2% | 23.1% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
+| no | 64,427 | 81.0% | 0.811 (+0.001) | 0.554 (-0.256) | 0.843 | 0.725 | 20.7% | 20.2% | 25.6% | 23.5% |
+| yes | 7,379 | 74.3% | 0.776 (+0.033) | 0.537 (-0.206) | 0.822 | 0.729 | 16.4% | 18.4% | 22.0% | 23.1% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
 
 **Accessibility needs**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| no | 69,738 | 80.3% | 0.715 (-0.088) | 0.553 (-0.251) | 0.840 | 0.725 | 21.4% | 20.0% | 26.6% | 23.4% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
-| yes | 2,068 | 79.5% | 0.715 (-0.080) | 0.549 (-0.246) | 0.841 | 0.752 | 20.9% | 19.9% | 26.3% | 23.7% |
+| no | 69,738 | 80.3% | 0.807 (+0.004) | 0.553 (-0.251) | 0.841 | 0.725 | 20.3% | 20.0% | 25.2% | 23.4% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
+| yes | 2,068 | 79.5% | 0.807 (+0.012) | 0.549 (-0.246) | 0.843 | 0.752 | 19.6% | 19.9% | 24.7% | 23.7% |
 
 **Dependants**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 0 | 34,271 | 79.9% | 0.713 (-0.086) | 0.552 (-0.247) | 0.840 | 0.729 | 21.1% | 19.8% | 26.4% | 23.3% |
-| not recorded | 21,455 | 80.1% | 0.714 (-0.087) | 0.553 (-0.248) | 0.839 | 0.726 | 21.2% | 20.0% | 26.5% | 23.6% |
-| 1 | 13,584 | 81.6% | 0.722 (-0.094) | 0.552 (-0.263) | 0.840 | 0.719 | 22.1% | 20.0% | 27.1% | 23.1% |
-| 2 | 2,326 | 81.7% | 0.724 (-0.093) | 0.561 (-0.256) | 0.845 | 0.712 | 22.5% | 22.5% | 27.6% | 25.7% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
-| 3+ | 170 | 78.2% | 0.716 (-0.066) | 0.551 (-0.231) | 0.792 | 0.701 | 14.7% | 21.8% | 18.8% | 24.8% |
+| 0 | 34,271 | 79.9% | 0.805 (+0.007) | 0.552 (-0.247) | 0.841 | 0.729 | 20.0% | 19.8% | 25.0% | 23.3% |
+| not recorded | 21,455 | 80.1% | 0.806 (+0.005) | 0.553 (-0.248) | 0.841 | 0.726 | 20.2% | 20.0% | 25.2% | 23.6% |
+| 1 | 13,584 | 81.6% | 0.812 (-0.003) | 0.552 (-0.263) | 0.842 | 0.719 | 21.1% | 20.0% | 25.9% | 23.1% |
+| 2 | 2,326 | 81.7% | 0.816 (-0.002) | 0.561 (-0.256) | 0.845 | 0.712 | 20.6% | 22.5% | 25.2% | 25.7% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
+| 3+ | 170 | 78.2% | 0.816 (+0.034) | 0.551 (-0.231) | 0.802 | 0.701 | 14.1% | 21.8% | 18.0% | 24.8% |
 
 **Preferred language (not protected; checked as a stand-in for origin)**
 
 | Group | Rows | Actual | Ours: mean (gap) | Bank: mean (gap) | AUC ours | AUC bank | Riskiest 20% ours | bank | Bad outcomes caught ours | bank |
 |---|---|---|---|---|---|---|---|---|---|---|
-| EN | 54,687 | 80.4% | 0.714 (-0.090) | 0.554 (-0.250) | 0.839 | 0.726 | 21.3% | 20.1% | 26.4% | 23.5% |
-| FR | 13,969 | 80.2% | 0.721 (-0.081) | 0.548 (-0.253) | 0.842 | 0.722 | 21.7% | 19.7% | 27.1% | 23.1% |
-| not in CRM | 2,202 | 81.2% | 0.719 (-0.093) | 0.554 (-0.258) | 0.842 | 0.706 | 20.9% | 20.0% | 25.7% | 23.0% |
-| ZH | 1,198 | 82.7% | 0.730 (-0.097) | 0.561 (-0.267) | 0.837 | 0.728 | 21.4% | 21.1% | 25.8% | 24.3% |
-| PA | 912 | 80.4% | 0.706 (-0.098) | 0.549 (-0.254) | 0.827 | 0.754 | 19.1% | 19.2% | 23.7% | 22.8% |
-| AR | 506 | 75.5% | 0.715 (-0.040) | 0.552 (-0.203) | 0.856 | 0.733 | 24.3% | 19.0% | 32.2% | 22.8% |
-| TL | 332 | 78.0% | 0.713 (-0.067) | 0.558 (-0.222) | 0.787 | 0.761 | 20.8% | 19.3% | 26.3% | 23.9% |
-| ES | 202 | 77.2% | 0.696 (-0.076) | 0.532 (-0.240) | 0.825 | 0.726 | 22.3% | 19.3% | 28.8% | 21.8% |
+| EN | 54,687 | 80.4% | 0.806 (+0.002) | 0.554 (-0.250) | 0.841 | 0.726 | 20.2% | 20.1% | 25.1% | 23.5% |
+| FR | 13,969 | 80.2% | 0.812 (+0.011) | 0.548 (-0.253) | 0.843 | 0.722 | 20.6% | 19.7% | 25.7% | 23.1% |
+| not in CRM | 2,202 | 81.2% | 0.812 (+0.000) | 0.554 (-0.258) | 0.842 | 0.706 | 20.0% | 20.0% | 24.7% | 23.0% |
+| ZH | 1,198 | 82.7% | 0.822 (-0.005) | 0.561 (-0.267) | 0.838 | 0.728 | 20.1% | 21.1% | 24.3% | 24.3% |
+| PA | 912 | 80.4% | 0.799 (-0.005) | 0.549 (-0.254) | 0.828 | 0.754 | 17.7% | 19.2% | 22.0% | 22.8% |
+| AR | 506 | 75.5% | 0.805 (+0.050) | 0.552 (-0.203) | 0.864 | 0.733 | 22.9% | 19.0% | 30.4% | 22.8% |
+| TL | 332 | 78.0% | 0.807 (+0.027) | 0.558 (-0.222) | 0.781 | 0.761 | 19.3% | 19.3% | 24.3% | 23.9% |
+| ES | 202 | 77.2% | 0.787 (+0.015) | 0.532 (-0.240) | 0.823 | 0.726 | 22.3% | 19.3% | 28.8% | 21.8% |
 
 </details>
 
@@ -262,49 +263,49 @@ The 2026-09-28 queue (`warehouse/p3/nba_decisions.parquet`). *Collections contac
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 **Age band**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 **Marital status**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 **Citizenship / residency**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 **Newcomer programme**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 **Accessibility needs**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 **Dependants**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 **Preferred language (not protected; checked as a stand-in for origin)**
 
 | Group | Cases | Mean risk | Collections contact | Contact vs risk (obs / exp) | Collections call | Support call | Wait | Hardship or vulnerable |
 |---|---|---|---|---|---|---|---|---|
-| not in CRM | 86,059 | 0.715 | 46.3% | 1.00 | 1.7% | 14.8% | 39.0% | 42.1% |
+| not in CRM | 86,059 | 0.811 | 46.3% | 1.00 | 2.1% | 14.8% | 38.9% | 42.1% |
 
 </details>
 
@@ -312,9 +313,9 @@ The 2026-09-28 queue (`warehouse/p3/nba_decisions.parquet`). *Collections contac
 
 Not a protected group, so left out of the screens above, but worth knowing: these cases point at a CRM customer that does not exist (data quality check R1). They are rows of every table above, labelled *not in CRM*.
 
-- Promise break risk: 1,042 holdout rows; actual 59.5%; our score's gap +0.015 (overall +0.015), the bank's -0.085; 22.4% in our riskiest 20%.
-- Case risk of not curing in 30 days: 2,202 holdout rows; actual 81.2%; our score's gap -0.093 (overall -0.088), the bank's -0.258; 20.9% in our riskiest 20%.
-- Morning queue: 86,059 cases, 46.3% get any contact and 39.0% wait. With no CRM record there is no consent on any channel, so the rules allow nothing but waiting (default deny).
+- Promise break risk: 1,042 holdout rows; actual 59.5%; our score's gap +0.016 (overall +0.015), the bank's -0.085; 23.2% in our riskiest 20%.
+- Case risk of not curing in 30 days: 2,202 holdout rows; actual 81.2%; our score's gap +0.000 (overall +0.004), the bank's -0.258; 20.0% in our riskiest 20%.
+- Morning queue: 86,059 cases, 46.3% get any contact and 38.9% wait. With no CRM record there is no consent on any channel, so the rules allow nothing but waiting (default deny).
 
 These close once identity resolution links these cases to a golden customer record.
 

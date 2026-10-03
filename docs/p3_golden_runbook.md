@@ -163,10 +163,10 @@ if it helps on both folds**; otherwise delete it and record the result.
 
 ## Step 6. Retrain and refresh (1–2 h)
 
-- [ ] `make train`, then `make nightly`.
-- [ ] If monitoring still shows the case model's calibration at "watch" (it was −0.084 in July), recalibrate on the
+- [x] `make train`, then `make nightly`.
+- [x] If monitoring still shows the case model's calibration at "watch" (it was −0.084 in July), recalibrate on the
       most recent fully observed month and record before / after.
-- [ ] Update the numbers in `p3_plan.md` and `p3_submission_text.md`.
+- [x] Update the numbers in `p3_plan.md` and `p3_submission_text.md`.
 
 **Done when:** `reports/model_evaluation.md` regenerated; new numbers in the docs.
 

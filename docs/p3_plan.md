@@ -635,3 +635,22 @@ Test: `test_one_certified_owner_per_person_across_their_cases`. **Not done:** ha
 on 926 cards: 153 more cases have at least one programme (28,451 -> 28,604), 1,644 more options in all, as months on
 book now count the person's oldest account. Support-call reasons: `offer_programme` 5,893 -> 5,772, `follow_up` 2,574
 -> 2,695 (121 people were already offered a programme on another case).
+
+### Golden records, Step 6: retrain, recalibrate, refresh (3 Oct)
+
+`make train` on the golden features (Steps 3 and 4 changed rules, not models), then `make nightly --skip-pipeline`.
+Monitoring still had the case model's calibration at **watch** (-0.094 in June, -0.084 in July: the not-cured rate
+climbs every month after the April break, 54.5% / 67.5% / 76.6% / 82.9% for the Apr-Jul month-ends), so it is now
+recalibrated on the most recent fully observed month-end (`p3.case_model.recalibrate_on_latest`, `nba/train.py`):
+
+| Calibration of `case_nocure_v0`, judged on Jul 2026 | AUC | Brier | ECE |
+|---|---|---|---|
+| fitted on valid (Apr-May), as before | 0.8629 | 0.1129 | 0.0842 |
+| fitted on Jun only (the test of the switch) | 0.8633 | 0.1022 | **0.0139** |
+
+The saved model is calibrated on July (31 Aug outcomes run past the last recorded cure, 15 Sep). Holdout results
+(valid calibration, for comparison with before): case AUC **0.8405** vs the bank's 0.7250, promise 0.9501 vs 0.6946.
+Monitoring: case calibration **ok** (gap +0.010 in June, out of sample; 0.000 in July, the fitting month).
+Queue: mean case risk 0.715 -> 0.811, close to the true not-cured rate; calls 1,469 -> 1,837 (higher honest risk makes
+more calls worth their cost), waits 33,532 -> 33,459. `p3_submission_text.md` updated (numbers, golden customer, the
+open points for P1).

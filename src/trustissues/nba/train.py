@@ -219,6 +219,21 @@ def main_case() -> int:
     res_same = evaluate.evaluate(cal_ho[mask], holdout.label[mask])
     res_all = evaluate.evaluate(cal_ho, holdout.label)
     shap = shap_importance(booster, Xho)
+    cm = config.settings()["p3"]["case_model"]
+    recal = None
+    if cm.get("recalibrate_on_latest"):
+        # Test: calibrate on the month-end before the last, judge on the last; then calibrate on the last for use.
+        raw_ho = booster.predict(Xho, num_iteration=booster.best_iteration)
+        dates = sorted(holdout.as_of_date.unique())
+        prev, last = (holdout.as_of_date == dates[-2]).to_numpy(), (holdout.as_of_date == dates[-1]).to_numpy()
+        y = holdout.label.to_numpy()
+        iso_prev = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(raw_ho[prev], y[prev])
+        recal = {"fitted_on": str(dates[-1]), "tested_on": str(dates[-1]), "test_fit": str(dates[-2]),
+                 "before": evaluate.evaluate(iso.predict(raw_ho[last]), y[last]),
+                 "after": evaluate.evaluate(iso_prev.predict(raw_ho[last]), y[last])}
+        iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(raw_ho[last], y[last])
+        print(f"recalibrated on {dates[-1]}: test on {dates[-1]} ECE {recal['before']['ece']:.4f} -> "
+              f"{recal['after']['ece']:.4f} (calibrated on {dates[-2]})")
     for name, r in (("incumbent cure_30d", res_inc), ("v0 (same cases)", res_same), ("v0 (all holdout)", res_all)):
         print(f"{name:20} AUC {r['auc']:.4f}  Brier {r['brier']:.4f}  ECE {r['ece']:.4f}  "
               f"top-20% capture {r['top20_capture']:.1%}")
@@ -230,8 +245,22 @@ def main_case() -> int:
         "rows": {"train": len(Xtr), "valid": len(Xva), "holdout": len(Xho)},
         "holdout": {k: v for k, v in res_all.items() if k != "reliability"},
         "shap_mean_abs": dict(shap),
+        **({"recalibrated_on": recal["fitted_on"]} if recal else {}),
     })
-    cm = config.settings()["p3"]["case_model"]
+    recal_text = "" if recal is None else f"""
+### Recalibrated on the latest month-end ({recal['fitted_on']})
+
+The saved model's calibration is refitted on the most recent fully observed month-end
+(`p3.case_model.recalibrate_on_latest`). The holdout figures above use the calibration fitted on valid; this is the
+test of the switch: calibrated on {recal['test_fit']} only, judged on {recal['tested_on']}.
+
+| Calibration | AUC | Brier | ECE |
+|---|---|---|---|
+| fitted on valid (as above) | {recal['before']['auc']:.4f} | {recal['before']['brier']:.4f} | {recal['before']['ece']:.4f} |
+| fitted on {recal['test_fit']} | {recal['after']['auc']:.4f} | {recal['after']['brier']:.4f} | {recal['after']['ece']:.4f} |
+
+Monitoring compares live scores against the holdout, which now includes the month the calibration was fitted on.
+"""
     shap_rows = "\n".join(f"| {i + 1} | `{n}` | {v:.4f} |" for i, (n, v) in enumerate(shap[:20]))
     evaluate.write_section("case_v0", f"""
 ## Case model v0: will an open case cure within {cm['horizon_days']} days? (vs the bank's `cure_30d`)
@@ -251,7 +280,7 @@ The not-cured rate drifts upward: {train.label.mean():.1%} in train, {valid.labe
 {holdout.label.mean():.1%} in the holdout, so calibration is fitted on the most recent months.
 
 {evaluate.format_result("Case v0 (calibrated)", res_all)}
-
+{recal_text}
 ### SHAP check (mean |SHAP| on a holdout sample, top 20)
 
 | Rank | Feature | Mean abs SHAP (log-odds) |

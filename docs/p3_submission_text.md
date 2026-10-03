@@ -25,8 +25,8 @@ days), 1–30 → 31–60 roll rate (down) and contacts per dollar recovered (do
 
 **How we measure it.**
 - *Hackathon:* our models against the bank's on the same rows with a time-based holdout. Case risk (not cured in 30 days):
-  AUC **0.838 vs 0.725** for the bank's `cure_30d`, better calibrated (calibration error 0.087 vs 0.251). Promise break
-  risk: **0.950 vs 0.695** for `ptp_break`; most of that lead comes from the promised share of the overdue amount, which
+  AUC **0.840 vs 0.725** for the bank's `cure_30d`, better calibrated (calibration error 0.088 vs 0.251, and 0.014 when
+  calibrated on the latest month, as the model now is). Promise break risk: **0.950 vs 0.695** for `ptp_break`; most of that lead comes from the promised share of the overdue amount, which
   in this data almost decides the outcome. The value of a contact comes from the bank's own randomised test
   (contacted cells vs the no-contact hold-out): +0.62 points of cure per extra contact, an interval that includes zero,
   so the queue is deliberately conservative.
@@ -34,6 +34,10 @@ days), 1–30 → 31–60 roll rate (down) and contacts per dollar recovered (do
   rate are tracked as guardrails; `monitoring.py` tracks accuracy, calibration, drift and the override rate.
 
 ## Layer 3: AI Decisioning (Next Best Action)
+
+**Who it decides for.** The customer is the golden customer from identity resolution: one person across their CRM,
+card, loan and deposit records. Safeguards, the 7-day contact limit and hardship history are the person's, a person is
+contacted at most once a day, and 1,443 open cases whose CRM record does not exist can now be worked (before: 6).
 
 **When it decides.** Every open case gets one recommendation each morning in a batch (86,059 cases; the queue takes about
 33 seconds after the data pipeline), shown to agents in the Agent Queue and Decision Card pages. *Next:* re-scoring on events (a payment,
@@ -94,8 +98,10 @@ decision is logged and summarised for the weekly override review. Fairness is ch
 - *Next:* event re-scoring and the in-call promise coach, which would need an online feature store again.
 
 **P1 (decisioning view).** Exclude age and age band, `id_document_type`, `interpreter_used_flag`, voice acoustic features
-and benefit-type categories. Provide point-in-time history views keyed by golden ID. See `docs/p3_golden_plan.md` for
-what P3 switches over when golden records land.
+and benefit-type categories. P3 now reads the gold layer and keys everything by golden ID (`docs/p3_plan.md`, golden records
+Steps 0-7). Open with P1: `label_broken` treats partially kept as not broken, P3's label does not (both certified
+metrics); `customer_safeguards` lacks the preferred contact window and `promises_enriched` the reminder flag (read
+from curated meanwhile).
 
 **P2.** Add `gold.nba_decisions` and `gold.nba_overrides` to the Ask schema graph. Use P3's feature definitions for the
 drivers dimensions. The Data Quality page can call `trustissues.governance.monitoring.snapshot()`.
