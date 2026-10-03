@@ -153,6 +153,7 @@ python -m trustissues.nba.actions                   # step 7 + calibration from 
 python -m trustissues.nba.queue                     # NBA: one decision per open case (add --write-gold to write gold.nba_decisions)
 python -m trustissues.nba.fairness                  # reports/fairness_report.md (after train and queue)
 python -m trustissues.governance.monitoring         # reports/monitoring.md, and snapshot() for the Data Quality page
+streamlit run app/Home.py                           # the app: Agent queue and Decision card pages (needs --write-gold)
 python -m pytest tests -q
 ```
 
@@ -169,6 +170,7 @@ python -m pytest tests -q
 | Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and 36,020 hardship / vulnerability / high-balance cases each waiting for an approval before the hardship routing fix, **8,306 after it** (see below); 12,612 after the Do Not Call fix |
 | Fairness | `nba/fairness.py` → `reports/fairness_report.md`: both models (ours and the bank's, same holdout rows) and the morning queue compared across gender, age band, marital status, citizenship, newcomer programme, accessibility needs, dependants and preferred language, plus a proxy audit. Protected attributes are read only here (`sources.protected_attributes`, enforced by a test). See "Fairness check (3 Oct)" below |
 | Monitoring | `governance/monitoring.py` → `reports/monitoring.md` and `snapshot()` (a dict for the Data Quality page): realised AUC and calibration by month for ours and the bank's models, score and feature drift (PSI) against a like-for-like reference, the bank's own PSI, queue mix, override rate once review decisions exist, P1 identity reviews and P4 text-feature accuracy once those exist. Found a live-scoring bug on its first run, see "Monitoring (3 Oct)" |
+| Pages | `app/pages/2_Agent_Queue.py`, `app/pages/3_Decision_Card.py` on `nba/agent_view.py` (data, tested without Streamlit) and `nba/review.py` (decisions). `gold.nba_decisions` written to the warehouse for 28 Sep (86,059 rows). See "Agent Queue and Decision Card pages (3 Oct)" |
 | Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.838 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):
@@ -419,4 +421,36 @@ layer adds `channel_resolved` = coalesce of the two, and the DQ report says to u
 changed; it exists only in curated, not raw). Training rows are unaffected (the case month-ends end on 31 Jul and the
 promise model trained on promises before 30 Jun), so the models were not retrained. On the 28 Sep queue: calls in
 the last 30 days 2.08 → 2.20 per case on average, cases with a call-response rate 64.4% → 67.2%, 588 decisions changed.
+
+### Agent Queue and Decision Card pages (3 Oct)
+
+`streamlit run app/Home.py` (install with `pip install -e ".[app]"`; `.streamlit/config.toml` turns off Streamlit's
+usage statistics). The pages read `gold.nba_decisions`, so the queue must have been written to the warehouse first:
+`python -m trustissues.nba.queue --write-gold` (done for 28 Sep: 86,059 rows; the gold interface tables were created
+by `apply_stubs` at the same time). `app/Home.py` is a minimal placeholder so the pages run; the plan gives Home and
+Ask to P4.
+
+- **Acting as** (sidebar, every page): the demo login. Lists team leads first, then staff with work today.
+- **Agent queue.** An agent or hardship specialist sees their own cases in working order (support calls, calls,
+  other contact, waits) with risk, value, state and the one-line summary; selecting a row opens its card. A team lead
+  sees where the day stands, signs off the digital reminder batch in one click, works the individual approvals
+  (hardship, vulnerability, high balance) and sees the weekly override review. A hardship specialist also sees the
+  hardship and vulnerability approvals.
+- **Decision card.** State and approval badges; risk, value and channel; the summary; the top reasons as bars; why
+  this action and the runner-up; the eligible hardship programmes with their policy sections; what was ruled out and
+  by which rule; evidence quotes (empty until P4's text features); the case's facts, last 10 contacts and last 5
+  promises before the as-of date; and the decision: Accept / Override (with a reason code) for the assigned agent,
+  Approve / Reject (with a reason code) for an approver, with the decisions so far.
+- **Who sees what** (`nba/agent_view.py`): agents see only cases assigned to them; team leads, hardship specialists
+  and QA analysts see every case. `nba/review.py` re-checks every decision (only the assigned agent accepts; only
+  the right role approves).
+- **Data shown:** IDs, case facts, contacts and promises through `features/sources.py`, so no PII or protected
+  attribute can reach the page (the source tests apply).
+- **Write lock:** the app holds the warehouse's write lock while it runs (it writes `gold.nba_overrides`); stop it
+  before running the Layer 1 pipeline or `--write-gold`.
+- **Checked by hand in the browser:** team lead queue and digest, opening a card from the approvals table, approving
+  a support call (state moved to "Agent to decide", since a call also needs its agent's acceptance), and a hardship
+  specialist's queue. The test approval was deleted afterwards. Tests: `tests/test_agent_view.py` (order, access,
+  history, digest, as-of cut-off) and `tests/test_app.py` (every page runs on the real warehouse as a lead and as an
+  agent, Streamlit's AppTest).
 
