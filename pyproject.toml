@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "trustissues"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["duckdb>=1.1", "pyyaml", "openpyxl"]
+dependencies = ["duckdb>=1.1", "pyyaml", "openpyxl", "splink>=5.0", "scipy", "pyarrow", "anthropic"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -14,6 +14,8 @@ dev = ["pytest"]
 [project.scripts]
 ti-load-raw = "trustissues.factory.ingest.load_raw:main"
 ti-dictionary = "trustissues.factory.ingest.dictionary:main"
+ti-identity = "trustissues.factory.identity.build:main"
+ti-gold = "trustissues.factory.gold.build_c360:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

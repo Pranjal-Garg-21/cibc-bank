@@ -8,8 +8,24 @@ paths:
   duckdb_file: trustissues.duckdb
 
 identity:
-  link_threshold: 0.95
-  review_threshold: 0.80
+  link_threshold: 0.95      # Splink probability at or above this links automatically
+  review_threshold: 0.80    # 0.80-0.95 is the grey zone: linked only if the LLM agrees, else human review
+  # Confidence recorded for exact rule links. Rules are deterministic, so this is a stated value, not a score;
+  # the measured precision of each rule is in reports/identity_report.md.
+  rule_confidence:
+    crm_pointer: 1.0        # CRM's own duplicate_of_crm_id
+    national_id: 1.0        # same national_id_hash (CRM only)
+    cif: 1.0                # deposit src_customer_ref = bureau bank_subject_ref (both the 10-digit CIF)
+    name_dob_phone: 0.99
+    dob_name_postal: 0.98
+  max_crm_per_cluster: 5    # more CRM records than this in one person is a conflict
+  max_dob_spread_days: 400  # DOBs further apart than this inside one cluster are "clearly different"
+  llm_model: claude-opus-5-5    # second opinion on grey-zone pairs (the plan allows a smaller model for bulk jobs)
+  llm_effort: low               # a yes/no judgement on two short records
+  llm_workers: 8                # parallel requests
+  llm_max_pairs: 6000           # cost guard: pairs beyond this go straight to human review
+  llm_prompt_version: identity_pair_v1
+  golden_id_digits: 7           # G-0000000: 1M+ people do not fit in 6 digits
 
 ingest:
   # A removed or retyped column stops the load for that source unless listed here.
