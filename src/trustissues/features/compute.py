@@ -62,7 +62,7 @@ def register_case_spine(con, spine_sql: str) -> None:
             SELECT sp.row_id, arg_max(p.ptp_id, p.ptp_created_ts) AS ptp_id
             FROM sp JOIN ({sources.sql("promises")}) p
               ON p.case_id = sp.case_id AND p.ptp_created_ts < sp.event_ts
-             AND (p.status_ts IS NULL OR p.status_ts >= sp.event_ts)
+             AND NOT (p.ptp_status <> 'open' AND p.status_ts < sp.event_ts)  -- not resolved yet (case_state.sql)
             GROUP BY sp.row_id
         )
         SELECT sp.row_id, o.ptp_id, sp.case_id, c.crm_customer_id, c.primary_account_id AS account_id, sp.event_ts,

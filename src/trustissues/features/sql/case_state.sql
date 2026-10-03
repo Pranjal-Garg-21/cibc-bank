@@ -1,7 +1,9 @@
 -- The collections case as it stood at the event time (case-level model only).
 -- Arrears on day k of the case (dpd_at_day_k) are used only once known: k days after opening, strictly
 -- before the event time. Promises and contacts count only if they happened before the event time; an
--- "open" promise was made before it and not resolved before it.
+-- "open" promise was made before it and not resolved before it. Resolved = a final status (anything but 'open')
+-- recorded before the event time. A promise still open carries status_ts = its creation time, so testing status_ts
+-- alone called every currently open promise resolved (it did until 3 Oct: every live case showed no open promise).
 WITH c AS (
     SELECT s.row_id, s.event_ts, h.*,
            date_diff('day', h.case_open_ts, s.event_ts) AS age
@@ -27,9 +29,9 @@ promises AS (
                AS case_promises_broken,
            count(p.ptp_id) FILTER (WHERE p.ptp_status = 'kept' AND p.status_ts < s.event_ts) AS case_promises_kept,
            arg_max(p.ptp_to_overdue_ratio, p.ptp_created_ts)
-               FILTER (WHERE p.status_ts IS NULL OR p.status_ts >= s.event_ts) AS open_ptp_to_overdue_ratio,
+               FILTER (WHERE NOT (p.ptp_status <> 'open' AND p.status_ts < s.event_ts)) AS open_ptp_to_overdue_ratio,
            arg_max(date_diff('day', CAST(s.event_ts AS DATE), p.ptp_due_date), p.ptp_created_ts)
-               FILTER (WHERE p.status_ts IS NULL OR p.status_ts >= s.event_ts) AS days_to_open_ptp_due
+               FILTER (WHERE NOT (p.ptp_status <> 'open' AND p.status_ts < s.event_ts)) AS days_to_open_ptp_due
     FROM spine s
     JOIN src_promises p ON p.case_id = s.case_id AND p.ptp_created_ts < s.event_ts
     GROUP BY s.row_id

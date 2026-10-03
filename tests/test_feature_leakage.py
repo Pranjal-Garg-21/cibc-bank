@@ -141,3 +141,17 @@ def test_case_sample_exercises_the_features(con, case_sample):
     assert any(f["case_age_days"] > 30 and f["dpd_now"] is not None for f in full.values())
     assert any(f["case_contacts"] for f in full.values())
     assert any(f["case_promises"] for f in full.values())
+
+
+def test_a_promise_still_open_counts_as_open_when_scoring_today(con):
+    """Open promises carry status_ts = their creation time. Scoring at the as-of date must still see them as open
+    (until 3 Oct the case features called every currently open promise resolved)."""
+    sources.register(con)
+    rows = con.execute(f"""
+        SELECT c.case_id || '@live', c.case_id, TIMESTAMP '{config.AS_OF_DATE}' AS event_ts
+        FROM src_cases c JOIN src_promises p ON p.ptp_id = c.current_ptp_id
+        WHERE c.case_status = 'open' AND p.ptp_status = 'open' AND p.ptp_created_ts < TIMESTAMP '{config.AS_OF_DATE}'
+        ORDER BY c.case_id LIMIT 30""").fetchall()
+    assert rows, "no open case with an open promise"
+    feats = _case_features(con, rows)
+    assert all(f["has_open_ptp"] == 1 and f["open_ptp_to_overdue_ratio"] is not None for f in feats.values())

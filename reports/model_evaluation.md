@@ -181,37 +181,37 @@ interval includes zero, so cheap channels the customer responds to win, and a ca
 
 | Action | Best before capacity | Final | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
-| `wait` | 33,276 | 33,735 | 0.70 | 0.00 | 0 |
-| `email_reminder` | 15,968 | 16,141 | 0.63 | 5.53 | 16,141 |
-| `push_reminder` | 14,120 | 14,143 | 0.64 | 5.31 | 14,143 |
-| `support_call` | 12,357 | 12,357 | 0.72 | 0.00 | 12,357 |
-| `sms_reminder` | 5,326 | 5,420 | 0.63 | 10.48 | 5,420 |
-| `letter` | 3,834 | 3,000 | 0.71 | 8.48 | 39 |
-| `agent_call` | 1,178 | 1,263 | 0.67 | 15.95 | 41 |
+| `wait` | 33,242 | 33,701 | 0.74 | 0.00 | 0 |
+| `email_reminder` | 15,862 | 16,056 | 0.67 | 5.80 | 16,056 |
+| `push_reminder` | 14,023 | 14,045 | 0.68 | 5.55 | 14,045 |
+| `support_call` | 12,359 | 12,359 | 0.75 | 0.00 | 12,359 |
+| `sms_reminder` | 5,278 | 5,382 | 0.67 | 11.06 | 5,382 |
+| `letter` | 3,873 | 3,000 | 0.74 | 8.82 | 39 |
+| `agent_call` | 1,422 | 1,516 | 0.74 | 16.66 | 42 |
 
 Capacity on 2026-09-28 (`channel_capacity`; 720 agents on shift with
-62,028 outbound calls between them, 48,408 left unused):
+62,028 outbound calls between them, 48,153 left unused):
 
 | Channel | Capacity | Used |
 |---|---|---|
-| email | 60,000 | 16,141 |
+| email | 60,000 | 16,056 |
 | mail | 3,000 | 3,000 |
-| phone | 68,976 | 13,620 |
-| push | 30,000 | 14,143 |
-| sms | 40,000 | 5,420 |
+| phone | 68,976 | 13,875 |
+| push | 30,000 | 14,045 |
+| sms | 40,000 | 5,382 |
 
 | Approval reason | Cases |
 |---|---|
-| none | 37,918 |
-| digital_batch | 35,529 |
+| none | 38,136 |
+| digital_batch | 35,309 |
 | hardship | 6,841 |
-| vulnerability | 5,516 |
+| vulnerability | 5,518 |
 | high_balance | 255 |
 
 ### Hardship and vulnerable cases (`nba/hardship.py`, POL-COLL-004)
 
 35,648 open cases have a hardship or vulnerability flag. None gets a payment reminder or a collections call
-(0); 35,648 have a certified owner; 12,357 get a support call today (a certified agent
+(0); 35,648 have a certified owner; 12,359 get a support call today (a certified agent
 offering help, hardship programmes first). The rest wait: nothing is due, or a contact rule blocks the call.
 
 | Situation | Support call today | Due, blocked by a rule | Nothing due today | With eligible programmes on the card |
@@ -219,9 +219,9 @@ offering help, hardship programmes first). The rest wait: nothing is due, or a c
 | Hardship plan in place: no collections contact while it runs | 0 | 0 | 10,372 | 9,763 |
 | Hardship recorded and no programme offered yet: offer one before asking for payment (§4.2) | 5,913 | 2,911 | 0 | 8,493 |
 | Hardship programme offered in the last 30 days: give the customer time to answer | 0 | 0 | 6,217 | 6,050 |
-| Vulnerable customer due for contact: a certified agent makes it instead of a reminder or a collections call (§4.5) | 3,635 | 862 | 0 | 0 |
+| Vulnerable customer due for contact: a certified agent makes it instead of a reminder or a collections call (§4.5) | 3,637 | 862 | 0 | 0 |
 | Hardship programme offered over 30 days ago and not taken up: follow up (§4.2) | 2,602 | 1,553 | 0 | 3,874 |
-| Vulnerable customer, no contact due today | 0 | 0 | 1,290 | 0 |
+| Vulnerable customer, no contact due today | 0 | 0 | 1,288 | 0 |
 | Hardship plan ends within 10 days: review it with the customer (§4.4) | 207 | 86 | 0 | 271 |
 
 A support call was due but a contact rule blocked it:
@@ -248,7 +248,7 @@ Cases where a rule (or capacity) removed at least one action:
 | `cease_contact` | 2,412 |
 | `experiment_holdout` | 1,667 |
 | `do_not_call` | 950 |
-| `no_capacity` | 834 |
+| `no_capacity` | 873 |
 | `insolvency` | 3 |
 
 Example decision card:
