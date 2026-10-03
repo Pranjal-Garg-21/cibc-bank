@@ -139,7 +139,8 @@ Rules use case flags (`collections_cases`) and CRM flags (`customers`) by `crm_c
 
 ## 8. Status (3 Oct, built and run on the full data)
 
-Steps 0–7 are built. P3 now reads `curated.*` (`config/settings.yaml` → `p3.source_schema`), because raw loses 10% of `account_monthly_snapshot.month_end_date` (non-ISO formats that curated recovers). Run order:
+Steps 0–7 are built. The `Makefile` wraps the runs below (`make help`; `make train` retrains everything, `make
+nightly` is the morning run, see "Morning run" at the end). P3 now reads `curated.*` (`config/settings.yaml` → `p3.source_schema`), because raw loses 10% of `account_monthly_snapshot.month_end_date` (non-ISO formats that curated recovers). Run order:
 
 ```bash
 python -m trustissues.features.build_training_set   # step 1
@@ -170,6 +171,7 @@ python -m pytest tests -q
 | Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and 36,020 hardship / vulnerability / high-balance cases each waiting for an approval before the hardship routing fix, **8,306 after it** (see below); 12,612 after the Do Not Call fix |
 | Fairness | `nba/fairness.py` → `reports/fairness_report.md`: both models (ours and the bank's, same holdout rows) and the morning queue compared across gender, age band, marital status, citizenship, newcomer programme, accessibility needs, dependants and preferred language, plus a proxy audit. Protected attributes are read only here (`sources.protected_attributes`, enforced by a test). See "Fairness check (3 Oct)" below |
 | Monitoring | `governance/monitoring.py` → `reports/monitoring.md` and `snapshot()` (a dict for the Data Quality page): realised AUC and calibration by month for ours and the bank's models, score and feature drift (PSI) against a like-for-like reference, the bank's own PSI, queue mix, override rate once review decisions exist, P1 identity reviews and P4 text-feature accuracy once those exist. Found a live-scoring bug on its first run, see "Monitoring (3 Oct)" |
+| Morning run | `scripts/nightly.py` (`make nightly`): Layer 1 pipeline, P4 text features (skipped until built), queue written to `gold.nba_decisions`, fairness, monitoring. P3 stages take 47 s; timings logged to `warehouse/p3/nightly.log` |
 | Pages | `app/pages/2_Agent_Queue.py`, `app/pages/3_Decision_Card.py` on `nba/agent_view.py` (data, tested without Streamlit) and `nba/review.py` (decisions). `gold.nba_decisions` written to the warehouse for 28 Sep (86,059 rows). See "Agent Queue and Decision Card pages (3 Oct)" |
 | Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.838 vs the bank's `cure_30d` 0.725 |
 
@@ -453,4 +455,16 @@ Ask to P4.
   specialist's queue. The test approval was deleted afterwards. Tests: `tests/test_agent_view.py` (order, access,
   history, digest, as-of cut-off) and `tests/test_app.py` (every page runs on the real warehouse as a lead and as an
   agent, Streamlit's AppTest).
+
+### Morning run (3 Oct)
+
+`python scripts/nightly.py` (or `make nightly`) runs, in order: the Layer 1 pipeline (`factory/pipeline.py`, P1), P4's
+text features (skipped while `features/text_extract.py` does not exist), the queue with `--write-gold`, the fairness
+report and monitoring. Each stage is its own process; the run stops at the first failure and appends the timings to
+`warehouse/p3/nightly.log`. Options: `--skip-pipeline`, `--from <stage>`, `--only <stage>`, `--dry-run`. Measured on
+28 Sep without the pipeline: queue 32.7 s, fairness 12.3 s, monitoring 2.0 s (the pipeline itself took about 4.5 min
+in its last logged run). Retraining is deliberately not nightly: `make train` rebuilds the training sets, features,
+the incumbent baseline, both models, the action values and the Feast registry. The queue writes to the warehouse, so
+the app must be stopped first. `make` targets: pipeline, features, train, queue, fairness, monitoring, nightly, app,
+test. Test: `tests/test_nightly.py`.
 
