@@ -4,3 +4,5 @@ pyyaml>=6.0          # tested 6.0.3
 openpyxl>=3.1        # tested 3.1.5 (reads the data dictionary xlsx)
 pytest>=8            # tested 9.1.1 (tests only)
 huggingface_hub      # only to download the dataset; tested 2.1.1 (provides the `hf` command)
+rank-bm25>=0.2      # tested 0.2.2 (keyword half of policy search)
+rich>=13            # tested 15.0.0 (terminal dashboard: scripts/policy_dashboard.py)
