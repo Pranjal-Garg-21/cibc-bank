@@ -2,5 +2,7 @@
 duckdb>=1.1          # tested 1.5.6
 pyyaml>=6.0          # tested 6.0.3
 openpyxl>=3.1        # tested 3.1.5 (reads the data dictionary xlsx)
+sqlglot              # Layer 2 (Ask): SQL validator
+networkx             # Layer 2 (Ask): schema join graph
 pytest>=8            # tested 9.1.1 (tests only)
 huggingface_hub      # only to download the dataset; tested 2.1.1 (provides the `hf` command)
