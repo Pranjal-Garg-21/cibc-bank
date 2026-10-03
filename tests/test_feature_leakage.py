@@ -27,7 +27,7 @@ def con():
     if not path.exists():
         pytest.skip("no warehouse built")
     try:
-        c = duckdb.connect(str(path), read_only=True)
+        c = duckdb.connect(str(path), read_only=True, config=config.duckdb_limits())
         c.execute(f"SELECT 1 FROM {sources.SCHEMA}.promises_to_pay LIMIT 1")
     except duckdb.Error as e:
         pytest.skip(f"warehouse not readable: {e}")

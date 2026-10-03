@@ -24,7 +24,7 @@ STATE_COLOR = {"ready": "green", "waiting_agent": "orange", "waiting_approval": 
 
 @st.cache_resource
 def _db() -> duckdb.DuckDBPyConnection:
-    con = duckdb.connect(str(config.warehouse_path()))
+    con = duckdb.connect(str(config.warehouse_path()), config=config.duckdb_limits())
     apply_stubs(con)
     return con
 

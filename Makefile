@@ -1,5 +1,8 @@
 # Common runs. Each target says what it does; see docs/p3_plan.md (run order) and requirements.md (setup).
 PY ?= .venv/bin/python
+# Heavy runs go in their own memory-capped systemd scope, so an overrun kills only that run, not the desktop session
+# (config/settings.yaml `duckdb:` caps DuckDB itself). Empty where systemd-run is missing. Override: make pipeline CAP=
+CAP ?= $(shell command -v systemd-run >/dev/null 2>&1 && echo systemd-run --user --scope --quiet -p MemoryMax=16G -p MemorySwapMax=2G)
 
 .PHONY: help pipeline features train queue fairness monitoring nightly app test
 
@@ -15,7 +18,7 @@ help:
 	@echo "make test        the test suite"
 
 pipeline:
-	$(PY) -m trustissues.factory.pipeline
+	$(CAP) $(PY) -m trustissues.factory.pipeline
 
 features:
 	$(PY) -m trustissues.features.build_training_set
@@ -40,7 +43,7 @@ monitoring:
 	$(PY) -m trustissues.governance.monitoring
 
 nightly:
-	$(PY) scripts/nightly.py
+	$(CAP) $(PY) scripts/nightly.py
 
 app:
 	.venv/bin/streamlit run app/Home.py

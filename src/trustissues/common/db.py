@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import duckdb
 
-from .config import warehouse_path
+from .config import duckdb_limits, warehouse_path
 
 SCHEMAS = ("raw", "curated", "identity", "gold_stage", "gold")
 
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    con = duckdb.connect(str(warehouse_path()), read_only=read_only)
+    con = duckdb.connect(str(warehouse_path()), read_only=read_only, config=duckdb_limits())
     if not read_only:
         for s in SCHEMAS:
             con.execute(f"CREATE SCHEMA IF NOT EXISTS {s}")

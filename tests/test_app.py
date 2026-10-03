@@ -20,7 +20,7 @@ def ui():
     if not path.exists():
         pytest.skip("no warehouse built")
     try:
-        with duckdb.connect(str(path), read_only=True) as c:
+        with duckdb.connect(str(path), read_only=True, config=config.duckdb_limits()) as c:
             n = c.execute(f"SELECT count(*) FROM gold.nba_decisions WHERE as_of_date = DATE '{config.AS_OF_DATE}'").fetchone()[0]
     except duckdb.Error as e:
         pytest.skip(f"warehouse not readable: {e}")

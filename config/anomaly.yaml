@@ -29,7 +29,9 @@ episode_gap_days: 3       # flagged days moving the same way with gaps up to thi
 # nulls_min_age_days: judge null rates only for records at least this old (a case gets its treatment, agent, legal
 #   status over its first weeks, so a young case looks "empty" without anything being wrong).
 series:
-  - {name: contacts, table: curated.contact_history, ts: contact_ts_utc, mode: daily, slice: "channel_resolved || '/' || direction",
+  # coalesce(channel_v2, channel) is channel_resolved spelled out: that column is added by the quality stage, which runs
+  # after this one (it reads _anomaly_episodes), so on a fresh curate it does not exist yet.
+  - {name: contacts, table: curated.contact_history, ts: contact_ts_utc, mode: daily, slice: "coalesce(channel_v2, channel) || '/' || direction",
      null_rates: true, count_exclude_slices: [system/internal]}
   - {name: promises, table: curated.promises_to_pay, ts: ptp_created_ts, mode: daily, slice: ptp_channel, null_rates: true,
      ignore_columns: "^(ptp_status|status_ts|amount_paid_against|paid_date|broken_reason_agent_coded)$"}
