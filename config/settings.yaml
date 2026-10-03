@@ -1,0 +1,17 @@
+# AS_OF_DATE is fixed; code never calls today() (Design §4).
+as_of_date: "2026-09-28"
+
+paths:
+  # Folder holding data/, schema/, DATA_DICTIONARY.xlsx, files/. Override with MAPLE_DATA_DIR.
+  maple_data_dir: maple_data/maple_collections_release
+  warehouse_dir: warehouse
+  duckdb_file: trustissues.duckdb
+
+identity:
+  link_threshold: 0.95
+  review_threshold: 0.80
+
+ingest:
+  # A removed or retyped column stops the load for that source unless listed here.
+  allow_missing_columns: {}
+  transcript_glob: files/transcripts/*/*/*.json

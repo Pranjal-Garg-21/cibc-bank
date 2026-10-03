@@ -1,0 +1,6 @@
+# Layer 1 (raw + curated). Tested versions in comments. `pip install -e ".[dev]"` installs the same set.
+duckdb>=1.1          # tested 1.5.6
+pyyaml>=6.0          # tested 6.0.3
+openpyxl>=3.1        # tested 3.1.5 (reads the data dictionary xlsx)
+pytest>=8            # tested 9.1.1 (tests only)
+huggingface_hub      # only to download the dataset; tested 2.1.1 (provides the `hf` command)

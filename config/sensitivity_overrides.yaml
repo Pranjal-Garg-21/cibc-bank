@@ -1,0 +1,16 @@
+# Human classification decisions for columns the data dictionary does not cover (or labels it wrongly).
+# Hand-maintained and reviewed. dictionary.py applies these on top of DATA_DICTIONARY.xlsx every run;
+# config/sensitivity.yaml is generated and must never be edited directly.
+#
+# label: direct_pii | quasi_identifier | protected | none
+overrides:
+  deposit_accounts.overdraft_dpd:
+    label: none
+    reason: Delinquency measure of the overdraft facility. Not in the dictionary (added later per the release README).
+    decided_by: user
+    date: "2026-10-03"
+  deposit_accounts.overdraft_dpd_bucket:
+    label: none
+    reason: Bucketed form of overdraft_dpd.
+    decided_by: user
+    date: "2026-10-03"
