@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { Tabs } from 'radix-ui'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '@/api/client'
 import type { Options } from '@/api/types'
 import { useAuth } from '@/auth'
@@ -23,6 +23,7 @@ export function SignIn() {
   const { notice } = useAuth()
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   const options = useQuery({ queryKey: ['options'], queryFn: () => api.get<Options>('/api/session/options') })
   const [role, setRole] = useState<Role>('agent')
   const [staffId, setStaffId] = useState('')
@@ -33,7 +34,7 @@ export function SignIn() {
   const login = useMutation({
     mutationFn: () => api.post('/api/session/login', { role, staff_id: staffId.trim(), password, verification_code: code }),
     onSuccess: () => {
-      navigate('/', { replace: true })
+      navigate(`${location.pathname}${location.search}`, { replace: true })
       void qc.invalidateQueries({ queryKey: ['me'] })
       if ('BroadcastChannel' in window) {
         const channel = new BroadcastChannel('trustissues-session')

@@ -35,6 +35,12 @@ to `performance.now()` instead of comparing the server's sign-in timestamp with 
 Explicit sign-out, account-status checks, session revocation and the three-session cap remain active.
 Restarting ends all sessions. Explicitly disabling expiry remains restricted to labelled demos.
 
+Table browser: the demo's team leads can now see actual `curated` and `gold` tables through `/tables`.
+The catalog includes row counts; each table shows paginated rows and its column types. Empty stubs keep
+their column headers. Sensitive and unclassified values are masked in the SQL projection before reaching
+the browser. Internal/audit tables are excluded; schema/table names are checked against the catalog, pages
+are bounded, and the connection is read-only. Agent accounts and non-demo deployments are refused.
+
 ## Implemented controls
 
 - Password plus authenticator/recovery authentication in the default mode, generic failures, account lockout and rate limits.
@@ -50,7 +56,7 @@ Restarting ends all sessions. Explicitly disabling expiry remains restricted to 
 
 ## Verification
 
-- Backend: **80 passed, 3 skipped**. Skips concern unmerged real P2/P3 integrations.
+- Backend: **85 passed, 3 skipped**. Skips concern unmerged real P2/P3 integrations.
 - Frontend: **14 passed**; TypeScript and production build passed.
 - `npm audit` and `pip-audit -r ui/requirements.txt`: no known dependency vulnerabilities at review time.
 - Chromium: authenticator sign-in, 32-character recovery challenge, sensitive-action cancellation and verified retry,
@@ -63,6 +69,8 @@ Restarting ends all sessions. Explicitly disabling expiry remains restricted to 
   countdown or idle warning after advancing 16 minutes, and explicit sign-out still succeeded.
 - One-hour update: a backend session survives the old 15-minute cutoff and expires at exactly 3600 seconds,
   including after activity. Chromium checks login with a browser clock one day ahead and delayed expiry polling.
+- Table browser: Chromium verified the actual 1,000-row agents table, paging, column types, empty NBA stub
+  headers, direct-link sign-in and mobile layouts. axe reported no violations and no runtime errors occurred.
 
 ## Deployment work
 

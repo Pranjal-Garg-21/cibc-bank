@@ -83,6 +83,12 @@ the warehouse outside OneDrive or pause syncing.
 
 ## What works on which branch
 
+In the local demo, team leads can open **Tables** at `http://127.0.0.1:8000/tables` to browse actual `curated`
+and `gold` tables. Select a table to see its rows, page through 50 at a time, or open its column names and types.
+Empty database stubs retain their headers and column structure. The browser is read-only, excludes internal
+and audit tables, and masks sensitive/unclassified values. Sign in as a team lead; agent accounts cannot browse
+the warehouse. Direct table URLs are preserved through sign-in, for example `/tables/curated/agents`.
+
 Every backend module is imported lazily. A screen whose module is not merged yet shows "not connected" instead of
 failing.
 

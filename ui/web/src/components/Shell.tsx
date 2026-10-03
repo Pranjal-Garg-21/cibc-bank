@@ -39,6 +39,7 @@ function navFor(me: Me) {
     { to: '/ask', label: 'Ask', show: me.can.ask },
     { to: '/identity', label: 'Identity review', show: me.can.identity_review },
     { to: '/status', label: 'Data quality', show: me.can.status },
+    { to: '/tables', label: 'Tables', show: me.demo && me.can.manage_agents },
   ].filter((n) => n.show)
 }
 

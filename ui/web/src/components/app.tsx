@@ -179,6 +179,7 @@ export function DataTable({
   empty = 'Nothing to show.',
   caption,
   maxRows,
+  showEmptyHeaders = false,
 }: {
   data: TableData | Record<string, unknown>[]
   columns?: Col[]
@@ -187,17 +188,18 @@ export function DataTable({
   empty?: string
   caption?: string
   maxRows?: number
+  showEmptyHeaders?: boolean
 }) {
   const objects: Record<string, unknown>[] = Array.isArray(data)
     ? data
     : data.rows.map((r) => Object.fromEntries(data.columns.map((c, i) => [c, r[i]])))
   const cols: Col[] = columns ?? (Array.isArray(data) ? Object.keys(objects[0] ?? {}) : data.columns).map((k) => ({ key: k }))
   const shown = maxRows ? objects.slice(0, maxRows) : objects
-  if (!objects.length) return <Empty>{empty}</Empty>
+  if (!objects.length && (!showEmptyHeaders || !cols.length)) return <Empty>{empty}</Empty>
   const right = (c: Col) => c.align === 'right' || (c.align == null && isNumeric(objects[0]?.[c.key]))
   return (
     <div className="ledger-table overflow-x-auto rounded-sm border border-border bg-white">
-      <Table>
+      <Table aria-label={caption}>
         {caption && <TableCaption className="sr-only">{caption}</TableCaption>}
         <TableHeader className="bg-panel">
           <TableRow className="border-b-input hover:bg-transparent">
@@ -209,6 +211,7 @@ export function DataTable({
           </TableRow>
         </TableHeader>
         <TableBody>
+          {!shown.length && <TableRow><TableCell colSpan={cols.length} className="px-5 py-8 text-sm text-muted-foreground">{empty}</TableCell></TableRow>}
           {shown.map((row, i) => (
             <TableRow
               key={rowKey ? String(row[rowKey]) : i}

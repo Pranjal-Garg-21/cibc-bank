@@ -22,6 +22,7 @@ const IdentityPairPage = lazy(() => import('@/pages/Identity').then((m) => ({ de
 const StatusPage = lazy(() => import('@/pages/Status').then((m) => ({ default: m.StatusPage })))
 const ReportPage = lazy(() => import('@/pages/Status').then((m) => ({ default: m.ReportPage })))
 const TeamAccounts = lazy(() => import('@/pages/TeamAccounts').then((m) => ({ default: m.TeamAccounts })))
+const Tables = lazy(() => import('@/pages/Tables').then((m) => ({ default: m.Tables })))
 
 // The server puts a fresh nonce in this meta tag on every page load and allows it in the Content Security Policy;
 // the dialog scroll-lock uses it for its one <style> element. Nothing else inline is allowed.
@@ -73,6 +74,8 @@ function App() {
         <Route path="identity" element={<Guard allow={me.can.identity_review}><IdentityQueuePage /></Guard>} />
         <Route path="identity/:pairId" element={<Guard allow={me.can.identity_review}><IdentityPairPage /></Guard>} />
         <Route path="status" element={<StatusPage />} />
+        <Route path="tables" element={<Guard allow={me.demo && me.can.manage_agents}><Tables /></Guard>} />
+        <Route path="tables/:schema/:name" element={<Guard allow={me.demo && me.can.manage_agents}><Tables /></Guard>} />
         <Route path="status/reports/:name" element={<ReportPage />} />
         <Route path="*" element={<ErrorState error={new ApiError(404, 'not_found', 'This page does not exist.', null)} />} />
       </Route>

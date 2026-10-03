@@ -1,6 +1,11 @@
 // Response shapes of the UI API (ui/tiui/routers). Kept by hand; small enough to read.
 
 export type Table = { columns: string[]; rows: unknown[][] }
+export type WarehouseCatalog = { tables: { schema: string; name: string; rows: number }[] }
+export type WarehouseTable = {
+  schema: string; name: string; columns: { name: string; type: string; masked: boolean }[]
+  total: number; offset: number; limit: number; data: Table
+}
 
 export type Me = {
   agent_id: string
