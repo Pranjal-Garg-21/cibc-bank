@@ -164,6 +164,7 @@ python -m pytest tests -q
 | 6 Rules, hardship | Pure logic with tests (hard stops, consent default-deny, contact cap, hours; hardship never harsher, programme eligibility) |
 | 7 Action data | `warehouse/p3/action_values.parquet` + report section |
 | NBA queue | `nba/actions.py` (values), `nba/allocate.py` (capacity), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`; every case has a case-model risk. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
+| Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and **36,020 hardship / vulnerability / high-balance cases each waiting for an approval**, too many to review by hand until hardship routing is fixed |
 | Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.837 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):

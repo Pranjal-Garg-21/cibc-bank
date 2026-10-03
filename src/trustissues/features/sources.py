@@ -177,12 +177,12 @@ SOURCES: dict[str, Source] = {
                  "permitted_call_end_local"),
         },
     ),
-    # Who may take a hardship / vulnerable case (nba/queue.py routing).
+    # Who may take a hardship / vulnerable case (nba/queue.py routing), and who may approve (nba/review.py).
     "agents": Source(
         table="agents",
         use="rules",
         columns={
-            **_c("agent_id", "status", "team_id", "site"),
+            **_c("agent_id", "status", "team_id", "site", "role", "team_lead_id"),
             "vulnerable_customer_certified": ("vulnerable_customer_certified", "BOOLEAN"),
         },
     ),

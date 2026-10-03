@@ -213,8 +213,8 @@ CREATE TABLE IF NOT EXISTS gold.nba_decisions (
 CREATE TABLE IF NOT EXISTS gold.nba_overrides (
     recommendation_id   VARCHAR,
     agent_id            VARCHAR,
-    decision            VARCHAR,   -- accepted | overridden
-    reason_code         VARCHAR,   -- code list still open
+    decision            VARCHAR,   -- agent: accepted | overridden; approver: approved | rejected (nba/review.py)
+    reason_code         VARCHAR,   -- required for overridden / rejected: nba/review.py REASON_CODES
     ts                  TIMESTAMP
 );
 

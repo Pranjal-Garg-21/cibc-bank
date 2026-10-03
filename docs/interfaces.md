@@ -26,7 +26,7 @@ Proposed shapes, taken from `implementation_plan.md` §7.1 and the `p1`–`p4` d
 2. **`decisioning_customer` columns (P1, P3):** the list is a proposal. P3, say what you need. `fsa` and `age` are left out and only joined back in the fairness test.
 3. **Consent columns (P1):** `consent_phone/sms/email/mail` are guessed names. Match them to the dictionary.
 4. **`ptp_intent_strength` values (P4, P3):** `strong | moderate | weak | none` is a guess.
-5. **`reason_code` list for overrides (P3):** still open in the P4 doc.
+5. **`reason_code` list for overrides (P3):** settled in `nba/review.py` (`REASON_CODES`): `customer_already_paid`, `customer_contacted_today`, `hardship_disclosed`, `vulnerability_concern`, `dispute_raised`, `customer_requested_channel`, `contact_details_wrong`, `card_facts_wrong`, `too_much_contact`, `other`. The same list covers a team lead's rejections. `decision` also takes `approved` / `rejected` for approvals; the columns are unchanged.
 6. **`label_broken` (P1, P3):** is `partially_kept` broken? The plan defers to the metric definition.
 7. **`bucket_transitions` columns (P1, P2):** marked TBC in the P1 doc.
 8. **Timeline interface number:** the plan never gave it one.
