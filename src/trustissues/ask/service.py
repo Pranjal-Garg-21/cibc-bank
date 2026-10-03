@@ -63,6 +63,8 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
         return card(f"I can't help with that. {hit.reason}", "refused", refused=True, refusal_reason=hit.category)
 
     r = route(question)
+    if r.clarification:
+        return card(r.clarification, "cannot_answer")
     try:
         if r.path == "metric":
             return _metric(question, user, as_of_date, r, con, database, card)

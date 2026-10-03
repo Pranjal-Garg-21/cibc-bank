@@ -1,0 +1,4 @@
+# Install these to enable the local semantic/Aho-Corasick trial.
+# Shared pyproject.toml remains Claude's file; versions below were acceptance-tested.
+fastembed==0.8.1
+pyahocorasick==2.3.1

@@ -16,6 +16,7 @@ from trustissues.common.llm import LLMError
 from .data.execute import QueryResult, QueryTimeout, execute
 from .data.semantic import SCHEMAS
 from .data.validator import SAFE_FUNCTIONS, QueryPolicy, ValidationError, validate
+from .join_context import prompt_join_context
 
 PROMPT_VERSION = "ask_sql_v1"
 
@@ -102,7 +103,7 @@ def _generate(llm, system: str, user: str, ctx: dict) -> tuple[str | None, str]:
 
 def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=None, database=None,
                  user_id: str | None = None) -> FallbackResult:
-    system = build_system(as_of)
+    system = build_system(as_of) + "\n\n" + prompt_join_context(question)
     policy = dataclasses.replace(policy, required_filters={**policy.required_filters, **as_of_filters(as_of)})
     ctx = {"kind": "sql", "input_text": question, "user_role": policy.role, "user_id": user_id, "sources": []}
     user = f"Question: {question}"

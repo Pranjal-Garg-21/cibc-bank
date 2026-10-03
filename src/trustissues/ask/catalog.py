@@ -27,9 +27,9 @@ TRIGGERS: list[tuple[str, str]] = [
     ("hardship_rate", r"hardship rate"),
     ("write_off_rate", r"charged[- ]off|write[- ]?offs?"),
     ("collected_amount", r"(?:how much|amount).{0,20}paid against promises|collected amount"),
-    ("average_dpd", r"average days past due|average dpd|mean dpd"),
+    ("average_dpd", r"(?:average|mean) (?:days past due|dpd)"),
     ("contact_attempts_per_case", r"contact attempts?.{0,40}(?:per case|open cases|on average)|attempts per case"),
-    ("delinquency_rate", r"(?:share|rate|percentage).{0,60}(?:\d+ or more )?days? past due|delinquen"),
+    ("delinquency_rate", r"(?:share|rate|percentage).{0,60}(?:\d+ or more )?days? past due|delinquency (?:rate|share|percentage)"),
     ("payroll_delay_share", r"payroll.{0,30}delay"),
 ]
 
@@ -70,6 +70,12 @@ def detect_metric(question: str) -> str | None:
         if re.search(rx, q):
             return metric_id
     return None
+
+
+def match_metric(question: str):
+    """Local metadata retrieval for questions not covered by deterministic triggers."""
+    from .metric_matcher import match
+    return match(question)
 
 
 def _dimensions(question: str, metric_id: str) -> tuple[tuple[str, ...], str | None]:

@@ -5,6 +5,9 @@ import re
 from dataclasses import dataclass
 
 PATTERNS = [
+    (r"\b(?:ignore|disregard)\b.{0,30}\b(?:what you (?:were|have been) told|your instructions)\b", "override_instructions"),
+    (r"\bfrom now on\b.{0,60}\b(?:unrestricted|no rules|no restrictions)\b", "role_override"),
+    (r"\bpretend\b.{0,30}\b(?:admin|administrator|unrestricted)\b", "role_override"),
     (r"ignore (all |any |the )?(previous|prior|above|earlier) (instructions|rules|prompts?)", "override_instructions"),
     (r"disregard (all |any |the )?(previous|prior|above|your) (instructions|rules|guidelines)", "override_instructions"),
     (r"(reveal|show|print|repeat|output) (me )?(your|the) (system|hidden|initial) (prompt|instructions?)", "prompt_leak"),

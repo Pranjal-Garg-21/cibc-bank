@@ -2,6 +2,7 @@
 # Word boundaries matter: "average" and "ageing buckets" must NOT trigger the age rule.
 protected_attributes:
   reason: "Protected personal attributes are not used to rank, select or describe customers."
+  registry_levels: [protected]
   patterns:
     - '\bgender\b'
     - '\bmarital( status)?\b'
@@ -14,6 +15,7 @@ protected_attributes:
     - '\bdate of birth\b|\bdob\b|\bbirth ?date\b'
 proxy_geography:
   reason: "Postal areas act as a proxy for protected attributes and cannot drive treatment decisions."
+  registry_proxies: true
   patterns:
     - '\bfsas?\b'
     - '\bpostal (areas?|codes?)\b'
@@ -21,6 +23,7 @@ proxy_geography:
     - '\bneighbou?rhoods?\b'
 pii_export:
   reason: "Customer identities and contact details are not disclosed in bulk."
+  registry_levels: [direct_pii]
   patterns:
     - '\b(names?|phones?|phone numbers?|emails?|e-mail addresses?|home addresses?|addresses|sin|social insurance)\b.{0,60}\b(customers?|clients?|borrowers?)\b'
     - '\b(customers?|clients?|borrowers?)\b.{0,60}\b(names?|phone numbers?|emails?|home addresses?|addresses|sin|social insurance)\b'
@@ -30,3 +33,5 @@ out_of_scope:
     - '\bweather\b|\bforecast\b|\btemperature\b'
     - '\b(stock price|sports? score|recipe|horoscope|lottery)\b'
     - '\bwho (won|is the president)\b'
+    - '\b(stock|share)\b.{0,40}\b(price|quote)\b|\b(price|quote)\b.{0,40}\b(stock|shares?)\b'
+    - '\b(tell|write|make)\b.{0,20}\b(joke|jokes|recipe|horoscope)\b'
