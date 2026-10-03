@@ -19,6 +19,17 @@ export function setCsrfToken(t: string | null) {
 
 type Listener = (e: ApiError) => void
 const unauthorizedListeners = new Set<Listener>()
+let reauthentication: (() => Promise<void>) | null = null
+export function onReauthentication(fn: () => Promise<void>) {
+  reauthentication = fn
+  return () => { if (reauthentication === fn) reauthentication = null }
+}
+const pendingRequests = new Set<AbortController>()
+let sessionGeneration = 0
+export function abortSessionRequests() {
+  sessionGeneration += 1
+  pendingRequests.forEach((controller) => controller.abort())
+}
 /** Called when any request comes back 401, so the app can return to the sign-in screen. */
 export function onUnauthorized(fn: Listener) {
   unauthorizedListeners.add(fn)
@@ -27,13 +38,16 @@ export function onUnauthorized(fn: Listener) {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {
+  const generation = sessionGeneration
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (method !== 'GET') {
     headers['Content-Type'] = 'application/json'
     if (csrfToken) headers['X-CSRF-Token'] = csrfToken
   }
   let res: Response
+  const controller = new AbortController()
+  pendingRequests.add(controller)
   try {
     res = await fetch(path, {
       method,
@@ -41,12 +55,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       credentials: 'same-origin',
       cache: 'no-store',
       body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+      signal: controller.signal,
     })
   } catch {
+    if (controller.signal.aborted) throw new ApiError(0, 'session_changed', 'This request ended when your session changed.', null)
     throw new ApiError(0, 'network', 'The server cannot be reached. Check that it is running.', null)
+  } finally {
+    pendingRequests.delete(controller)
   }
   const data = await res.json().catch(() => null)
+  if (generation !== sessionGeneration) throw new ApiError(0, 'session_changed', 'This request ended when your session changed.', null)
   if (!res.ok) {
+    if (res.status === 403 && data?.code === 'reauthentication_required' && !retried && reauthentication) {
+      // The server has refused before any write. Retry exactly once, after a successful fresh challenge.
+      await reauthentication()
+      return request<T>(method, path, body, true)
+    }
     const err = new ApiError(
       res.status,
       data?.code ?? 'error',

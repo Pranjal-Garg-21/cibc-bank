@@ -15,7 +15,7 @@ from conftest import PAIR_1, PAIR_2, PAIR_3, sign_in
 
 def test_sign_in_page_reveals_no_staff(client):
     opts = client.get("/api/session/options").json()
-    assert set(opts) == {"sign_in_configured", "demo", "as_of_date", "idle_minutes"}
+    assert set(opts) == {"sign_in_configured", "demo", "as_of_date", "idle_minutes", "mfa_required", "shared_access"}
     assert opts["sign_in_configured"] is True
     assert client.get("/api/session/staff").status_code == 404  # there is no staff directory
 

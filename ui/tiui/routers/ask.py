@@ -89,6 +89,9 @@ def exported(body: Export, request: Request):
     app = request.app.state
     with warehouse(app.settings) as con:
         user = current_user(request, con)
+    wait = app.limiter.hit("write", user.agent_id)
+    if wait:
+        raise ApiError(429, "rate_limited", "Too many exports. Try again later.", {"Retry-After": str(wait)})
     app.access_log.record(action="export_csv", user_id=user.agent_id, role=user.role,
                           object_id=f"{body.rows} rows", request_id=request.state.request_id)
     return {"ok": True}

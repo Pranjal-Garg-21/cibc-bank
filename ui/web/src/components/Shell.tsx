@@ -1,9 +1,13 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, LogOut, ShieldCheck, Clock3 } from 'lucide-react'
 import { Suspense, useState, type ReactNode } from 'react'
+import { Tabs } from 'radix-ui'
 import { NavLink, Outlet } from 'react-router-dom'
 import type { Me } from '@/api/types'
 import { useAuth, useIdleLock, useMe } from '@/auth'
 import { Loading } from '@/components/app'
+import { SecurityPanel } from '@/components/SecurityPanel'
+import { Wordmark } from '@/components/Wordmark'
+import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,43 +52,35 @@ function accessList(me: Me): string[] {
   return a
 }
 
-export function Wordmark({ small }: { small?: boolean }) {
-  return (
-    <span className="flex items-baseline gap-3">
-      <span className={cn('font-bold tracking-tight text-brand', small ? 'text-[20px]' : 'text-[24px]')}>TrustIssues</span>
-      <span className="border-l border-input pl-3 text-[14px] text-muted-foreground">Collections</span>
-    </span>
-  )
-}
-
 export function Shell() {
   const me = useMe()
   const { signOut } = useAuth()
-  const { warning, stay } = useIdleLock(me.idle_minutes)
+  const { warning, stay, secondsLeft } = useIdleLock(me.idle_minutes, me.max_hours, me.signed_in_at)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [profileTab, setProfileTab] = useState<'profile' | 'security'>('profile')
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:px-3 focus:py-2">
+    <div className="flex min-h-[100dvh] flex-col">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-40 focus:bg-white focus:px-3 focus:py-2">
         Skip to content
       </a>
 
       <header className="border-t-4 border-brand bg-white">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-6 py-3">
-          <div className="flex items-center gap-4">
+        <div className="console-width flex min-h-[72px] flex-wrap items-center justify-between gap-3 py-3">
+          <div className="flex flex-wrap items-center gap-4">
             <Wordmark />
             {me.demo && (
-              <span className="border border-warn px-1.5 py-px text-[11px] font-bold text-warn" title="Synthetic data and local accounts">
+              <span className="rounded-sm border border-warn px-2 py-1 text-[11px] font-bold text-warn" title="Synthetic data and local accounts">
                 DEMO ENVIRONMENT
               </span>
             )}
           </div>
-          <div className="flex items-center gap-5 text-[13px]">
+          <div className="flex items-center gap-3 text-[13px] sm:gap-5">
             <span className="hidden text-muted-foreground md:inline">
               Business date <span className="text-foreground">{isoDate(me.as_of_date)}</span>
             </span>
             <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-2 border border-transparent px-2 py-1 text-left hover:border-border focus-visible:border-border">
+              <DropdownMenuTrigger className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-2 py-1 text-left hover:border-border focus-visible:border-border" aria-label="My profile and access">
                 <span className="leading-tight">
                   <span className="block text-[14px] text-foreground">{me.name ?? me.agent_id}</span>
                   <span className="block text-xs text-muted-foreground">
@@ -101,23 +97,24 @@ export function Shell() {
                   </p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setProfileOpen(true)}>My profile and access</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { setProfileTab('profile'); setProfileOpen(true) }}>My profile and access</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void signOut()} className="text-brand focus:text-brand">
                   Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button variant="ghost" size="sm" className="no-print min-h-11" onClick={() => void signOut()}><LogOut aria-hidden="true" strokeWidth={1.5} />Sign out</Button>
           </div>
         </div>
         <nav aria-label="Main" className="bg-charcoal">
-          <ul className="mx-auto flex max-w-[1400px] flex-wrap px-6">
+          <ul className="console-width flex overflow-x-auto">
             {navFor(me).map((n) => (
               <li key={n.to}>
                 <NavLink
                   to={n.to}
                   className={({ isActive }) =>
                     cn(
-                      'block border-b-4 px-4 pt-3 pb-2 text-[14px] text-white no-underline hover:text-white',
+                      'block border-b-4 px-4 pt-3 pb-3 text-[14px] whitespace-nowrap text-white no-underline hover:text-white',
                       isActive ? 'border-brand bg-[#2b2e31]' : 'border-transparent hover:border-[#8a8d90]',
                     )
                   }
@@ -130,14 +127,18 @@ export function Shell() {
         </nav>
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-6">
+      <main id="main" tabIndex={-1} className="console-width flex-1 py-7 md:py-9">
+        <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 text-[13px] text-muted-foreground">
+          <button type="button" className="flex min-h-8 flex-wrap items-center gap-2 text-left hover:text-brand" onClick={() => { setProfileTab('security'); setProfileOpen(true) }}><ShieldCheck className="size-4" strokeWidth={1.5} aria-hidden="true" />{me.mfa ? 'Multi-factor authentication verified' : 'Demo access: MFA disabled'}<span className="ml-2 text-brand underline underline-offset-4">Session & security</span></button>
+          <span className="flex items-center gap-2 tabular-nums"><Clock3 className="size-4" strokeWidth={1.5} aria-hidden="true" />Session expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</span>
+        </div>
         <Suspense fallback={<Loading />}>
           <Outlet />
         </Suspense>
       </main>
 
       <footer className="no-print bg-charcoal text-[12px] text-[#d0d1d2]">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap justify-between gap-2 px-6 py-3">
+        <div className="console-width flex flex-wrap justify-between gap-2 py-4">
           <span>For internal use by authorized staff only. Activity on this system is logged.</span>
           <span>
             You are signed in as {me.agent_id}. Your session ends after {me.idle_minutes} minutes without activity.
@@ -145,16 +146,16 @@ export function Shell() {
         </div>
       </footer>
       <p className="print-footer hidden px-6 py-2 text-xs">
-        Internal — contains customer information. Printed by {me.agent_id} on {new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC.
+        Internal: contains customer information. Printed by {me.agent_id} on {new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC.
       </p>
 
-      <ProfileSheet me={me} open={profileOpen} onOpenChange={setProfileOpen} />
+      <ProfileSheet me={me} open={profileOpen} onOpenChange={setProfileOpen} initialTab={profileTab} />
 
       <AlertDialog open={warning}>
         <AlertDialogContent className="rounded-sm">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-normal">Your session is about to end</AlertDialogTitle>
-            <AlertDialogDescription>For your security you will be signed out in about two minutes because there has been no activity.</AlertDialogDescription>
+            <AlertDialogDescription>Your session ends in {secondsLeft} seconds. Stay signed in to continue, or sign out. The absolute session limit still applies.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => void signOut()}>Sign out</AlertDialogCancel>
@@ -169,14 +170,14 @@ export function Shell() {
 }
 
 /** Your own record only. Nobody else's details are ever sent to the browser. */
-function ProfileSheet({ me, open, onOpenChange }: { me: Me; open: boolean; onOpenChange: (o: boolean) => void }) {
+function ProfileSheet({ me, open, onOpenChange, initialTab }: { me: Me; open: boolean; onOpenChange: (o: boolean) => void; initialTab: 'profile' | 'security' }) {
   const record: [string, ReactNode][] = [
     ['Staff ID', me.agent_id],
-    ['Name', me.name ?? '—'],
+    ['Name', me.name ?? '-'],
     ['Role', label(ROLE_LABEL, me.role)],
-    ['Team', me.team_id ?? '—'],
-    ['Reports to', me.team_lead_id ?? '—'],
-    ['Site', me.site ?? '—'],
+    ['Team', me.team_id ?? '-'],
+    ['Reports to', me.team_lead_id ?? '-'],
+    ['Site', me.site ?? '-'],
     ['Employment', label(EMPLOYMENT_LABEL, me.employment_type)],
     ['Languages', languages(me.languages)],
     ['Vulnerable customers', me.certified ? 'Certified' : 'Not certified'],
@@ -187,14 +188,19 @@ function ProfileSheet({ me, open, onOpenChange }: { me: Me; open: boolean; onOpe
   ]
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto border-l-4 border-l-brand sm:max-w-md">
+      <SheetContent className="w-full overflow-y-auto border-l-4 border-l-brand sm:max-w-lg">
         <SheetHeader className="border-b border-border">
           <SheetTitle className="text-[22px] font-normal">{me.name ?? me.agent_id}</SheetTitle>
           <SheetDescription>
             {label(ROLE_LABEL, me.role)} · Staff ID {me.agent_id}
           </SheetDescription>
         </SheetHeader>
-        <div className="space-y-6 px-4 pb-6">
+        <Tabs.Root key={open ? initialTab : 'closed'} defaultValue={initialTab} className="px-5 pb-6">
+          <Tabs.List aria-label="Account details" className="mb-6 grid grid-cols-2 border-b border-border">
+            <Tabs.Trigger value="profile" className="min-h-11 border-b-2 border-transparent px-3 text-sm text-muted-foreground data-[state=active]:border-brand data-[state=active]:font-bold data-[state=active]:text-brand">Profile & access</Tabs.Trigger>
+            <Tabs.Trigger value="security" className="min-h-11 border-b-2 border-transparent px-3 text-sm text-muted-foreground data-[state=active]:border-brand data-[state=active]:font-bold data-[state=active]:text-brand">Session & security</Tabs.Trigger>
+          </Tabs.List>
+          <Tabs.Content value="profile" className="space-y-7">
           <p className="text-sm text-muted-foreground">{ROLE_DUTY[me.role] ?? ''}</p>
           <ProfileTable title="Staff record" rows={record} />
           <div>
@@ -207,7 +213,9 @@ function ProfileSheet({ me, open, onOpenChange }: { me: Me; open: boolean; onOpe
             <p className="mt-2 text-xs text-muted-foreground">Customer information is masked for your role before it reaches this screen.</p>
           </div>
           <ProfileTable title="Session" rows={session} />
-        </div>
+          </Tabs.Content>
+          <Tabs.Content value="security" className="space-y-6"><SecurityPanel me={me} /><ProfileTable title="Session limits" rows={session} /></Tabs.Content>
+        </Tabs.Root>
       </SheetContent>
     </Sheet>
   )

@@ -12,7 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from ..deps import current_user, require_role, utc_now, warehouse
+from ..deps import current_user, require_reauthentication, require_role, utc_now, warehouse
 from ..errors import ApiError, not_connected
 from ..security import clean_text, csv_safe, mask_phone
 
@@ -134,6 +134,7 @@ def decide(body: Decision, request: Request):
                           [body.pair_id]).fetchone()
     if row is None:
         raise ApiError(404, "not_found", "No such pair.")
+    require_reauthentication(request)
     wait = app.limiter.hit("write", user.agent_id)
     if wait:
         raise ApiError(429, "rate_limited", f"Too many changes in a short time. Try again in {wait} s.",

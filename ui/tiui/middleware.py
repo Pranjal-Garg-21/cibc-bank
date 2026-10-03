@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -39,20 +40,44 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request.state.request_id = secrets.token_hex(8)
         request.state.user_id = None
-        response = await self._checked(request, call_next)
+        try:
+            response = await self._checked(request, call_next)
+        except Exception as error:
+            # Exception messages and tracebacks can embed SQL/customer data. Support correlates by request id.
+            logging.getLogger("tiui").error("Request failed: type=%s request_id=%s", type(error).__name__, request.state.request_id)
+            response = _refuse(request, 500, "internal_error", "Something went wrong. Quote the request id to support.")
         self._headers(request, response)
         if response.status_code in (401, 403, 429) and request.url.path.startswith("/api/"):
-            request.app.state.access_log.record(action=f"{request.method} {request.url.path}",
+            route = getattr(request.scope.get("route"), "path", "refused_api_request")
+            request.app.state.access_log.record(action=f"{request.method} {route}",
                                                 outcome=str(response.status_code), user_id=request.state.user_id,
                                                 request_id=request.state.request_id)
         return response
 
     async def _checked(self, request: Request, call_next):
+        host = request.url.hostname
+        if host not in self.settings.allowed_hosts:
+            return _refuse(request, 400, "bad_host", "This application is not configured for this host.")
+        if host not in ("localhost", "127.0.0.1", "::1", "testserver") and (not self.settings.https or request.url.scheme != "https"):
+            return _refuse(request, 426, "https_required", "Use the HTTPS address for this application.")
+        if request.url.path.startswith("/api/") and request.headers.get("sec-fetch-site") == "cross-site":
+            return _refuse(request, 403, "bad_origin", "Request refused: it did not come from this application.")
         if request.method in UNSAFE and request.url.path.startswith("/api/"):
             length = request.headers.get("content-length")
             if length is None or not length.isdigit() or int(length) > MAX_BODY:
                 return _refuse(request, 413 if length and length.isdigit() else 411, "body_size",
                                "Request body missing a length or too large.")
+            if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+                return _refuse(request, 415, "json_required", "Send this request as JSON.")
+            chunks, received = [], 0
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > MAX_BODY:
+                    return _refuse(request, 413, "body_size", "Request body is too large.")
+                chunks.append(chunk)
+            if received != int(length):
+                return _refuse(request, 400, "body_size", "Request body length does not match.")
+            request._body = b"".join(chunks)  # Starlette's cached body is replayed to the downstream handler
             origin = request.headers.get("origin")
             same_origin = origin == f"{request.url.scheme}://{request.url.netloc}"
             if origin is not None and not same_origin and origin not in self.dev_origins:
@@ -76,9 +101,11 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), clipboard-read=(), payment=(), usb=()"
         h["Cross-Origin-Opener-Policy"] = "same-origin"
         h["Cross-Origin-Resource-Policy"] = "same-origin"
+        h["X-Permitted-Cross-Domain-Policies"] = "none"
+        h["X-Robots-Tag"] = "noindex, nofollow, noarchive"
         h["X-Request-Id"] = request.state.request_id
         if request.url.path.startswith("/api/"):
             h["Cache-Control"] = "no-store"
             h["Pragma"] = "no-cache"
         if self.settings.https:
-            h["Strict-Transport-Security"] = "max-age=31536000"
+            h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

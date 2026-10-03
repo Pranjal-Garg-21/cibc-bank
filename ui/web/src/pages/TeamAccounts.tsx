@@ -44,7 +44,7 @@ export function TeamAccounts() {
     <>
       <PageHeader
         title="Agent accounts"
-        description="Set the sign-in password for each agent who reports to you. Agents cannot change their password; only you can reset it or remove their access."
+        description={me.shared_access ? 'Temporary shared demo access is enabled for active staff. Individual passwords are not saved.' : 'Manage access for agents who report to you. Password resets and access removal end their active sessions.'}
       />
       {q.isLoading && <Loading />}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
@@ -61,31 +61,29 @@ export function TeamAccounts() {
             empty="No active agents report to you."
             caption="Your agents"
             columns={[
-              { key: 'name', label: 'Name' },
+              { key: 'name', label: 'Name', render: (r) => <div><p className="font-bold">{String(r.name ?? r.agent_id)}</p><p className="mt-1 text-xs text-muted-foreground">{label(ROLE_LABEL, r.role as string)}</p></div> },
               { key: 'agent_id', label: 'Staff ID' },
-              { key: 'role', label: 'Role', render: (r) => label(ROLE_LABEL, r.role as string) },
-              { key: 'team_id', label: 'Team' },
               {
                 key: 'has_account',
                 label: 'Sign-in',
-                render: (r) => (r.has_account ? <StatusBadge tone="ok">Active</StatusBadge> : <StatusBadge>Not set up</StatusBadge>),
+                render: (r) => (me.shared_access ? <StatusBadge tone="warn">Demo access</StatusBadge> : r.has_account ? <StatusBadge tone={!me.demo && !r.mfa_enrolled ? 'warn' : 'ok'}>{!me.demo && !r.mfa_enrolled ? 'MFA setup needed' : 'Password set'}</StatusBadge> : <StatusBadge>Not set up</StatusBadge>),
               },
               {
                 key: 'set_at',
                 label: 'Password set',
-                render: (r) => (r.set_at ? `${dateTime(r.set_at)} by ${r.set_by === me.agent_id ? 'you' : String(r.set_by ?? 'admin')}` : '—'),
+                render: (r) => (r.set_at ? <div><p>{dateTime(r.set_at)}</p><p className="mt-1 text-xs text-muted-foreground">By {r.set_by === me.agent_id ? 'you' : String(r.set_by ?? 'admin')}</p></div> : 'Not set'),
               },
               {
                 key: 'actions',
-                label: '',
+                label: 'Actions',
                 className: 'text-right',
                 render: (r) => (
                   <span className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => (setDone(null), setEditing(r as unknown as TeamAgent))}>
+                    <Button size="sm" variant="outline" disabled={me.shared_access} onClick={() => (setDone(null), setEditing(r as unknown as TeamAgent))}>
                       {r.has_account ? 'Reset password' : 'Set password'}
                     </Button>
                     {Boolean(r.has_account) && (
-                      <Button size="sm" variant="secondary" onClick={() => (setDone(null), setRevoking(r as unknown as TeamAgent))}>
+                      <Button size="sm" variant="secondary" disabled={me.shared_access} onClick={() => (setDone(null), setRevoking(r as unknown as TeamAgent))}>
                         Remove access
                       </Button>
                     )}
@@ -94,6 +92,7 @@ export function TeamAccounts() {
               },
             ]}
           />
+          <p className="border-t border-border px-5 py-4 text-[13px] text-muted-foreground">{me.shared_access ? 'Account changes are disabled during shared demo access. Existing passwords and authenticators are preserved.' : 'Agents cannot change their password. Use a secure channel to share a new password. Authenticator setup is handled by the service desk.'}</p>
         </Section>
       )}
 
@@ -168,7 +167,7 @@ function SetPasswordDialog({ agent, onClose, onSaved }: { agent: TeamAgent; onCl
           </DialogTitle>
           <DialogDescription>
             Staff ID {agent.agent_id}. This becomes their fixed sign-in password; they cannot change it.
-            {agent.has_account && ' Their current password stops working at once.'}
+            {agent.has_account && ' Their current password stops working and all their sessions end at once. Their authenticator remains enrolled.'}
           </DialogDescription>
         </DialogHeader>
         <form

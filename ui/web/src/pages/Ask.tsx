@@ -100,7 +100,8 @@ export function Ask() {
 function Answer({ card }: { card: AnswerCard }) {
   const [open, setOpen] = useState(false)
   const path = ANSWER_PATH[card.path] ?? ANSWER_PATH.cannot_answer
-  const download = () => {
+  const download = useMutation({ mutationFn: async () => {
+    await api.post('/api/ask/exported', { question: card.question, rows: card.rows.length })
     const blob = new Blob([toCsv(card.columns, card.rows)], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -108,8 +109,7 @@ function Answer({ card }: { card: AnswerCard }) {
     a.download = `answer-${isoDate(card.as_of_date)}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    void api.post('/api/ask/exported', { question: card.question, rows: card.rows.length }).catch(() => null)
-  }
+  } })
   return (
     <Section
       title={card.question}
@@ -130,10 +130,11 @@ function Answer({ card }: { card: AnswerCard }) {
           <DataTable data={{ columns: card.columns, rows: card.rows }} maxRows={50} caption="Answer data" />
           <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
             <span>{card.truncated ? 'First 500 rows. ' : ''}Customer information is masked for your role.</span>
-            <Button variant="link" size="sm" onClick={download}>
-              Download CSV
+            <Button variant="link" size="sm" disabled={download.isPending} onClick={() => download.mutate()}>
+              {download.isPending ? 'Preparing export…' : 'Download CSV'}
             </Button>
           </div>
+          {download.error && <div className="mt-3"><ErrorState error={download.error} /></div>}
         </div>
       )}
       {card.notes.length > 0 && (

@@ -46,7 +46,7 @@ export function Queue() {
                 { key: 'summary', label: 'Reason', wrap: true, render: (r) => <span className="line-clamp-2">{String(r.summary ?? '')}</span> },
                 { key: 'risk_score', label: 'Risk', align: 'right', render: (r) => pct(r.risk_score, 0) },
                 { key: 'expected_value', label: 'Expected value (CAD)', align: 'right', render: (r) => amount(r.expected_value) },
-                { key: 'approval_reason', label: 'Approval', render: (r) => (r.approval_reason ? label(APPROVAL_LABEL, r.approval_reason as string) : '—') },
+                { key: 'approval_reason', label: 'Approval', render: (r) => (r.approval_reason ? label(APPROVAL_LABEL, r.approval_reason as string) : '-') },
                 {
                   key: 'state',
                   label: 'Status',

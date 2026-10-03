@@ -5,7 +5,7 @@ describe('formats (design §8.4)', () => {
   it('dates are ISO 8601', () => {
     expect(isoDate('2026-10-03')).toBe('2026-10-03')
     expect(isoDate('2026-10-03T08:35:00')).toBe('2026-10-03')
-    expect(isoDate(null)).toBe('—')
+    expect(isoDate(null)).toBe('-')
   })
   it('money uses the ISO 4217 code, never a bare $', () => {
     expect(cad(1234.5)).toBe('CAD 1,234.50')
@@ -28,6 +28,8 @@ describe('CSV export (design §9.4)', () => {
     expect(csvSafe('+1')).toBe("'+1")
     expect(csvSafe('@SUM')).toBe("'@SUM")
     expect(csvSafe('a\nb')).toBe('a b')
+    expect(csvSafe('  =SUM(1)')).toBe("'  =SUM(1)")
+    expect(csvSafe('\n=SUM(1)')).toBe("' =SUM(1)")
   })
   it('builds rows with CRLF', () => {
     expect(toCsv(['a', 'b'], [[1, 'x,y']])).toBe('a,b\r\n1,"x,y"')

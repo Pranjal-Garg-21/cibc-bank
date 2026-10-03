@@ -96,27 +96,36 @@ def lookup_staff(con, agent_id: str) -> User | None:
     return User(*row) if row else None
 
 
-def session_of(request: Request) -> Session | None:
-    return request.app.state.sessions.get(request.cookies.get(SESSION_COOKIE))
+def session_of(request: Request, touch: bool = True) -> Session | None:
+    return request.app.state.sessions.get(request.cookies.get(SESSION_COOKIE), touch=touch)
 
 
-def require_session(request: Request) -> Session:
-    s = session_of(request)
+def require_session(request: Request, touch: bool = True) -> Session:
+    s = session_of(request, touch=touch)
     if s is None:
         raise ApiError(401, "not_signed_in", "Please sign in.")
     request.state.user_id = s.user_id
     return s
 
 
-def current_user(request: Request, con) -> User:
+def current_user(request: Request, con, touch: bool = True) -> User:
     """The signed-in member of staff, re-checked against the warehouse on every request (a deactivated account
     loses access at once)."""
-    s = require_session(request)
+    s = require_session(request, touch=touch)
     user = lookup_staff(con, s.user_id)
-    if user is None or user.status != "active" or user.role not in SIGN_IN_ROLES or user.role != s.role:
+    if (user is None or user.status != "active" or user.role not in SIGN_IN_ROLES or user.role != s.role
+            or s.credential_version is None
+            or request.app.state.accounts.version(s.user_id) != s.credential_version):
         request.app.state.sessions.delete(s.sid)
         raise ApiError(401, "not_signed_in", "Your account is no longer active.")
     return user
+
+
+def require_reauthentication(request: Request) -> None:
+    """Account changes need a separate confirmation, valid for five minutes after a fresh challenge."""
+    s = require_session(request)
+    if s.reauthenticated is None or request.app.state.sessions.clock() - s.reauthenticated >= 300:
+        raise ApiError(403, "reauthentication_required", "Confirm your identity before making this security change.")
 
 
 def require_role(user: User, roles) -> None:

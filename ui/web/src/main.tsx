@@ -2,18 +2,18 @@ import './styles/index.css'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { setNonce } from 'get-nonce'
-import { lazy, StrictMode, type ReactNode } from 'react'
+import { lazy, StrictMode, Suspense, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { ApiError } from '@/api/client'
 import { AuthProvider, useAuth } from '@/auth'
 import { ErrorState, Loading } from '@/components/app'
-import { Shell } from '@/components/Shell'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { SignIn } from '@/pages/SignIn'
 
 // Each screen is its own file, loaded when first opened.
 const Ask = lazy(() => import('@/pages/Ask').then((m) => ({ default: m.Ask })))
+const Shell = lazy(() => import('@/components/Shell').then((m) => ({ default: m.Shell })))
 const Queue = lazy(() => import('@/pages/Queue').then((m) => ({ default: m.Queue })))
 const Approvals = lazy(() => import('@/pages/Approvals').then((m) => ({ default: m.Approvals })))
 const DecisionCard = lazy(() => import('@/pages/DecisionCard').then((m) => ({ default: m.DecisionCard })))
@@ -61,6 +61,7 @@ function App() {
     )
   if (!me) return <SignIn />
   return (
+    <Suspense fallback={<div className="console-width py-10"><Loading /></div>}>
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Home />} />
@@ -76,6 +77,7 @@ function App() {
         <Route path="*" element={<ErrorState error={new ApiError(404, 'not_found', 'This page does not exist.', null)} />} />
       </Route>
     </Routes>
+    </Suspense>
   )
 }
 

@@ -84,7 +84,8 @@ def ui_settings(tmp_path) -> Settings:
     store = AccountStore(accounts)
     for sid in ACCOUNTS:
         store.set_password(sid, TEST_PASSWORD)
-    return Settings(demo=True, accounts_file=accounts, warehouse=wh, ui_audit=tmp_path / "warehouse" / "ui_audit.duckdb",
+    return Settings(demo=True, require_mfa=False, allowed_hosts=("testserver", "localhost", "127.0.0.1"),
+                    accounts_file=accounts, warehouse=wh, ui_audit=tmp_path / "warehouse" / "ui_audit.duckdb",
                     decisions_csv=tmp_path / "review" / "identity_decisions.csv", reports_dir=reports,
                     dist_dir=tmp_path / "no_dist")
 
@@ -102,11 +103,16 @@ def make_client(ui_settings):
     return make
 
 
-def sign_in(c: TestClient, agent_id: str) -> str:
+def sign_in(c: TestClient, agent_id: str, reauthenticate: bool = True) -> str:
     """Sign in on the right tab and return the CSRF token."""
     r = c.post("/api/session/login",
                json={"role": ROLE_TAB.get(agent_id, "agent"), "staff_id": agent_id, "password": TEST_PASSWORD})
     assert r.status_code == 200, r.text
     me = c.get("/api/session/me")
     assert me.status_code == 200, me.text
-    return me.json()["csrf_token"]
+    csrf = me.json()["csrf_token"]
+    if reauthenticate:
+        r = c.post("/api/session/reauthenticate", json={"password": TEST_PASSWORD}, headers={"X-CSRF-Token": csrf})
+        assert r.status_code == 200, r.text
+        csrf = r.json()["csrf_token"]
+    return csrf

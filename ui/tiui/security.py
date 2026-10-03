@@ -31,6 +31,11 @@ class Session:
     created: float
     last_seen: float
     signed_in_at: str = ""  # ISO 8601 UTC, for the profile card
+    credential_version: str | None = None
+    mfa: bool = False
+    reauthenticated: float | None = None
+    device: str = "Browser"
+    handle: str = field(default_factory=lambda: secrets.token_urlsafe(16))  # never disclose a usable cookie
 
 
 class SessionStore:
@@ -39,13 +44,56 @@ class SessionStore:
         self._s: dict[str, Session] = {}
         self._lock = threading.Lock()
 
-    def create(self, user_id: str, role: str) -> Session:
+    def create(self, user_id: str, role: str, credential_version: str | None = None,
+               mfa: bool = False, device: str = "Browser") -> Session:
         now = self.clock()
         s = Session(secrets.token_urlsafe(32), user_id, role, secrets.token_urlsafe(32), now, now,
-                    datetime.now(timezone.utc).isoformat(timespec="seconds"))
+                    datetime.now(timezone.utc).isoformat(timespec="seconds"), credential_version, mfa,
+                    device=clean_text(device, 160))
         with self._lock:
+            self._purge(now)
+            # A bounded session set; the oldest browser is signed out if a fourth one signs in.
+            owned = sorted((v for v in self._s.values() if v.user_id == user_id), key=lambda v: v.created)
+            for old in owned[:-2]:
+                del self._s[old.sid]
             self._s[s.sid] = s
         return s
+
+    def _purge(self, now: float) -> None:
+        for sid in [sid for sid, s in self._s.items()
+                    if now - s.last_seen >= self.idle or now - s.created >= self.max]:
+            del self._s[sid]
+
+    def remaining(self, s: Session) -> dict[str, int]:
+        now = self.clock()
+        return {"idle_seconds_left": max(0, int(self.idle - (now - s.last_seen))),
+                "absolute_seconds_left": max(0, int(self.max - (now - s.created)))}
+
+    def for_user(self, user_id: str, current_sid: str) -> list[dict]:
+        with self._lock:
+            self._purge(self.clock())
+            return [{"id": s.handle, "current": sid == current_sid, "device": s.device,
+                     "signed_in_at": s.signed_in_at, "mfa": s.mfa}
+                    for sid, s in self._s.items() if s.user_id == user_id]
+
+    def delete_others(self, user_id: str, current_sid: str) -> int:
+        with self._lock:
+            sids = [sid for sid, s in self._s.items() if s.user_id == user_id and sid != current_sid]
+            for sid in sids:
+                del self._s[sid]
+            return len(sids)
+
+    def reauthenticate(self, sid: str) -> Session | None:
+        """Rotate cookie + CSRF without extending the original absolute lifetime."""
+        with self._lock:
+            self._purge(self.clock())
+            s = self._s.pop(sid, None)
+            if s:
+                s.sid, s.csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+                s.reauthenticated = self.clock()
+                s.last_seen = s.reauthenticated
+                self._s[s.sid] = s
+            return s
 
     def get(self, sid: str | None, touch: bool = True) -> Session | None:
         if not sid:
@@ -55,7 +103,7 @@ class SessionStore:
             s = self._s.get(sid)
             if s is None:
                 return None
-            if now - s.last_seen > self.idle or now - s.created > self.max:
+            if now - s.last_seen >= self.idle or now - s.created >= self.max:
                 del self._s[sid]
                 return None
             if touch:
@@ -76,7 +124,8 @@ class SessionStore:
 
 
 def csrf_ok(session: Session, token: str | None) -> bool:
-    return bool(token) and hmac.compare_digest(session.csrf, token)
+    # Non-ASCII attacker headers must be refused instead of raising compare_digest's TypeError.
+    return bool(token) and hmac.compare_digest(session.csrf.encode(), token.encode())
 
 
 @dataclass
@@ -92,6 +141,7 @@ class RateLimiter:
         "ask": [Limit(10, 60), Limit(200, 86400)],
         "write": [Limit(60, 60)],
         "login": [Limit(5, 60)],
+        "reauth": [Limit(5, 60)],
     })
     clock: callable = time.monotonic
 
@@ -183,7 +233,7 @@ def csv_safe(value) -> str:
     """A cell value that a spreadsheet will not run as a formula."""
     s = "" if value is None else str(value)
     s = s.replace("\r", " ").replace("\n", " ")
-    return "'" + s if s.startswith(_CSV_FORMULA) else s
+    return "'" + s if s.startswith(_CSV_FORMULA) or s.lstrip().startswith(("=", "+", "-", "@")) else s
 
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")

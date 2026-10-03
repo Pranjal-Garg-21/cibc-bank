@@ -54,7 +54,7 @@ const LANGUAGE_NAMES = new Intl.DisplayNames(['en-CA'], { type: 'language' })
 
 /** '["EN", "FR"]' (as stored) -> 'English, French'. */
 export function languages(v: string | null | undefined): string {
-  if (!v) return '—'
+  if (!v) return '-'
   return v
     .replace(/[[\]"']/g, '')
     .split(/[|,;/\s]+/)
@@ -104,6 +104,6 @@ export const IDENTITY_REASON: Record<string, string> = {
 }
 
 export function label(map: Record<string, string>, key: string | null | undefined): string {
-  if (!key) return '—'
+  if (!key) return '-'
   return map[key] ?? key.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
 }

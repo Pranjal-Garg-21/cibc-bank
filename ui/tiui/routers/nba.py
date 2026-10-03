@@ -12,7 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from ..deps import AS_OF, current_user, require_role, warehouse
+from ..deps import AS_OF, current_user, require_reauthentication, require_role, warehouse
 from ..errors import ApiError, not_connected
 from ..security import MASK, sensitive_columns
 from ..serialize import jsonable
@@ -128,6 +128,9 @@ def decide(rec_id: str, body: DecisionIn, request: Request):
         raise ApiError(422, "invalid_input", "Unknown reason code.")
     with warehouse(request.app.state.settings, write=True) as con:
         user = current_user(request, con)
+        if body.decision in ("approved", "rejected"):
+            require_role(user, APPROVER_ROLES)
+            require_reauthentication(request)
         _limit(request, user.agent_id)
         try:
             row = review.record(con, rec_id, user.agent_id, body.decision, body.reason_code)
@@ -154,6 +157,7 @@ def approve_batch(body: BatchIn, request: Request):
     with warehouse(request.app.state.settings, write=True) as con:
         user = current_user(request, con)
         require_role(user, review.APPROVERS["digital_batch"])
+        require_reauthentication(request)
         _limit(request, user.agent_id)
         try:
             res = review.approve_batch(con, user.agent_id, AS_OF, body.rejected or None)
@@ -173,4 +177,3 @@ def summary(request: Request, days: int = Query(7, ge=1, le=92)):
         require_role(user, agent_view.SUPERVISORS)
         s = review.summary(con, AS_OF - timedelta(days=days - 1), AS_OF)
     return _scrub({"from": AS_OF - timedelta(days=days - 1), "to": AS_OF, **s})
-

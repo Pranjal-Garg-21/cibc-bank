@@ -44,6 +44,6 @@ def install(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, e: Exception):
-        log.exception("unhandled error, request_id=%s", getattr(request.state, "request_id", None))
+        log.error("unhandled error type=%s request_id=%s", type(e).__name__, getattr(request.state, "request_id", None))
         return JSONResponse(_body(request, "internal_error", "Something went wrong. Quote the request id to support."),
                             status_code=500)

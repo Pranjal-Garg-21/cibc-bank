@@ -70,7 +70,7 @@ export function IdentityQueuePage() {
                   Previous
                 </Button>
                 <span className="text-muted-foreground tabular-nums">
-                  {int(d.total ? page * PAGE + 1 : 0)}–{int(Math.min((page + 1) * PAGE, d.total))} of {int(d.total)}
+                  {int(d.total ? page * PAGE + 1 : 0)}-{int(Math.min((page + 1) * PAGE, d.total))} of {int(d.total)}
                 </span>
                 <Button variant="secondary" size="sm" disabled={(page + 1) * PAGE >= d.total} onClick={() => setPage((p) => p + 1)}>
                   Next
@@ -233,8 +233,8 @@ function Compare({ a, b }: { a: RecordField[]; b: RecordField[] }) {
               <th scope="row" className="px-3 py-2 text-left font-normal text-muted-foreground">
                 {get(a, f)?.label ?? get(b, f)?.label}
               </th>
-              <td className="px-3 py-2 font-mono text-[13px]">{f === 'src' ? va.toUpperCase() : va || '—'}</td>
-              <td className="px-3 py-2 font-mono text-[13px]">{f === 'src' ? vb.toUpperCase() : vb || '—'}</td>
+              <td className="px-3 py-2 font-mono text-[13px]">{f === 'src' ? va.toUpperCase() : va || '-'}</td>
+              <td className="px-3 py-2 font-mono text-[13px]">{f === 'src' ? vb.toUpperCase() : vb || '-'}</td>
               <td className="px-3 py-2 text-xs">
                 {differs ? (
                   <span className="font-bold text-danger">Differs</span>

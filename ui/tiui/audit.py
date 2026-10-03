@@ -43,6 +43,15 @@ class AccessLog:
             return None
         return _LockedAudit(AuditLog(self.con()), self._lock)
 
+    def recent_security(self, user_id: str) -> list[dict]:
+        """Own authentication events only; no customer object ids, cookies, credentials or other users' events."""
+        with self._lock:
+            rows = self.con().execute("""SELECT ts, action, outcome FROM ui.access_log
+                WHERE (user_id = ? OR (action = 'sign_in' AND object_id = ?))
+                AND action IN ('sign_in', 'sign_out', 'reauthenticate', 'sign_out_others')
+                ORDER BY ts DESC LIMIT 10""", [user_id, user_id]).fetchall()
+        return [{"at": r[0].replace(tzinfo=timezone.utc).isoformat(), "action": r[1], "outcome": r[2]} for r in rows]
+
     def close(self) -> None:
         with self._lock:
             if self._con is not None:

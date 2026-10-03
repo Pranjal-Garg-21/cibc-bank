@@ -1,5 +1,12 @@
 # TrustIssues: UI Implementation Design (v0.2)
 
+**2026-10-04 implementation update:** the local `ui/banking-polish-security` branch refines the existing CIBC
+interface and extends authentication with MFA, recovery codes, fresh verification and session management.
+The previous pushed baseline is `3c87423`, also recorded by local tag `rollback-ui-3c87423`.
+See [current controls, verification and rollback](ui_security_review.md) for the current implementation;
+this document's original v1 tables below describe the baseline. Shared demo access is an explicit temporary
+mode using active DuckDB staff, with no per-person credentials written. No GitHub publication was requested.
+
 **Status: draft, 2026-10-03; v1 built on branch `ui/react-app` (see `ui/README.md`). Owner: Anushka (P1). Not yet reviewed by P2–P4.**
 Builds on the stack proposal (FastAPI + React). Where this note and the proposal disagree, see §3 and
 "Corrections to the stack proposal" at the end. v0.2 adds the security design (§9) and the formal dark theme (§8).
@@ -457,9 +464,12 @@ Set by one middleware on every response:
 
 ### 9.8 What v1 does not cover (say so in the submission)
 
-Real SSO and MFA, TLS certificates, a shared session store, network segmentation, encryption at rest for the
+Real SSO, phishing-resistant MFA through the bank identity provider, TLS certificates, a shared session store, network segmentation, encryption at rest for the
 warehouse, and a formal penetration test. These belong to deployment inside the bank; the design leaves a clear
 place for each (§9.1 production column, §9.3 reverse proxy).
+
+The current implementation adds local authenticator MFA and recovery codes by default. See the implementation
+update above for its provisioning process and the explicitly labelled shared demo exception.
 
 ---
 

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from ..accounts import check_password_rules
-from ..deps import AGENT_ROLES, current_user, require_role, warehouse
+from ..deps import AGENT_ROLES, current_user, require_reauthentication, require_role, warehouse
 from ..errors import ApiError
 
 router = APIRouter(prefix="/api/team", tags=["team"])
@@ -57,9 +57,11 @@ def agents(request: Request):
         lead = _lead(request, con)
         rows = _my_agents(con, lead.agent_id)
     info = request.app.state.accounts.all_info()
+    shared = request.app.state.settings.demo_password is not None
     return {"team_lead": lead.agent_id, "agents": [
-        {"agent_id": r[0], "name": r[1], "role": r[2], "team_id": r[3], "has_account": r[0] in info,
-         "set_at": info.get(r[0], {}).get("set_at"), "set_by": info.get(r[0], {}).get("set_by")}
+        {"agent_id": r[0], "name": r[1], "role": r[2], "team_id": r[3], "has_account": shared or r[0] in info,
+         "set_at": info.get(r[0], {}).get("set_at"), "set_by": info.get(r[0], {}).get("set_by"),
+         "mfa_enrolled": request.app.state.accounts.has_mfa(r[0])}
         for r in rows]}
 
 
@@ -71,11 +73,15 @@ class PasswordIn(BaseModel):
 def set_password(agent_id: str, body: PasswordIn, request: Request):
     app = request.app.state
     lead = _my_agent(request, agent_id)
+    if app.settings.demo_password is not None:
+        raise ApiError(409, "shared_demo_access", "Individual account changes are disabled during shared demo access.")
+    require_reauthentication(request)
     _limit(request, lead.agent_id)
     problem = check_password_rules(body.password)
     if problem:
         raise ApiError(422, "weak_password", f"Password not accepted: {problem}.")
     app.accounts.set_password(agent_id, body.password, set_by=lead.agent_id)
+    app.sessions.delete_user(agent_id)
     app.access_log.record(action="set_agent_password", user_id=lead.agent_id, role=lead.role, object_id=agent_id,
                           request_id=request.state.request_id)
     return {"ok": True, **app.accounts.info(agent_id)}
@@ -85,6 +91,9 @@ def set_password(agent_id: str, body: PasswordIn, request: Request):
 def revoke(agent_id: str, request: Request):
     app = request.app.state
     lead = _my_agent(request, agent_id)
+    if app.settings.demo_password is not None:
+        raise ApiError(409, "shared_demo_access", "Individual account changes are disabled during shared demo access.")
+    require_reauthentication(request)
     _limit(request, lead.agent_id)
     removed = app.accounts.remove(agent_id)
     if removed:

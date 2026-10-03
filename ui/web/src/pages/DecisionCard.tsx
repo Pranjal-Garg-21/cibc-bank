@@ -41,7 +41,7 @@ function CardView({ data }: { data: CaseResponse }) {
   return (
     <div className="pb-6">
       <PageHeader
-        title={`${label(ACTION_LABEL, rec.action)} — case ${rec.case_id}`}
+        title={`${label(ACTION_LABEL, rec.action)} - case ${rec.case_id}`}
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>Recommendation {rec.recommendation_id}</span>
@@ -69,7 +69,7 @@ function CardView({ data }: { data: CaseResponse }) {
                 ['Expected value', cad(rec.expected_value)],
                 ['Next-best alternative', label(ACTION_LABEL, card.runner_up_action ?? null)],
                 ...(card.contact_window ? [['Contact window', card.contact_window] as [string, string]] : []),
-                ['Model version', rec.model_version ?? '—'],
+                ['Model version', rec.model_version ?? '-'],
               ]}
             />
             {card.why_beat_runner_up && <p className="mt-3 text-sm text-muted-foreground">{card.why_beat_runner_up}</p>}

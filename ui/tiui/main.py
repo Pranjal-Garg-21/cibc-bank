@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import errors
-from .accounts import AccountStore
+from .accounts import AccountStore, SharedDemoAccounts
 from .audit import AccessLog
 from .middleware import SecurityMiddleware, csp
 from .routers import ask, identity, nba, session, status, team
@@ -35,7 +35,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.sessions = SessionStore(settings.idle_minutes * 60, settings.max_hours * 3600)
     app.state.limiter = RateLimiter()
-    app.state.accounts = AccountStore(settings.accounts_file)
+    app.state.accounts = (SharedDemoAccounts(settings.demo_password) if settings.demo_password is not None
+                          else AccountStore(settings.accounts_file, mfa_key=settings.mfa_key))
     app.state.access_log = AccessLog(settings.ui_audit)
     app.state.ask_kwargs = None
     errors.install(app)

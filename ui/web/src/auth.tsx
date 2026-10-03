@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { api, ApiError, onUnauthorized, setCsrfToken } from './api/client'
-import type { Me } from './api/types'
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { abortSessionRequests, api, ApiError, onReauthentication, onUnauthorized, setCsrfToken } from './api/client'
+import type { Me, SessionState } from './api/types'
+const ReauthenticateDialog = lazy(() => import('@/components/ReauthenticateDialog').then((module) => ({ default: module.ReauthenticateDialog })))
 
 type Auth = { me: Me | null; loading: boolean; signOut: (reason?: string) => Promise<void>; notice: string | null }
 const AuthContext = createContext<Auth>({ me: null, loading: true, signOut: async () => {}, notice: null })
@@ -19,6 +20,9 @@ export function useMe(): Me {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
   const [notice, setNotice] = useState<string | null>(null)
+  const [verificationOpen, setVerificationOpen] = useState(false)
+  const challenge = useRef<{ promise: Promise<void>; resolve: () => void; reject: (error: Error) => void } | null>(null)
+  const channel = useRef<BroadcastChannel | null>(null)
   const q = useQuery({
     queryKey: ['me'],
     queryFn: async () => {
@@ -37,25 +41,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clear = useCallback(
     (reason?: string) => {
+      abortSessionRequests()
       setCsrfToken(null)
-      qc.clear() // nothing a previous user saw stays in memory (design §9.4)
+      void qc.cancelQueries()
+      // Keep the active auth observer attached; remove every customer-data query and replace the identity.
+      qc.removeQueries({ predicate: (query) => query.queryKey[0] !== 'me' })
       qc.setQueryData(['me'], null)
       setNotice(reason ?? null)
+      challenge.current?.reject(new ApiError(401, 'not_signed_in', 'Your session has ended.', null))
+      challenge.current = null
+      setVerificationOpen(false)
     },
     [qc],
   )
 
   const signOut = useCallback(
     async (reason?: string) => {
+      let message = reason
       try {
         await api.post('/api/session/logout')
-      } catch {
-        /* already gone */
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 401)) {
+          message = 'This screen has been cleared. The server could not confirm sign-out; close this browser.'
+        }
       }
-      clear(reason)
+      clear(message)
+      channel.current?.postMessage('signed-out') // no identity or customer data sent between tabs
     },
     [clear],
   )
+
+  useEffect(() => {
+    if (!('BroadcastChannel' in window)) return
+    const c = new BroadcastChannel('trustissues-session')
+    channel.current = c
+    c.onmessage = (event) => {
+      if (event.data === 'signed-out') clear('You signed out in another tab.')
+      if (event.data === 'signed-in') {
+        clear()
+        void qc.invalidateQueries({ queryKey: ['me'] })
+      }
+      if (event.data === 'session-renewed') void qc.invalidateQueries({ queryKey: ['me'] })
+    }
+    return () => { c.close(); channel.current = null }
+  }, [clear, qc])
+
+  useEffect(() => onReauthentication(() => {
+    if (challenge.current) return challenge.current.promise
+    let resolve!: () => void
+    let reject!: (error: Error) => void
+    const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail })
+    challenge.current = { promise, resolve, reject }
+    setVerificationOpen(true)
+    return promise
+  }), [])
 
   // Only someone who was signed in is told their session ended; a first visit just shows the sign-in page.
   useEffect(
@@ -66,37 +105,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [clear, qc],
   )
 
-  return <AuthContext.Provider value={{ me, loading: q.isLoading, signOut, notice }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ me, loading: q.isLoading, signOut, notice }}>
+    {children}
+    {verificationOpen && me && <Suspense fallback={null}><ReauthenticateDialog me={me} onVerified={(token) => {
+      setCsrfToken(token)
+      qc.setQueryData<Me>(['me'], (old) => old ? { ...old, csrf_token: token } : old)
+      channel.current?.postMessage('session-renewed')
+      challenge.current?.resolve()
+      challenge.current = null
+      setVerificationOpen(false)
+    }} onCancel={() => {
+      challenge.current?.reject(new ApiError(403, 'verification_cancelled', 'The action was cancelled. No change was made.', null))
+      challenge.current = null
+      setVerificationOpen(false)
+    }} /></Suspense>}
+  </AuthContext.Provider>
 }
 
 /** Idle lock (§9.1): warn two minutes before the server's idle timeout, then sign out. */
-export function useIdleLock(idleMinutes: number) {
+export function useIdleLock(idleMinutes: number, maxHours: number, signedInAt: string) {
   const { signOut } = useAuth()
   const [warning, setWarning] = useState(false)
-  const [minutesLeft, setMinutesLeft] = useState(idleMinutes)
-  const last = useRef(Date.now())
+  const [secondsLeft, setSecondsLeft] = useState(idleMinutes * 60)
+  const deadlines = useRef({ idle: Date.now() + idleMinutes * 60000, absolute: Date.parse(signedInAt) + maxHours * 3600000 })
+  const warningRef = useRef(false)
+  const lastKeepalive = useRef(0)
+  const ending = useRef(false)
+  const sync = useCallback((state: SessionState) => {
+    const now = Date.now()
+    deadlines.current = { idle: now + state.idle_seconds_left * 1000, absolute: now + state.absolute_seconds_left * 1000 }
+  }, [])
   useEffect(() => {
-    const bump = () => {
-      last.current = Date.now()
+    let disposed = false
+    let lastPoll = 0
+    const poll = () => {
+      lastPoll = Date.now()
+      void api.get<SessionState>('/api/session/state').then((state) => { if (!disposed) sync(state) }).catch(() => null)
     }
-    const events = ['pointerdown', 'keydown', 'scroll', 'wheel'] as const
+    const bump = () => {
+      if (document.visibilityState !== 'visible' || warningRef.current || ending.current || Date.now() - lastKeepalive.current < 60000) return
+      lastKeepalive.current = Date.now()
+      void api.post<SessionState>('/api/session/keepalive').then((state) => { if (!disposed) sync(state) }).catch(() => null)
+    }
+    const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
     events.forEach((e) => window.addEventListener(e, bump, { passive: true }))
+    const visibility = () => { if (document.visibilityState === 'visible') poll() }
+    document.addEventListener('visibilitychange', visibility)
+    poll()
     const t = window.setInterval(() => {
-      const idle = (Date.now() - last.current) / 60000
-      setMinutesLeft(Math.max(0, Math.ceil(idleMinutes - idle)))
-      if (idle >= idleMinutes) void signOut('You were signed out after a period of inactivity.')
-      else setWarning(idle >= idleMinutes - 2)
-    }, 5000)
+      const now = Date.now()
+      const remaining = Math.max(0, Math.ceil((Math.min(deadlines.current.idle, deadlines.current.absolute) - now) / 1000))
+      setSecondsLeft(remaining)
+      warningRef.current = remaining <= 120
+      setWarning(warningRef.current)
+      if (remaining === 0 && !ending.current) {
+        ending.current = true
+        void signOut('Your session expired. Please sign in again.')
+      } else if (now - lastPoll >= 30000 && document.visibilityState === 'visible') poll()
+    }, 1000)
     return () => {
+      disposed = true
       events.forEach((e) => window.removeEventListener(e, bump))
+      document.removeEventListener('visibilitychange', visibility)
       window.clearInterval(t)
     }
-  }, [idleMinutes, signOut])
+  }, [signOut, sync])
   const stay = useCallback(async () => {
-    last.current = Date.now()
-    setWarning(false)
-    setMinutesLeft(idleMinutes)
-    await api.get('/api/session/me').catch(() => null) // touches the server session
-  }, [idleMinutes])
-  return { warning, stay, minutesLeft }
+    const state = await api.post<SessionState>('/api/session/keepalive').catch(() => null)
+    if (state) {
+      sync(state)
+      warningRef.current = Math.min(state.idle_seconds_left, state.absolute_seconds_left) <= 120
+      setWarning(warningRef.current)
+    }
+  }, [sync])
+  return { warning, stay, secondsLeft }
 }

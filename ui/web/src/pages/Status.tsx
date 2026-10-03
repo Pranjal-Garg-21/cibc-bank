@@ -23,7 +23,7 @@ export function StatusPage() {
               { label: 'Business date', value: isoDate(s.as_of_date) },
               {
                 label: 'Last publish',
-                value: s.publish ? (s.publish.published ? 'Published' : 'Blocked') : '—',
+                value: s.publish ? (s.publish.published ? 'Published' : 'Blocked') : '-',
                 tone: s.publish ? (s.publish.published ? 'ok' : 'danger') : undefined,
                 note: s.publish ? dateTime(s.publish.attempt_ts) : undefined,
               },

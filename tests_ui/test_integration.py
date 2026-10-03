@@ -36,7 +36,7 @@ def real(tmp_path):
     accounts = tmp_path / "ui_accounts.json"
     for sid in ids.values():
         AccountStore(accounts).set_password(sid, TEST_PASSWORD)
-    s = Settings(demo=True, accounts_file=accounts, warehouse=wh, ui_audit=tmp_path / "ui_audit.duckdb",
+    s = Settings(demo=True, require_mfa=False, allowed_hosts=("testserver",), accounts_file=accounts, warehouse=wh, ui_audit=tmp_path / "ui_audit.duckdb",
                  decisions_csv=tmp_path / "identity_decisions.csv", dist_dir=tmp_path / "none")
     with TestClient(create_app(s)) as c:
         yield c, ids

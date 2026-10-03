@@ -68,18 +68,18 @@
   --accent-foreground: #333333;
   --destructive: #af0b1c;
   --border: #d8d8d8;
-  --input: #bbbcbc;
+  --input: #848789;
   --ring: #8b1d41;
 
   --brand: #c41f3e;
   --brand-dark: #8b1d41;
   --charcoal: #383b3e;
-  --panel: #f2f3f2;
+  --panel: #f5f6f5;
   --ok: #2f6b45;
   --warn: #8a5100;
   --danger: #af0b1c;
   --info: #2a5a96;
-  --faint: #767676;
+  --faint: #666a6c;
 }
 
 @layer base {
@@ -92,8 +92,8 @@
   }
   body {
     @apply bg-panel text-foreground font-sans antialiased;
-    font-size: 14px;
-    line-height: 1.45;
+    font-size: 15px;
+    line-height: 1.55;
   }
   h1,
   h2,
@@ -113,6 +113,26 @@
   table {
     font-variant-numeric: tabular-nums;
   }
+  button, input, select, textarea { scroll-margin-block: 5rem; }
+}
+
+/* Console layers: content 0, sticky navigation 10, skip link 40, Radix dialogs/sheets 50. */
+.console-width { width: 100%; max-width: 1280px; margin-inline: auto; padding-inline: 32px; }
+.ledger-panel { border-radius: 4px; overflow: hidden; }
+.ledger-panel > .ledger-flush > .ledger-table { border: 0; }
+.ledger-table tbody tr:nth-child(even) { background: #fcfcfc; }
+.ledger-table tbody tr:hover { background: #f5f3f4; }
+.sign-in-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 440px); gap: 80px; }
+.sign-in-context { padding-top: 28px; }
+.security-list { display: grid; gap: 16px; }
+.security-list > li { border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+.security-list > li:last-child { border: 0; padding-bottom: 0; }
+@media (max-width: 767px) {
+  .console-width { padding-inline: 20px; }
+  .sign-in-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .sign-in-context { padding-top: 0; }
+  .sign-in-layout > section:last-child { order: -1; }
+  .ledger-table button { min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

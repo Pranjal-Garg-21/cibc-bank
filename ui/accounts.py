@@ -4,6 +4,7 @@
     python ui/accounts.py add AG-1399 --generate   # creates a random password and prints it once
     python ui/accounts.py remove AG-1399
     python ui/accounts.py list
+    python ui/accounts.py enroll-mfa AG-1399      # service-desk provisioning; confirms a code before saving
 
 Only active team leads get accounts here. Agents' passwords are set by their own team lead in the app
 (Agent accounts page). Passwords are stored only as scrypt hashes, in warehouse/ui_accounts.json (outside git).
@@ -50,10 +51,14 @@ def main() -> int:
     add.add_argument("--generate", action="store_true", help="generate a random password and print it once")
     rm = sub.add_parser("remove", help="delete an account")
     rm.add_argument("staff_id")
+    enroll = sub.add_parser("enroll-mfa", help="enrol or replace an authenticator after verifying the staff member")
+    enroll.add_argument("staff_id")
     sub.add_parser("list", help="list staff IDs that have an account")
     a = ap.parse_args()
 
-    store = AccountStore(from_env().accounts_file)
+    store = AccountStore(from_env().accounts_file, mfa_key=from_env().mfa_key)
+    if getattr(a, "staff_id", None):
+        a.staff_id = a.staff_id.strip().upper()
     if a.cmd == "list":
         for sid in store.ids():
             print(sid)
@@ -66,6 +71,22 @@ def main() -> int:
     if row is None or row[0] != "active":
         print(f"{a.staff_id} is not an active member of staff; no account created.", file=sys.stderr)
         return 1
+    if a.cmd == "enroll-mfa":
+        import pyotp
+        if row[1] not in ("agent", "senior_agent", "team_lead") or not store.info(a.staff_id):
+            print("An active sign-in account is required first.", file=sys.stderr)
+            return 1
+        secret = pyotp.random_base32()
+        print("After verifying the staff member through your service-desk process, add this key to their authenticator.")
+        print(f"Issuer: TrustIssues Collections. Account: {a.staff_id}. Setup key (shown once): {secret}")
+        if not pyotp.TOTP(secret).verify(getpass.getpass("Current six-digit authenticator code: ").strip(), valid_window=1):
+            print("Code not verified. No account was changed.", file=sys.stderr)
+            return 1
+        codes = store.enroll_mfa(a.staff_id, secret)
+        print("MFA enrolled. Prior sessions are invalidated. Store these single-use recovery codes privately:")
+        for code in codes:
+            print(code)
+        return 0
     if row[1] != "team_lead":
         print(f"{a.staff_id} is a {row[1].replace('_', ' ')}. Only team leads are set up here; an agent's password is "
               "set by their team lead in the app.", file=sys.stderr)

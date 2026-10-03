@@ -13,12 +13,15 @@ export type Me = {
   as_of_date: string
   idle_minutes: number
   demo: boolean
+  shared_access: boolean
   site: string | null
   team_lead_id: string | null
   languages: string | null
   employment_type: string | null
   signed_in_at: string
   max_hours: number
+  mfa: boolean
+  transport_secure: boolean
   features: { queue: boolean; ask: boolean; identity: boolean; status: boolean }
   can: { ask: boolean; my_queue: boolean; approvals: boolean; manage_agents: boolean; identity_review: boolean; status: boolean }
 }
@@ -29,12 +32,19 @@ export type TeamAgent = {
   role: string
   team_id: string | null
   has_account: boolean
+  mfa_enrolled: boolean
   set_at: string | null
   set_by: string | null
 }
 export type TeamAgents = { team_lead: string; agents: TeamAgent[] }
 
-export type Options = { sign_in_configured: boolean; demo: boolean; as_of_date: string; idle_minutes: number }
+export type Options = { sign_in_configured: boolean; demo: boolean; as_of_date: string; idle_minutes: number; mfa_required: boolean; shared_access: boolean }
+export type SessionState = { idle_seconds_left: number; absolute_seconds_left: number }
+export type SecurityInfo = {
+  sessions: { id: string; current: boolean; device: string; signed_in_at: string; mfa: boolean }[]
+  events: { at: string; action: string; outcome: string }[]
+  max_sessions: number
+}
 
 export type AnswerCard = {
   question: string
