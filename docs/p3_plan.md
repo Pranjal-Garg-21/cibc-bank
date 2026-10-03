@@ -701,3 +701,14 @@ person is folded into its row), `test_customer_context_lists_the_persons_cases_a
 found and fixed** (`app/ui.py`, there since the pages were added): Streamlit drops a widget's value on a page change,
 so opening a card from the agent's queue switched "Acting as" back to the first member of staff (a team lead), and the
 card refused the assigned agent's decision. The choice now lives in a plain session key copied into the picker.
+
+### Before merging into main: DuckDB caps aligned with P2 and P4 (4 Oct)
+
+P2 (`p2-branch-ask-layer`) and P4 (`p4/policy-rag`) had each added the same DuckDB cap: identical `common/db.py` (SET
+after connect) and an identical `duckdb:` block in `config/settings.yaml` (9 GB, 4 threads,
+`preserve_insertion_order: false`). P3's own version (connect-time config, 10 GB, 8 threads) is replaced by theirs,
+byte for byte, so the three branches merge without conflicts there; the connect-time config also forced every other
+connection in a process to match, so `app/ui.py` and two tests go back to a plain `duckdb.connect`. The Makefile's
+16 GB `systemd-run` scope stays. `preserve_insertion_order: false` exposed an order dependence in the queue:
+`allocate._pick_agent` broke ties between agents with equally many calls left by row order, which changed the agent
+on 1,858 cases (never the action or the risk). Ties now go to the lower agent ID; two runs give identical queues.

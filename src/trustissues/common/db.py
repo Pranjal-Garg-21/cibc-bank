@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import duckdb
 
-from .config import duckdb_limits, warehouse_path
+from .config import settings, warehouse_path
 
 SCHEMAS = ("raw", "curated", "identity", "gold_stage", "gold")
 
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    con = duckdb.connect(str(warehouse_path()), read_only=read_only, config=duckdb_limits())
+    con = duckdb.connect(str(warehouse_path()), read_only=read_only)
+    cfg = settings().get("duckdb", {})  # resource caps, so a big build spills to disk instead of being killed
+    if cfg.get("memory_limit"):
+        con.execute(f"SET memory_limit='{cfg['memory_limit']}'")
+    if cfg.get("threads"):
+        con.execute(f"SET threads={int(cfg['threads'])}")
+    if cfg.get("preserve_insertion_order") is False:
+        con.execute("SET preserve_insertion_order=false")
     if not read_only:
         for s in SCHEMAS:
             con.execute(f"CREATE SCHEMA IF NOT EXISTS {s}")

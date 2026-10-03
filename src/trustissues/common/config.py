@@ -42,9 +42,3 @@ def p3_dir() -> Path:
     base.mkdir(parents=True, exist_ok=True)
     return base
 
-
-def duckdb_limits() -> dict:
-    """Memory and thread caps for DuckDB connections (settings.yaml `duckdb:`, env overrides)."""
-    d = settings().get("duckdb", {})
-    return {"memory_limit": os.environ.get("DUCKDB_MEMORY_LIMIT", d.get("memory_limit", "10GB")),
-            "threads": int(os.environ.get("DUCKDB_THREADS", d.get("threads", 8)))}

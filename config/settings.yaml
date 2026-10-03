@@ -7,13 +7,6 @@ paths:
   warehouse_dir: warehouse
   duckdb_file: trustissues.duckdb
 
-duckdb:
-  # Caps applied to every connection (common/db.py). Without them DuckDB takes 80% of RAM; on a 32 GB laptop the curate
-  # stage grew past 22 GB and the kernel's OOM killer took it (and the app it ran in) down. Over the cap DuckDB spills
-  # to disk (warehouse/trustissues.duckdb.tmp) instead. Override with DUCKDB_MEMORY_LIMIT / DUCKDB_THREADS.
-  memory_limit: 10GB
-  threads: 8
-
 identity:
   link_threshold: 0.95      # Splink probability at or above this links automatically
   review_threshold: 0.80    # 0.80-0.95 is the grey zone: linked only if the LLM agrees, else human review
@@ -38,6 +31,13 @@ ingest:
   # A removed or retyped column stops the load for that source unless listed here.
   allow_missing_columns: {}
   transcript_glob: files/transcripts/*/*/*.json
+
+duckdb:
+  # Without a cap DuckDB takes ~80% of RAM and the kernel killed the curated build (transactions, 12M rows) on a
+  # 16 GB machine. Beyond the cap DuckDB spills to disk instead of dying. Raise it on a bigger machine.
+  memory_limit: 9GB
+  threads: 4
+  preserve_insertion_order: false   # lets a big CREATE TABLE AS stream and spill instead of buffering the whole result
 
 p3:
   # P3 outputs (training sets, features, models) live here as Parquet, never in the shared DuckDB.

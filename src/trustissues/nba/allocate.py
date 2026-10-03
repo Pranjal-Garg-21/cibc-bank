@@ -78,7 +78,8 @@ def _pick_agent(req: Request, cap: Capacity) -> str | None:
     if req.assigned_agent and ok(req.assigned_agent):
         return req.assigned_agent
     for pool in (cap.by_team.get(req.team, []), cap.agent_calls):
-        best = max((a for a in pool if ok(a)), key=lambda a: cap.agent_calls[a], default=None)
+        # most calls left; ties by agent ID, so the result never depends on the order rows came back in
+        best = min((a for a in pool if ok(a)), key=lambda a: (-cap.agent_calls[a], a), default=None)
         if best:
             return best
     return None
