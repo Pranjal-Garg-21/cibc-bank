@@ -16,14 +16,23 @@ from .asof import parse_periods
 from .data.execute import QueryTimeout, execute
 from .data.metric_templates import render_metric
 from .data.validator import ValidationError, validate
-from .router import route
+from .router import Route, route
+from .llm_router import llm_route
 from .sql_fallback import run_fallback
 from .types import AnswerCard, UserContext
 
 RagHandler = Callable[[RagRequest], RagResponse]
 
 
-def classify(question: str):
+def _route(question: str, llm) -> Route:
+    """Rules first; the model is asked when no rule placed the question or the matcher was torn between two metrics."""
+    r = route(question)
+    if llm is not None and r.path == "cannot_answer":
+        return llm_route(question, llm) or r
+    return r
+
+
+def classify(question: str, llm=None):
     """What `ask()` would do with a question before touching any data: (outcome, metric_id).
 
     outcome is 'refused' (injection or refusal gate) or the router's path. Used by the router evaluation so a
@@ -31,7 +40,7 @@ def classify(question: str):
     """
     if injection.screen(question) or refusal.check(question):
         return "refused", None
-    r = route(question)
+    r = _route(question, llm)
     return r.path, r.metric_id
 
 
@@ -62,7 +71,7 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
     if hit:
         return card(f"I can't help with that. {hit.reason}", "refused", refused=True, refusal_reason=hit.category)
 
-    r = route(question)
+    r = _route(question, llm)
     if r.clarification:
         return card(r.clarification, "cannot_answer")
     try:
