@@ -2,13 +2,17 @@
 
 Code: [`src/trustissues/factory/curate/text_controls.py`](../src/trustissues/factory/curate/text_controls.py) (the path the implementation plan gives it, §3.2). Tests: `tests/test_text_controls.py`. Settings: `text_controls:` in `config/settings.yaml`.
 
-Every note and call transcript passes two gates before it is sent to a model (text features, customer answers):
+Every note and call transcript passes two gates before it is used downstream (timeline, text features, customer answers):
 
 1. **Eligibility**: is this text allowed to be used at all?
 2. **Scrubbing**: remove personal identifiers from what is allowed.
 
+The result is materialised once (section 4) as the text that `gold.customer_timeline` carries, so everyone downstream reads the same eligible, scrubbed text.
+
+**One version since the P4 merge (4 Oct).** P1 (on `main`) and P4 each built this file. The merged file keeps P4's eligibility rules and scrubber as the single source and adds P1's three extras: the date-of-birth mask, transcript-turn parsing, and the materialised text tables that the timeline reads (`merge.md` §1).
+
 ```bash
-python -m trustissues.factory.curate.text_controls     # (re)build the eligibility views and print what they do
+python -m trustissues.factory.curate.text_controls     # views + text tables; prints what each rule refuses (pipeline stage text_controls)
 ```
 
 ## 1. Eligibility (SQL views, one source of truth)
@@ -63,6 +67,7 @@ Measured on the real notes: the share containing a card-like number (a 13 to 19 
 | `[EMAIL]` | email addresses |
 | `[CARD]` / `[NUMBER]` | any 13 to 19 digit run in any grouping: `[CARD]` if it passes the Luhn check, `[NUMBER]` otherwise |
 | `[ID]` | SIN-style `123-456-789` |
+| `[DOB]` | a date written after `DOB`, `date of birth`, `DDN`, `né(e) le` (the label is kept: `DOB [DOB]`). From P1's version |
 | `[PHONE]` | North American phone numbers, any separator, optional `+1` |
 | `[POSTAL]` | Canadian postal codes |
 | `[NUMBER]` | other digit runs of 9 or more |
@@ -75,7 +80,24 @@ Left alone: amounts (`$180`, `$1,234,567`), dates, and codes (`HP-LOAN-RED3`, `�
 
 **Limits.** Names cannot be found by regex, so a note that names a person is not changed. The scrubber is a second safety net behind redaction, not a replacement for it.
 
-## 4. Using it
+## 4. Materialised text (read by the timeline)
+
+`build_text_tables(con)` (run by `main()`, so by the pipeline stage) writes:
+
+| Table | Columns |
+|---|---|
+| `curated.agent_notes_text` | `note_id, eligible, exclusion_reason, text_masked, masked, scrubbed` |
+| `curated.call_transcripts_text` | `transcript_id, eligible, exclusion_reason, text_masked, masked, scrubbed` |
+
+- One row per note / transcript. `exclusion_reason` is NULL when eligible, otherwise the view's `reason`; a transcript whose JSON file is missing gets `no_transcript_file`.
+- `text_masked` is `scrub()`'s output (eligible rows only), `masked` says something was replaced, `scrubbed` what, as JSON (`{"CARD": 1}`).
+- Transcript text is `raw.transcript_json`'s turns as `speaker: text` lines in turn order (P1's SQL), then scrubbed.
+- The scrub runs in Python once per build, not inside the view build, so the regexes are the same ones `scrub()` uses everywhere (DuckDB's regex engine has no look-behind, so P1's SQL port could not match P4's patterns exactly).
+- `gold/views.py` `customer_timeline` joins these tables on `eligible`. Table names and columns are the ones P1's version had, plus `scrubbed`, so the timeline code did not change.
+
+What changed for the timeline with the merge: blank notes are now excluded (`empty_text`), and notes with no retention date or dated after the as-of date are refused at this gate. Numbers from the rebuild are in section 6.
+
+## 5. Using it
 
 ```python
 from trustissues.common.db import connect
@@ -87,9 +109,21 @@ for note in eligible_notes(con, limit=10):         # eligible only, text already
     note["note_text"], note["scrubbed"]            # scrubbed == {"CARD": 1} etc.
 ```
 
-## 5. Open points
+## 6. Rebuild after the merge (4 Oct)
 
-- **Ownership.** The implementation plan lists `text_controls.py` under P1 (curated layer) and P1's status notes show it as upcoming. It was built here by P4 at the planned path so there is one copy; P1 should adopt it rather than write another.
-- **The `none` decision** (section 2).
-- **Transcript text** is JSON in `raw.transcript_json`; the scrubber works on any string, but the transcript turns are not yet parsed and scrubbed.
+Ran `python -m trustissues.factory.pipeline --only text_controls`, then `--only views`, then `--only publish` (identity and gold unchanged, so not re-run). Publish: every blocking rule passes; the same two warnings as before (Q6, Q7).
+
+| | P1's version (before) | Merged version |
+|---|---:|---:|
+| Eligible notes | 710,248 | 688,046 |
+| Eligible transcripts | 24,918 | 24,918 (25,000 rows, no duplicates) |
+| `text_controls` stage time | ~1 s (SQL) | 9 s (views + Python scrub of every eligible text) |
+| Notes in `gold.customer_timeline` | 710,177 | 687,977 (−22,200: blank notes) |
+| Transcripts in `gold.customer_timeline` | 24,914 | 24,914 |
+
+What the scrub replaced: notes 1,848 `DOB`, 1,693 `NUMBER`, 195 `CARD` (3,736 notes changed); transcripts 5,484 `PHONE`, which are the bank's own call-back number in voicemail messages ("Please call us back at [PHONE]"), masked because a regex cannot tell it from a customer's. No eligible note has a run of 7 or more digits after scrubbing.
+
+## 7. Open points
+
+- **The `none` decision** (section 2): still a team decision; the default allows `none`.
 - **The data-quality report** could carry the card-numbers-in-redacted-notes finding as a check.

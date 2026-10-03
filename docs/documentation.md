@@ -29,7 +29,7 @@ Layer 1, Data Product Factory (owner P1). Legend: ✅ done and tested · 🟡 bu
 | 3.1 | `ingest/dictionary.py` → `config/sensitivity.yaml` | ✅ re-run on the real data after curation: overdraft decision applied, `std_*` columns inherit labels (3 unit tests), proxy false positive gone |
 | 3.2 | `curate/standardise.py` | ✅ 18 unit tests |
 | 3.2 | `curate/build_curated.py` + `config/curate.yaml` (generic, replaces per-table `sql/*.sql`, see D6) | ✅ **Complete on the real data: all 31 tables**, verified by `scripts/verify_warehouse.py`. 0 exact duplicates; the one real defect (mixed date formats, 10% of `account_monthly_snapshot`) is recovered. Two bugs found and fixed on the way (D8, D9). Full report: [`curation.md`](curation.md) |
-| 3.2 | `curate/text_controls.py` | ✅ eligible + masked notes and transcripts; see [`consumer_views.md`](consumer_views.md) |
+| 3.2 | `curate/text_controls.py` | ✅ eligible + scrubbed notes and transcripts (P1 and P4 versions merged 4 Oct); see [`text_controls.md`](text_controls.md) |
 | 3.2 | `mapping_assistant.py` | 🟡 written and unit-tested offline (fake model, 9 tests); **not yet run against the API**. Proposals go to `data/mappings/column_mappings.csv` for review; `evaluate` measures agreement with the hand-built mappings. Needs `OPENROUTER_API_KEY` |
 | 3.3 | identity (`nodes`, `rules`, `splink_model`, `second_opinion`, `review_queue`, `cluster`, `relationships`, `evaluate`) | ✅ **run on the real data**: 3,487,885 source customers → 1,013,152 people; every rule and Splink method agrees 100% with the held-out case evidence (allowing for case typos); 6/6 identity contract checks pass; 19 tests. LLM step not yet run (no credentials on this machine). Full record: [`identity.md`](identity.md) |
 | 3.4 | gold `build_c360` (survivorship inside): `c360_customer`, `c360_account` | ✅ run on the real data, stub shapes checked by `apply_stubs` |
@@ -114,7 +114,7 @@ Loads `config/settings.yaml`. Exposes `AS_OF_DATE` (a `date`), `maple_data_dir()
 See [`identity.md`](identity.md): steps, matching rules and safeguards, measured precision, gold survivorship.
 
 ### 4.10 `curate/text_controls.py`, `gold/views.py`, `quality/contract_checks.py`, `gold/publish.py`
-See [`consumer_views.md`](consumer_views.md): the views, the defaults to confirm, the contract and the publish gate.
+See [`consumer_views.md`](consumer_views.md): the views, the defaults to confirm, the contract and the publish gate. Text controls in detail: [`text_controls.md`](text_controls.md).
 
 ### 4.3 `ingest/load_raw.py`
 - **Discovery:** every `data/*.csv` is a source, and so is every `data/<dir>/year=*/*.parquet` folder. No hard-coded table list.
@@ -234,7 +234,7 @@ Facts learned from the real data, recorded as we find them.
 | D16 | Clustering is a constrained union (strongest link first, a merge refused if it breaks a conflict rule) instead of connected components followed by splitting | One pass gives the plan's "split along the weakest links", and every refused link goes to review |
 | D17 | Golden IDs are `G-` + 7 digits | 6 digits cannot hold 1M+ people |
 | D18 | Everything P1 builds goes to `gold_stage`; `publish.py` copies it to `gold` in one transaction only if every blocking contract rule passes | Consumers never read a build that failed its checks; a rule that cannot run counts as failed |
-| D19 | We mask personal data in every eligible note and transcript ourselves | The upstream `redaction_status` misses card numbers, even in `auto_redacted` notes |
+| D19 | We mask personal data in every eligible note and transcript ourselves (`text_controls.scrub()`, [`text_controls.md`](text_controls.md)) | The upstream `redaction_status` misses card numbers, even in `auto_redacted` notes |
 | D20 | A collections case belongs to the holder of the accounts it lists when that disagrees with its CRM ID (`gold.case_customer`, both readings kept) | Evidence in `identity.md` §3; also ties 11,125 of the 11,137 cases whose CRM ID does not exist to a person |
 | D7 | Ambiguous dates are resolved only by evidence (see D11); when none exists both readings are kept. Ambiguous ALL-CAPS names stay unparsed unless the source sets a convention | Never invent identity evidence; wrong merges are worse than missed ones |
 
@@ -242,6 +242,7 @@ Facts learned from the real data, recorded as we find them.
 
 | Date | Slice | Change |
 |---|---|---|
+| 2026-10-04 | Integration · P4 merge | **P4 (`p4/policy-rag`) merged into main.** Policy RAG, customer path, `common/llm.py`, `common/audit.py`, LLM text features. `text_controls.py` built by P1 and P4 is now one file: P4's rules and scrubber plus P1's DOB mask, transcript parsing and text tables (`merge.md` §1, [`text_controls.md`](text_controls.md)). Rebuilt `text_controls`, `views`, `publish`. P3's queue reads P4's text features (`nba/text_signals.py`) |
 | 2026-10-03 | Layer 1 · quality | **Anomaly detection and code-list checks.** `quality/anomaly.py` (row counts per slice against the same weekday, null rates per slice and column, explained by the operations log, holidays and monthly cycles) writes `curated._anomaly_days`, `curated._anomaly_episodes`, `reports/anomaly_report.md`; new stage `anomaly` before `quality`. Code columns checked against `code_lookups` (V0-V16). Data quality report gains sections F (codes) and H (unusual days). Also: `mapping_assistant.py` written and tested offline, not yet run against the API. 106 tests |
 | 2026-10-03 | Layer 1 · views + gate | **Consumer views, text controls, contract and publish gate.** `text_controls.py`, `gold/views.py` (5 views), `gold.case_customer`, `contracts/c360_customer.yaml`, `quality/contract_checks.py`, `gold/publish.py`, new `gold_stage` schema. First publish: all blocking rules pass, 2 warnings explained. Defaults to confirm in `consumer_views.md` (D18–D20). 87 tests |
 | 2026-10-03 | Layer 1 · identity + gold | **Identity resolution and the golden record.** `identity/` (nodes, rules, Splink, LLM second opinion, relationships, review queue, constrained clustering, stable IDs, report) and `gold/build_c360.py`. 3,487,885 source customers → 1,013,152 people; `gold.customer_xref`, `identity_review_queue`, `customer_relationship`, `c360_customer`, `c360_account`. Found mistyped CRM IDs in collections cases, surname-first card names, compound surnames, and family false matches (D13–D17). New `identity` schema; `reports/identity_report.md`. 19 identity tests (77 total) |

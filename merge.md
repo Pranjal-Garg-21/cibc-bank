@@ -27,16 +27,16 @@ The plan lists this file once, under P1. P1 (on `main`) and P4 (on `p4/policy-ra
 
 **Decision: keep P4's version as the single file, and add P1's two extras to it.**
 
-To do:
-- [ ] Take P4's `text_controls.py`, `docs/text_controls.md`, `tests/test_text_controls.py` on conflict.
-- [ ] Add DOB masking to P4's `scrub()`: a date written after `DOB`, `date of birth`, `DDN`, `né(e) le` becomes `[DOB]`. Add a test, and check business dates (`PTP $180 Jul 31`, `due 2026-10-01`) stay untouched.
-- [ ] Add transcript text to P4's version: parse `raw.transcript_json` turns into `speaker: text` lines in turn order, then scrub. P1's SQL for this is in the `main` version of `text_controls.py` (the `call_transcripts_text` query); move it over.
-- [ ] Check P4's transcript view: `LEFT JOIN curated.contact_history USING (contact_id)` can duplicate a transcript if `contact_id` repeats in `contact_history`. P1's version takes one row per `contact_id`. Confirm the view returns 25,000 rows.
-- [ ] **Switch `src/trustissues/factory/gold/views.py` (`customer_timeline`)** off P1's tables `curated.agent_notes_text` / `curated.call_transcripts_text` and onto P4's eligibility views plus scrubbed text. For 700k notes, either materialise the scrubbed text once (a table built from `eligible_notes()`) or port `scrub()`'s patterns to SQL `regexp_replace` as P1 did; a Python loop inside the view build will be slow.
-- [ ] Update `tests/test_consumer_views.py`: the masking tests import `mask_sql` from P1's `text_controls`; point them at `scrub()` or drop them in favour of P4's tests.
-- [ ] Update `pipeline.py`: the `text_controls` stage calls `text_controls.main`; P4's `main()` builds the views, which is what the stage needs.
-- [ ] Update docs: `docs/consumer_views.md` §1 rows G and H, and `docs/documentation.md` D19, should point at P4's `docs/text_controls.md`.
-- [ ] Re-run views and publish, and check the timeline row counts (notes will drop by about 22k blank notes).
+To do (done 4 Oct in the P4 merge, branch `merge/p4-into-main`; details in `docs/text_controls.md` §4 and §6):
+- [x] Take P4's `text_controls.py`, `docs/text_controls.md`, `tests/test_text_controls.py` on conflict.
+- [x] Add DOB masking to P4's `scrub()`: a date written after `DOB`, `date of birth`, `DDN`, `né(e) le` becomes `[DOB]`. Tests added; business dates (`PTP $180 Jul 31`, `due 2026-10-01`) stay untouched.
+- [x] Add transcript text to P4's version: P1's SQL parses `raw.transcript_json` turns into `speaker: text` lines in turn order, then `scrub()` runs on it.
+- [x] Check P4's transcript view: it now takes one `contact_history` row per `contact_id`. 25,000 rows on the real data, and a test with a repeated `contact_id`.
+- [x] `customer_timeline`: chose to materialise the scrubbed text once. `build_text_tables()` writes `curated.agent_notes_text` / `curated.call_transcripts_text` (same names and columns as P1's, plus `scrubbed`) from P4's eligibility views and `scrub()`, so `gold/views.py` did not change. 9 s for all notes and transcripts. SQL `regexp_replace` was not used: DuckDB's regex has no look-behind, so P4's patterns cannot be ported exactly.
+- [x] `tests/test_consumer_views.py`: the `mask_sql` test is gone; its cases moved to `tests/test_text_controls.py` (against `scrub()`).
+- [x] `pipeline.py`: unchanged; the `text_controls` stage calls `main()`, which now builds the views and the text tables.
+- [x] Docs: `docs/consumer_views.md` rows G and H and `docs/documentation.md` D19 point at `docs/text_controls.md`.
+- [x] Re-ran `text_controls`, `views`, `publish`. Timeline row counts: `docs/text_controls.md` §6.
 - [ ] **Team decision still open:** whether `none` notes may be sent to an outside LLM at all (P4's setting allows it by default).
 
 ---
@@ -45,8 +45,8 @@ To do:
 
 Both are known to be changed on the P4 branch as well as on `main`.
 
-- [ ] `db.py`: keep **both** changes. `main` adds the `identity` and `gold_stage` schemas to `SCHEMAS`; P4 adds DuckDB resource caps (`memory_limit`, `threads`, `preserve_insertion_order`) in `connect()`.
-- [ ] `settings.yaml`: keep **both**. `main` adds keys under `identity:`; P4 adds `duckdb:`, `text_controls:`, `llm:` sections.
+- [x] `db.py`: keep **both** changes (merged without a conflict: P3 had already taken P4's cap byte for byte). `main` adds the `identity` and `gold_stage` schemas to `SCHEMAS`; P4 adds DuckDB resource caps (`memory_limit`, `threads`, `preserve_insertion_order`) in `connect()`.
+- [x] `settings.yaml`: keep **both**. Done in the P4 merge. `main` adds keys under `identity:`; P4 adds `duckdb:`, `text_controls:`, `llm:` sections.
 
 ---
 
