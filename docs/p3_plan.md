@@ -151,6 +151,7 @@ python -m trustissues.features.build_case_training_set && python -m trustissues.
 python -m trustissues.nba.train --case              # case model vs the bank's cure_30d
 python -m trustissues.nba.actions                   # step 7 + calibration from the randomised test
 python -m trustissues.nba.queue                     # NBA: one decision per open case (add --write-gold to write gold.nba_decisions)
+python -m trustissues.nba.fairness                  # reports/fairness_report.md (after train and queue)
 python -m pytest tests -q
 ```
 
@@ -164,7 +165,8 @@ python -m pytest tests -q
 | 6 Rules, hardship | Pure logic with tests (hard stops, consent default-deny, contact cap, hours; hardship never harsher, programme eligibility) |
 | 7 Action data | `warehouse/p3/action_values.parquet` + report section |
 | NBA queue | `nba/actions.py` (values), `nba/allocate.py` (capacity), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`; every case has a case-model risk. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
-| Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and 36,020 hardship / vulnerability / high-balance cases each waiting for an approval before the hardship routing fix, **8,306 after it** (see below) |
+| Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and 36,020 hardship / vulnerability / high-balance cases each waiting for an approval before the hardship routing fix, **8,306 after it** (see below); 12,612 after the Do Not Call fix |
+| Fairness | `nba/fairness.py` → `reports/fairness_report.md`: both models (ours and the bank's, same holdout rows) and the morning queue compared across gender, age band, marital status, citizenship, newcomer programme, accessibility needs, dependants and preferred language, plus a proxy audit. Protected attributes are read only here (`sources.protected_attributes`, enforced by a test). See "Fairness check (3 Oct)" below |
 | Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.837 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):
@@ -313,4 +315,35 @@ on the internal list.
 4,306 flagged cases moved from `wait` to `support_call`; about 600 other cases changed channel (mostly to a call
 or a letter). Every support call fits in the certified agents' capacity, and 48,417 agent calls on shift are
 still unused. The contact-limit count rises because those calls are no longer blocked by do-not-call first.
+
+### Fairness check (3 Oct)
+
+`python -m trustissues.nba.fairness` writes `reports/fairness_report.md` (12 seconds). Protected attributes come from
+the CRM through one source, `sources.protected_attributes` (`use="fairness"`), the only source allowed protected
+columns; a test fails if any module other than `nba/fairness.py` reads it. The report shows aggregates of groups of at
+least 100 people. It is a screen for review (thresholds in the module docstring), not a legal test. Vulnerability is
+not compared: it is a safeguard that deliberately changes treatment.
+
+**What it found on the 28 Sep data.**
+- **Morning queue: no flags.** For cases without a hardship or vulnerability flag, every group gets collections
+  contact at 1.00–1.06 times what its risk alone predicts. Raw contact rates differ (marital status 33–50%) because
+  hardship and vulnerability flags differ by group, and those cases get support calls instead.
+- **Our models are better calibrated across groups than the bank's.** The bank's case score understates the risk of
+  separated customers by 0.31 (overall 0.25) and of customers 65+ by 0.18; its promise score understates Arabic
+  speakers' by 0.16. Flags: promise model 4 ours / 7 the bank's; case model 8 ours / 2 the bank's.
+- **Most of our flags are selection differences that follow real outcome differences**: e.g. 19.4% of 55–64s are in
+  our riskiest 20% against 24.4% of 25–34s, and their actual not-cured rates are 73.0% and 82.9%. Each flag in the
+  report shows the actual rates next to it.
+- **To review:** small language groups. The case model's AUC is 0.783 for Tagalog speakers (332 rows; overall 0.837),
+  and it catches 25.0% of Punjabi speakers' uncured cases against 34.3% of Arabic speakers' although Punjabi
+  speakers fail to cure more often (80.4% vs 75.5%).
+- **Proxy audit:** the case model's features predict newcomer-programme membership with AUC 0.653, mostly through
+  `entry_overdue`, `snapshots_observed_12m` and `balance_to_limit`. `snapshots_observed_12m` measures how much account
+  history there is (short for newcomers); it was already noted as a feature that tracks the data period rather than
+  the customer. Next step: retrain the case model without it and compare AUC and this proxy AUC. Every other attribute
+  is at 0.50–0.58.
+- **Not a protected group, but found here:** 2,568 open cases point at a CRM customer that does not exist (DQ check
+  R1). They get no contact at all (no consent record, so the rules default to deny), and the case model understates
+  their risk (gap −0.146 vs −0.087 overall) because the customer-keyed features are missing. Identity resolution
+  (the golden record) fixes both.
 

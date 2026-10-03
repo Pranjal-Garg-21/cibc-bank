@@ -8,8 +8,10 @@ gold, the specs below point at `gold.promises_enriched` / `gold.decisioning_cust
 
 Rules for every spec:
 - explicit column allow-list, never `SELECT *`;
-- every source column must be labelled `none` in config/sensitivity.yaml (tests enforce it);
-- `customers` is read only by `crm_safety_flags`, which is for nba/rules.py and never a feature.
+- every source column must be labelled `none` in config/sensitivity.yaml (tests enforce it), except the one
+  `use="fairness"` source, `protected_attributes`, which only nba/fairness.py may read (tests enforce that too);
+- `customers` is read only by `crm_safety_flags` (nba/rules.py) and `protected_attributes` (nba/fairness.py),
+  never as a feature.
 
 `as_of` truncates a source to what was known strictly before that timestamp. Used for live
 ("latest") values and by the point-in-time leakage test.
@@ -37,7 +39,7 @@ class Source:
     table: str
     # output column -> (source column, type). Type is a DuckDB type, or JSON_LIST for a JSON array of strings.
     columns: dict[str, tuple[str, str]]
-    use: str  # features | label | rules | evaluation | actions
+    use: str  # features | label | rules | evaluation | actions | fairness
     event_ts: str | None = None  # output column: when the row became known (for as_of)
     where: str | None = None  # filter on source columns
     # output column -> (SQL for when it became known, value before that). The SQL may name output columns.
@@ -208,6 +210,20 @@ SOURCES: dict[str, Source] = {
                  "permitted_call_end_local"),
         },
     ),
+    # Protected attributes, joined back ONLY in nba/fairness.py to compare outcomes across groups (testing only).
+    # Never a feature, never a rule input; the report shows aggregates of groups of at least MIN_GROUP people.
+    # preferred_language is not protected, but is checked as a possible stand-in for national origin.
+    "protected_attributes": Source(
+        table="customers",
+        use="fairness",
+        where="CAST(is_deleted AS VARCHAR) = 'false' AND CAST(effective_to_ts AS VARCHAR) LIKE '9999%'",
+        columns={
+            **_c("crm_customer_id", "gender_code", "age_band", "marital_status", "citizenship_status",
+                 "preferred_language"),
+            **_c("newcomer_program_flag", "accessibility_needs_flag", type_="BOOLEAN"),
+            "dependants_count": ("dependants_count", "INTEGER"),
+        },
+    ),
     # Who may take a hardship / vulnerable case (nba/queue.py routing), and who may approve (nba/review.py).
     "agents": Source(
         table="agents",
@@ -353,3 +369,8 @@ def loan_opened(con):
 
 def deposit_opened(con):
     return relation(con, "deposit_opened")
+
+
+def protected_attributes(con):
+    """nba/fairness.py ONLY: protected attributes for comparing outcomes across groups. Never a feature."""
+    return relation(con, "protected_attributes")

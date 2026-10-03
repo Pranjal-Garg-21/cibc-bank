@@ -22,10 +22,13 @@ def _where_columns(where: str | None) -> list[str]:
 
 
 def test_every_source_column_is_labelled_none(sensitivity):
-    """Default-deny: only columns explicitly labelled `none` may be read (not protected, PII, quasi, unclassified)."""
+    """Default-deny: only columns explicitly labelled `none` may be read (not protected, PII, quasi, unclassified).
+    The one exception is the fairness source, checked by the tests below."""
     proxies = set(sensitivity["proxy_columns"])
     bad = []
     for name, s in sources.SOURCES.items():
+        if s.use == "fairness":
+            continue
         labels = sensitivity["tables"][s.table]
         for src_col, _ in s.columns.values():
             label = labels.get(src_col, "unclassified")
@@ -37,15 +40,30 @@ def test_every_source_column_is_labelled_none(sensitivity):
 def test_no_protected_or_pii_column_is_selected(sensitivity):
     protected = set(sensitivity["protected_columns"]) | set(sensitivity["proxy_columns"])
     for s in sources.SOURCES.values():
+        if s.use == "fairness":
+            continue
         for src_col, _ in s.columns.values():
             assert f"{s.table}.{src_col}" not in protected
             assert sensitivity["tables"][s.table].get(src_col) not in ("protected", "direct_pii")
 
 
-def test_customers_is_read_only_for_rules():
+def test_customers_is_read_only_for_rules_and_fairness():
     for name, s in sources.SOURCES.items():
         if s.table == "customers":
-            assert s.use == "rules", f"{name} reads customers for {s.use}"
+            assert s.use in ("rules", "fairness"), f"{name} reads customers for {s.use}"
+
+
+def test_protected_attributes_are_read_only_by_the_fairness_check(sensitivity):
+    """The fairness source is the only one allowed protected columns: it must hold no direct PII, and no module
+    but nba/fairness.py may read it (not the features, the model, the rules or the queue)."""
+    fair = {n for n, s in sources.SOURCES.items() if s.use == "fairness"}
+    assert fair == {"protected_attributes"}
+    labels = sensitivity["tables"]["customers"]
+    assert all(labels.get(c) != "direct_pii" for c, _ in sources.SOURCES["protected_attributes"].columns.values()
+               if c != "crm_customer_id")
+    src = config.REPO_ROOT / "src" / "trustissues"
+    readers = {p.relative_to(src).as_posix() for p in src.rglob("*.py") if "protected_attributes" in p.read_text()}
+    assert readers == {"features/sources.py", "nba/fairness.py"}, readers
 
 
 def test_feature_sources_carry_no_outcome_columns_except_the_label():
