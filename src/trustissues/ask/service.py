@@ -23,6 +23,18 @@ from .types import AnswerCard, UserContext
 RagHandler = Callable[[RagRequest], RagResponse]
 
 
+def classify(question: str):
+    """What `ask()` would do with a question before touching any data: (outcome, metric_id).
+
+    outcome is 'refused' (injection or refusal gate) or the router's path. Used by the router evaluation so a
+    change to injection, refusal, catalogue or router shows up in one measurable number.
+    """
+    if injection.screen(question) or refusal.check(question):
+        return "refused", None
+    r = route(question)
+    return r.path, r.metric_id
+
+
 def fake_rag(request: RagRequest) -> RagResponse:
     """Stand-in until P4's handler is wired: says plainly that it has no sources."""
     return RagResponse(answer=None, not_found=True, coverage="RAG handler not connected")

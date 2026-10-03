@@ -126,3 +126,12 @@ def test_certification_pilot_is_not_answered_with_generic_cure_rate():
 
 def test_dispute_without_comparison_asks():
     assert isinstance(call("How many disputes were raised in September 2026?"), Unsupported)
+
+
+def test_router_eval_baseline_does_not_regress():
+    """Floor on the labelled paraphrase set. Raise it when the router improves; never lower it."""
+    import subprocess, sys
+    from trustissues.common.config import REPO_ROOT
+    out = subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "eval_router.py"), "--min", "0.47"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout[-800:]
