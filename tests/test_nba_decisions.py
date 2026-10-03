@@ -7,7 +7,7 @@ import duckdb
 import pytest
 
 from trustissues.common import config
-from trustissues.common.interfaces import DecisionCard, Reason, apply_stubs
+from trustissues.common.interfaces import DecisionCard, HardshipOption, Reason, apply_stubs
 from trustissues.nba import actions, allocate, explain, hardship, rules
 from trustissues.nba.queue import COLUMNS, CaseInput, Context, decide_case, plan_case
 
@@ -84,19 +84,34 @@ def test_experiment_holdout_cases_are_left_alone():
     assert {b["rule"] for b in json.loads(row["decision_card"])["blocked_actions"]} == {"experiment_holdout"}
 
 
-def test_hardship_is_gentler_needs_approval_and_leaves_an_uncertified_agent():
+def test_hardship_gets_a_support_call_with_its_programmes_and_never_a_reminder():
     phone_person = dict(reach={"email_reminder": 0.5, "push_reminder": 0.5, "sms_reminder": 0.5, "agent_call": 1.5},
                         amount=2000.0)
     plain = decide_case(_case(**phone_person), CTX)
-    hard = decide_case(_case(signal=hardship.HardshipSignal("possible"), **phone_person), CTX)
     assert plain["action"] == "agent_call"
-    assert actions.harshness(hard["action"]) <= hardship.MAX_HARSHNESS_IN_HARDSHIP
+    opts = [HardshipOption("HP-CARD-SKIP", "2026.1", "Skip a payment", "§4.2", "agent")]
+    hard = decide_case(_case(signal=hardship.HardshipSignal("clear"), options=opts, **phone_person), CTX)
+    card = json.loads(hard["decision_card"])
+    assert hard["action"] == "support_call" and hard["channel"] == "phone"
     assert hard["requires_approval"] and hard["approval_reason"] == "hardship"
-    waiting = decide_case(_case(signal=hardship.HardshipSignal("possible"), flags=rules.CaseFlags(consent={})), CTX)
-    assert waiting["action"] == "wait" and waiting["agent_id"] is None  # uncertified agent: route elsewhere
-    certified = decide_case(_case(signal=hardship.HardshipSignal("possible"), agent_certified=True,
-                                  flags=rules.CaseFlags(consent={})), CTX)
+    assert card["support_reason"] == "offer_programme"
+    assert [o["program_id"] for o in card["hardship_options"]] == ["HP-CARD-SKIP"]
+    assert "§4.2" in card["why_beat_runner_up"] and "Skip a payment" in card["summary"]
+    # no phone consent: the support call is blocked, so it waits (no reminder instead), with no approval needed
+    email_only = rules.CaseFlags(consent={"email": True, "push": True})
+    waiting = decide_case(_case(signal=hardship.HardshipSignal("clear"), flags=email_only), CTX)
+    assert waiting["action"] == "wait" and not waiting["requires_approval"]
+    assert waiting["agent_id"] is None  # uncertified agent: the queue assigns a certified owner
+    assert "consent" in json.loads(waiting["decision_card"])["why_beat_runner_up"]
+    certified = decide_case(_case(signal=hardship.HardshipSignal("clear"), agent_certified=True, flags=email_only), CTX)
     assert certified["agent_id"] == "AG-1"
+
+
+def test_running_plan_waits_without_approval():
+    plan = hardship.HardshipHistory(plan_end=date(2026, 12, 31), ever_offered=True)
+    d = decide_case(_case(signal=hardship.HardshipSignal("clear"), history=plan), CTX)
+    assert d["action"] == "wait" and not d["requires_approval"]
+    assert "plan in place" in json.loads(d["decision_card"])["why_beat_runner_up"]
 
 
 def test_approval_reasons():
@@ -104,6 +119,7 @@ def test_approval_reasons():
     assert digital["action"] == "sms_reminder" and digital["approval_reason"] == "digital_batch"
     assert digital["agent_id"] is None
     assert decide_case(_case(amount=20000.0), CTX)["approval_reason"] == "high_balance"
+    assert decide_case(_case(amount=20000.0, flags=rules.CaseFlags()), CTX)["approval_reason"] is None  # waits
     vuln = decide_case(_case(signal=hardship.HardshipSignal("possible", vulnerable=True)), CTX)
     assert vuln["approval_reason"] == "vulnerability"
 
@@ -161,6 +177,22 @@ def test_hardship_calls_only_go_to_certified_agents():
     assert out[0].action == "agent_call" and out[0].agent_id == "AG-9"
     out = allocate.allocate([_req(["agent_call", "wait"], 9, certified=True)], _cap(certified=()))
     assert out[0].action == "wait"
+
+
+def test_support_calls_go_first_to_certified_agents_only():
+    reqs = [_req(["agent_call", "wait"], 50.0), _req(["support_call", "wait"], 1.0, certified=True)]
+    reqs[1].tier = 0
+    out = allocate.allocate(reqs, _cap(calls={"AG-1": 1, "AG-9": 1}, certified={"AG-9"}))
+    assert (out[1].action, out[1].agent_id) == ("support_call", "AG-9")  # placed first, certified agent only
+    assert (out[0].action, out[0].agent_id) == ("agent_call", "AG-1")
+
+
+def test_every_flagged_case_gets_a_certified_owner():
+    cap = _cap(certified={"AG-2", "AG-9"})
+    reqs = [_req(["wait"], 0, agent="AG-2"), _req(["wait"], 0, agent="AG-1", team="T1"),
+            _req(["wait"], 0, agent="AG-1", team="T1"), _req(["wait"], 0, agent=None, team="T9")]
+    assert allocate.assign_owners(reqs, cap) == ["AG-2", "AG-2", "AG-2", "AG-9"]  # own, team, team, anyone
+    assert allocate.assign_owners(reqs, _cap(certified=())) == [None] * 4
 
 
 def test_capacity_never_makes_a_hardship_case_harsher():

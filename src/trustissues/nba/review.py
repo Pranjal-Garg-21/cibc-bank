@@ -6,8 +6,8 @@
 
 Every decision is a row in gold.nba_overrides {recommendation_id, agent_id, decision, reason_code, ts}, append
 only: the latest row of each kind wins and the history is kept. Two kinds:
-- agent: `accepted` or `overridden`, by the agent the recommendation is assigned to. Required for an
-  `agent_call`; optional otherwise (an agent may override a `wait`). An override needs a reason code.
+- agent: `accepted` or `overridden`, by the agent the recommendation is assigned to. Required for a call
+  (`agent_call`, or a certified agent's `support_call`); optional otherwise (an agent may override a `wait`). An override needs a reason code.
 - approval: `approved` or `rejected`, by a team lead (hardship and vulnerability: also a hardship specialist).
   Required when the recommendation says so (vulnerability, hardship, high balance, the daily digital batch).
   A rejection needs a reason code. Digital batch recommendations have no agent: the team lead's approval is
@@ -49,7 +49,7 @@ APPROVERS = {
     "high_balance": ("team_lead",),
     "digital_batch": ("team_lead",),
 }
-NEEDS_AGENT = ("agent_call",)
+NEEDS_AGENT = ("agent_call", "support_call")  # every call is accepted by its agent
 
 
 class ReviewError(ValueError):

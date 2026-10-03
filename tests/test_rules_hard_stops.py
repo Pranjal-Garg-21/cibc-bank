@@ -59,13 +59,13 @@ def test_consent_is_default_deny_and_per_channel():
 def test_contact_cap_and_do_not_call():
     assert rules.allowed_actions(_flags(contacts_last_7d=3, contact_cap_7d=3)).allowed == ["wait"]
     r = rules.allowed_actions(_flags(do_not_call=True))
-    assert r.blocked == {"agent_call": "do_not_call"}
+    assert r.blocked == {"agent_call": "do_not_call", "support_call": "do_not_call"}  # both are phone calls
 
 
 def test_contact_hours_only_bind_real_time_channels():
     r = rules.allowed_actions(_flags(planned_local_time=time(22, 0), permitted_call_hours=(time(8), time(21)),
                                      preferred_window=(time(9), time(18))))
-    assert r.blocked == {"agent_call": "outside_permitted_hours", "sms_reminder": "outside_permitted_hours"}
+    assert r.blocked == {"agent_call": "outside_permitted_hours", "support_call": "outside_permitted_hours", "sms_reminder": "outside_permitted_hours"}
     r = rules.allowed_actions(_flags(planned_local_time=time(19, 0), permitted_call_hours=(time(8), time(21)),
                                      preferred_window=(time(9), time(18))))
-    assert r.blocked == {"agent_call": "outside_preferred_window", "sms_reminder": "outside_preferred_window"}
+    assert r.blocked == {"agent_call": "outside_preferred_window", "support_call": "outside_preferred_window", "sms_reminder": "outside_preferred_window"}

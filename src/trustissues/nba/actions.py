@@ -3,9 +3,13 @@
     python -m trustissues.nba.actions      # writes warehouse/p3/action_values.parquet + report section
 
 Harshness orders actions by collections pressure: hardship may only move a case towards lower
-harshness (nba/hardship.py). Each allowed action is valued as the extra chance of the case curing (paid
-up and closed) within 30 days that the contact buys, times the amount overdue, minus its unit cost
-(`value_actions`).
+harshness (nba/hardship.py). `support_call` is a certified agent calling to offer help (hardship programmes
+first, no payment request before an option is offered, POL-COLL-004 §4.2/§4.5): it is contact, so every contact
+rule applies, but it puts no collections pressure on the customer (harshness 0). It is only for hardship and
+vulnerable cases and is never valued with the collections effect below.
+
+Each other allowed action is valued as the extra chance of the case curing (paid up and closed) within 30 days
+that the contact buys, times the amount overdue, minus its unit cost (`value_actions`).
 
 Where the effect comes from (`calibrate`, saved to action_calibration.json):
 - The size of a contact's effect comes from the bank's randomised test: randomly assigned cases in
@@ -41,12 +45,16 @@ class Action:
 
 CATALOGUE: dict[str, Action] = {a.name: a for a in [
     Action("wait", None, 0, None),
+    Action("support_call", "phone", 0, None),  # certified agent, hardship / vulnerable cases only
     Action("push_reminder", "push", 1, "push"),
     Action("email_reminder", "email", 1, "email_reminder"),
     Action("sms_reminder", "sms", 2, "payment_link"),
     Action("letter", "mail", 2, "letter"),
     Action("agent_call", "phone", 3, "outbound_call"),
 ]}
+
+
+NOT_VALUED = ("wait", "support_call")  # wait is the baseline; a support call is policy, not a collections bet
 
 
 def harshness(action: str) -> int:
@@ -89,7 +97,7 @@ def value_actions(allowed: list[str], risk: float, amount: float, costs: dict[st
     reach = reach or {}
     values = {"wait": 0.0}
     for a in allowed:
-        if a == "wait":
+        if a in NOT_VALUED:
             continue
         gain = effect * (risk / base_risk) * reach.get(a, 1.0)
         values[a] = gain * amount - costs.get(CATALOGUE[a].channel, 0.0)

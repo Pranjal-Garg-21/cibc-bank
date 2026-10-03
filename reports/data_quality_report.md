@@ -4,10 +4,10 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 
 ## 1. Summary
 
-- **55 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
+- **56 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
 - **23 further checks found nothing** (section 11), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **flagged** 19, **documented** 17, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
+- How each issue was handled: **flagged** 19, **documented** 18, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
 - **Schema drift:** the loader recorded 0 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
@@ -62,6 +62,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | T3 | Outcomes are recorded late: case cures stop before the snapshot date, and some promises stay open after their grace period | 5,286 | 16.0% | medium | Documented |
 | L3 | Case bucket disagrees with current days past due (one band higher than dpd implies) | 3,807 | 1.04% | medium | Flagged |
 | L7 | Promise marked kept but the amount paid is below the promised amount | 2,844 | 1.19% | medium | Flagged |
+| L11 | Hardship offer, or the customer's answer to one, dated after the snapshot date | 1,757 | 4.31% | medium | Documented |
 | R5 | Call transcript points to a CRM customer that does not exist | 695 | 2.78% | medium | Flagged |
 | K3 | App outage 14 Sep: payments not posted, late fees charged in error; late-fee disputes about 3x baseline 15-22 Sep | 31 | 4.29% | medium | Documented |
 | F8 | CRM phone numbers in 10 different formats | 1,004,777 | 98.5% | low | Standardised |
@@ -444,6 +445,14 @@ Fields that cannot all be true at once. Neither value was changed; the rows are 
 **Affected:** 33 of 660,000 (0.01%) · **Tables:** `card_accounts` · **Severity:** low
 
 **Handling (documented).** Not changed.
+
+### L11. Hardship offer, or the customer's answer to one, dated after the snapshot date
+
+**Affected:** 1,757 of 40,767 (4.31%) · **Tables:** `offers` · **Severity:** medium
+
+*Evidence:* 688 offers are dated after 2026-09-28 (the latest 2026-10-22), and 1,645 answers (accepted, declined, considering) are dated after it.
+
+**Handling (documented).** Not changed. Treated as not yet known on the snapshot date: the NBA queue counts an offer only if it was made before the as-of date, and its answer and plan status only if the answer came before it (`nba/queue.py` `load_cases`). Otherwise a customer would look as if they had already been offered, or had already broken a plan, when on the as-of date neither had happened.
 
 ## 8. Shifts and patterns that affect models
 

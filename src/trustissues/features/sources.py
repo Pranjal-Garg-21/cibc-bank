@@ -136,13 +136,44 @@ SOURCES: dict[str, Source] = {
             **_c("total_overdue", "entry_overdue", "payments_since_open_amount", type_="DOUBLE"),
             **_c("hardship_flag", "dispute_flag", "cease_contact_flag", "third_party_rep_flag", "insolvency_hold_flag",
                  "deceased_hold_flag", "vulnerable_customer_flag", "cure_flag", type_="BOOLEAN"),
+            # hardship handling so far (nba/hardship.py): who recorded it, why, and any programme or plan
+            **_c("hardship_source", "hardship_reason"),
+            **_c("hardship_program_offered", "hardship_program_accepted", type_="BOOLEAN"),
+            "hardship_plan_end": ("hardship_plan_end", "DATE"),
         },
+    ),
+    # Hardship programme offers and the customer's answer (nba/hardship.py: offered recently? plan broken? uses
+    # in 12 months?). Some offers and responses are dated after the snapshot: callers keep offer_ts < as-of.
+    "hardship_offers": Source(
+        table="offers",
+        use="rules",
+        event_ts="offer_ts",
+        columns={
+            **_c("offer_id", "case_id", "program_id", "customer_response", "plan_status"),
+            **_c("offer_ts", "response_ts", type_="TIMESTAMP"),
+        },
+    ),
+    # When each account was opened, for programme eligibility (min_months_on_book). One row per account.
+    "card_opened": Source(
+        table="card_accounts",
+        use="rules",
+        columns={"account_id": ("card_account_id", "VARCHAR"), "opened": ("open_date", "DATE")},
+    ),
+    "loan_opened": Source(
+        table="loan_accounts",
+        use="rules",
+        columns={"account_id": ("loan_id", "VARCHAR"), "opened": ("origination_date", "DATE")},
+    ),
+    "deposit_opened": Source(
+        table="deposit_accounts",
+        use="rules",
+        columns={"account_id": ("deposit_account_id", "VARCHAR"), "opened": ("open_date", "DATE")},
     ),
     "hardship_programs": Source(
         table="hardship_programs",
         use="rules",
         columns={
-            **_c("program_id", "version", "program_name", "min_hardship_level", "approver_level"),
+            **_c("program_id", "version", "program_name", "min_hardship_level", "approver_level", "policy_section"),
             "product_types": ("product_types", "JSON_LIST"),
             **_c("max_dpd", "min_months_on_book", "max_uses_12m", "duration_months", type_="INTEGER"),
             **_c("excludes_insolvency", "excludes_broken_plan_90d", "requires_income_evidence", type_="BOOLEAN"),
@@ -305,3 +336,20 @@ def case_history(con, as_of=None):
 
 def agent_shifts(con):
     return relation(con, "agent_shifts")
+
+
+def hardship_offers(con):
+    """Rules only (nba/hardship.py). Some offers are dated after the snapshot: keep offer_ts < as-of."""
+    return relation(con, "hardship_offers")
+
+
+def card_opened(con):
+    return relation(con, "card_opened")
+
+
+def loan_opened(con):
+    return relation(con, "loan_opened")
+
+
+def deposit_opened(con):
+    return relation(con, "deposit_opened")

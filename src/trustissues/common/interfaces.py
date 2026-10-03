@@ -74,6 +74,16 @@ class EvidenceQuote:
 
 
 @dataclass
+class HardshipOption:
+    """A hardship programme the case is eligible for on the as-of date (hardship_programs), cited to its policy."""
+    program_id: str
+    version: str
+    name: str
+    policy_section: str | None  # section of POL-COLL-004
+    approver_level: str | None  # agent | hardship_specialist | team_lead
+
+
+@dataclass
 class DecisionCard:
     """JSON stored in gold.nba_decisions.decision_card. The app renders exactly these fields."""
     recommended_action: str
@@ -87,6 +97,10 @@ class DecisionCard:
     requires_approval: bool = False
     approval_reason: str | None = None  # hardship | vulnerability | high_balance | digital_batch
     summary: str = ""  # template text (optionally reworded, fact-checked)
+    # Hardship and vulnerability (nba/hardship.py). support_reason says why a certified agent should call today:
+    # offer_programme | plan_ending | follow_up | vulnerable_contact (None: no support call due).
+    support_reason: str | None = None
+    hardship_options: list[HardshipOption] = field(default_factory=list)  # eligible programmes, offer these first
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)

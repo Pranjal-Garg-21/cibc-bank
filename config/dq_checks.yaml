@@ -535,6 +535,15 @@ checks:
     table: curated.card_accounts
     where: "utilisation < 0 or utilisation > 1.5"
     how: "Not changed."
+  - id: L11
+    area: logic
+    title: "Hardship offer, or the customer's answer to one, dated after the snapshot date"
+    tables: [offers]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where offer_ts >= date '{as_of}' + 1 or response_ts >= date '{as_of}' + 1), count(*) from curated.offers"
+    evidence: "select format('{:,}', count(*) filter (where offer_ts >= date '{as_of}' + 1)) || ' offers are dated after {as_of} (the latest ' || cast(max(offer_ts) as date) || '), and ' || format('{:,}', count(*) filter (where response_ts >= date '{as_of}' + 1)) || ' answers (accepted, declined, considering) are dated after it' from curated.offers"
+    how: "Not changed. Treated as not yet known on the snapshot date: the NBA queue counts an offer only if it was made before the as-of date, and its answer and plan status only if the answer came before it (`nba/queue.py` `load_cases`). Otherwise a customer would look as if they had already been offered, or had already broken a plan, when on the as-of date neither had happened."
 
   # ------------------------------------------------------------------ F. shifts and patterns that affect models
   - id: T1

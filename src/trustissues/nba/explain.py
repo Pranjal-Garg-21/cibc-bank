@@ -19,7 +19,35 @@ ACTION_TEXT = {
     "sms_reminder": "Send an SMS reminder with a payment link",
     "letter": "Send a letter",
     "agent_call": "Call the customer",
+    "support_call": "A certified agent calls to offer support (no payment request before an option is offered)",
 }
+
+# Hardship and vulnerable cases (nba/hardship.py): why a support call is due, or why the case waits.
+SUPPORT_TEXT = {
+    "offer_programme": "Hardship recorded and no programme offered yet: offer one before asking for payment "
+                       "(POL-COLL-004 §4.2)",
+    "plan_ending": "Hardship plan ends within 10 days: review it with the customer (POL-COLL-004 §4.4)",
+    "follow_up": "Hardship programme offered over 30 days ago and not taken up: follow up (POL-COLL-004 §4.2)",
+    "vulnerable_contact": "Vulnerable customer due for contact: a certified agent makes it instead of a reminder "
+                          "or a collections call (POL-COLL-004 §4.5)",
+}
+WAIT_TEXT = {
+    "plan_running": "Hardship plan in place: no collections contact while it runs",
+    "recent_offer": "Hardship programme offered in the last 30 days: give the customer time to answer",
+    "no_contact_due": "Vulnerable customer, no contact due today",
+}
+
+
+def support_text(action: str, support_reason: str | None, waiting_reason: str | None,
+                 blocked_rule: str | None, no_capacity: list[str] | None) -> str:
+    """One sentence for a hardship or vulnerable case: why the support call, or why it waits."""
+    if action == "support_call":
+        return SUPPORT_TEXT[support_reason]
+    if support_reason and blocked_rule:
+        return f"{SUPPORT_TEXT[support_reason]}, but contact is blocked ({blocked_rule.replace('_', ' ')})"
+    if support_reason and no_capacity:
+        return f"{SUPPORT_TEXT[support_reason]}, but no certified agent has a call free today"
+    return WAIT_TEXT.get(waiting_reason, "No support call due today")
 
 
 def _pct(v):
@@ -154,7 +182,9 @@ def risk_band(risk: float) -> str:
 
 
 def why_beat(action: str, runner_up: str | None, values: dict[str, float],
-             no_capacity: list[str] | None = None) -> str | None:
+             no_capacity: list[str] | None = None, support: str | None = None) -> str | None:
+    if support:  # hardship / vulnerable case: policy, not value, decides
+        return support
     if no_capacity:
         return f"{', '.join(no_capacity)} had no capacity left today; this was the next best"
     if runner_up is None:
@@ -168,7 +198,8 @@ def why_beat(action: str, runner_up: str | None, values: dict[str, float],
 
 def summary(action: str, risk: float, reasons: list[Reason], route_to_certified: bool,
             blocked_by_hard_stop: str | None, promise_risk: float | None = None,
-            no_capacity: list[str] | None = None) -> str:
+            no_capacity: list[str] | None = None, support: str | None = None,
+            options: list[str] | None = None) -> str:
     head = f"{risk_band(risk)} risk of not being paid up in 30 days ({risk:.2f})"
     why = "; ".join(r.text for r in reasons[:2])
     parts = [f"{head}: {why}." if why else f"{head}."]
@@ -176,11 +207,14 @@ def summary(action: str, risk: float, reasons: list[Reason], route_to_certified:
         parts.append(f"Open promise: {promise_risk:.2f} risk of breaking.")
     if blocked_by_hard_stop:
         parts.append(f"Contact blocked ({blocked_by_hard_stop.replace('_', ' ')}).")
-    if no_capacity:
+    if no_capacity and not route_to_certified:
         parts.append(f"No capacity today for {', '.join(no_capacity)}.")
     parts.append(ACTION_TEXT.get(action, action) + ".")
     if route_to_certified:
-        parts.append("Hardship or vulnerability sign: route to a certified agent.")
+        parts.append(f"Hardship or vulnerability: {support or 'handled by a certified agent'}.")
+        if options:
+            parts.append(f"Eligible programmes: {', '.join(options)}.")
+        parts.append("Owned by a certified agent.")
     return " ".join(parts)
 
 

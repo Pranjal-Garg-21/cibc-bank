@@ -4,11 +4,15 @@ Capacity on the as-of date:
 - channel_capacity: outbound call attempts, SMS, emails, pushes and letters the bank can send
 - agent_shifts: each working agent's outbound_call_capacity (absent agents have none)
 
-Cases are taken most valuable first. Each gets its best action that still fits; an action that does not fit
+Support calls to hardship and vulnerable customers are placed first (duty of care, POL-COLL-004), most exposed
+first; then the other cases, most valuable first. Each gets its best action that still fits; an action that does not fit
 is recorded as blocked by `no_capacity` and the case moves to its next best (in the end, `wait`, which
 always fits). A call goes to the case's assigned agent if they are working and have room, otherwise to
 the agent in the same team with the most room, otherwise to any working agent with room. Cases routed for
 hardship or vulnerability only go to certified agents.
+
+`assign_owners` gives every hardship or vulnerable case a certified owner (§4.5), whether or not it gets a call
+today: its own agent if certified, else the least-loaded certified agent in its team, else anywhere.
 """
 from __future__ import annotations
 
@@ -41,6 +45,7 @@ class Request:
     assigned_agent: str | None
     team: str | None
     needs_certified: bool
+    tier: int = 1  # 0 = support call (placed before all collections work)
 
 
 @dataclass
@@ -80,7 +85,7 @@ def _pick_agent(req: Request, cap: Capacity) -> str | None:
 
 def allocate(requests: list[Request], cap: Capacity) -> list[Assignment]:
     out: list[Assignment | None] = [None] * len(requests)
-    for i in sorted(range(len(requests)), key=lambda i: -requests[i].value):
+    for i in sorted(range(len(requests)), key=lambda i: (requests[i].tier, -requests[i].value)):
         req = requests[i]
         skipped = []
         for action in req.order:
@@ -103,4 +108,25 @@ def allocate(requests: list[Request], cap: Capacity) -> list[Assignment]:
             break
         else:  # order did not end with wait
             out[i] = Assignment("wait", req.assigned_agent, skipped)
+    return out
+
+
+def assign_owners(requests: list[Request], cap: Capacity) -> list[str | None]:
+    """A certified owner for each request (hardship and vulnerable cases): its assigned agent if certified, else
+    the certified agent in the same team with the fewest cases assigned so far, else the least-loaded certified
+    agent anywhere. None only if no active agent is certified."""
+    load: dict[str, int] = defaultdict(int)
+    by_team: dict[str | None, list[str]] = defaultdict(list)
+    for a in sorted(cap.certified):
+        by_team[cap.team.get(a)].append(a)
+    everyone = sorted(cap.certified)
+    out: list[str | None] = []
+    for r in requests:
+        if r.assigned_agent in cap.certified:
+            owner = r.assigned_agent
+        else:
+            owner = min(by_team.get(r.team) or everyone, key=lambda a: (load[a], a), default=None)
+        if owner is not None:
+            load[owner] += 1
+        out.append(owner)
     return out

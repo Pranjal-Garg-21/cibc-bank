@@ -164,7 +164,7 @@ python -m pytest tests -q
 | 6 Rules, hardship | Pure logic with tests (hard stops, consent default-deny, contact cap, hours; hardship never harsher, programme eligibility) |
 | 7 Action data | `warehouse/p3/action_values.parquet` + report section |
 | NBA queue | `nba/actions.py` (values), `nba/allocate.py` (capacity), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`; every case has a case-model risk. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
-| Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and **36,020 hardship / vulnerability / high-balance cases each waiting for an approval**, too many to review by hand until hardship routing is fixed |
+| Review | `nba/review.py` (I7): the assigned agent accepts or overrides (reason code required to override); a team lead approves or rejects (hardship and vulnerability: also a hardship specialist; roles from `agents.role`); the digital batch is signed off in one step; each recommendation's state (`ready`, `waiting_agent`, `waiting_approval`, `blocked`, `overridden`) and the weekly override summary. Append-only into `gold.nba_overrides`. On the 28 Sep queue: 13,343 ready, 784 calls waiting for their agent, 35,912 digital batch waiting for one sign-off, and 36,020 hardship / vulnerability / high-balance cases each waiting for an approval before the hardship routing fix, **8,306 after it** (see below) |
 | Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.837 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):
@@ -202,7 +202,7 @@ weeks would not help it (the case model is where recalibration matters, `data_qu
 
 ### NBA decision logic (v1)
 
-For each open case: rules → case risk → value each allowed action → hardship adjustment → capacity → card → approval.
+For each open case: rules → case risk → value each allowed action → hardship routing → capacity → card → approval.
 
 - **Risk (every case)**: the case model `case_nocure_v0`, the chance an open case is *not* paid up and closed
   within 30 days. Rows = every case open at a month-end since Jan 2024 (246,673); features = `case_state.sql`
@@ -218,17 +218,72 @@ For each open case: rules → case risk → value each allowed action → hardsh
   - *reach*: the customer's own response on that channel in the last 30 days (answered calls, opened emails,
     clicked SMS links, opened pushes) relative to the average, shrunk halfway to average.
   - *cost*: `channel_capacity.unit_cost_cad`, or `call_cost_cad` in settings for calls.
-- **Capacity** (`nba/allocate.py`): most valuable cases first into the day's channel capacity and each
-  working agent's outbound calls (assigned agent → same team → anyone; certified agents only for hardship);
-  a case whose best action is full gets its next best and the card says so (`no_capacity`).
+- **Hardship and vulnerability** (`nba/hardship.py`, POL-COLL-004; rewritten 3 Oct, see below): a flagged case
+  gets no payment reminder and no collections call. It gets `wait`, or a `support_call` (a certified agent
+  offering help, eligible hardship programmes first, no payment request before an option is offered) when one
+  is due: no programme offered yet, a plan ending within 10 days, a follow-up 30+ days after an offer that was
+  not taken up, or a vulnerable customer who would otherwise be contacted today. Every contact rule still
+  applies to it. Every flagged case has a certified owner. Eligible programmes go on the card.
+- **Capacity** (`nba/allocate.py`): support calls first (most exposed first), then the most valuable cases, into
+  the day's channel capacity and each working agent's outbound calls (assigned agent → same team → anyone;
+  certified agents only for hardship); a case whose best action is full gets its next best and the card says so
+  (`no_capacity`). Flagged cases without a certified agent get one as owner (`assign_owners`).
 - **Experiment**: cases in the bank's `no_contact_holdout` cell are left to the bank (rule `experiment_holdout`).
-- **Approval** (first that applies): vulnerability, hardship, balance ≥ `high_balance_cad` (5,000), digital batch.
+- **Approval** (first that applies), only when something is done, never for `wait`: vulnerability, hardship,
+  balance ≥ `high_balance_cad` (5,000), digital batch. Recorded with `nba/review.py`.
 - **Placeholders until gold**: `golden_customer_id` holds `crm_customer_id`; `evidence` is empty until P4's
-  `gold.text_features`; hardship level is `possible` from the case flag only.
+  `gold.text_features`; hardship level is `clear` when an agent or a customer form recorded it and `possible`
+  when only a model flagged it (P4's text features can raise it later).
 - **Names** follow the team's sample card: actions `agent_call`, `sms_reminder`, `email_reminder`, `push_reminder`,
-  `letter`, `wait`; channels `phone`, `sms`, `email`, `mail`, `push`; rules include `consent` and `contact_limit`.
+  `letter`, `wait`, plus `support_call` (added 3 Oct); channels `phone`, `sms`, `email`, `mail`, `push`; rules include `consent` and `contact_limit`.
 - **Open with the team**:
   - `risk_score` in `gold.nba_decisions` now holds the case risk (stub comment says "probability promise breaks").
   - Call cost: at $2.40 per call only ~800 calls are worth making and ~61k agent calls on shift go unused.
     If agent time on shift is already paid, set `call_cost_cad` to the true extra cost.
-  - `reason_code` list for overrides.
+  - ~~`reason_code` list for overrides~~: settled in `nba/review.py`, see `interfaces.md` question 5.
+
+### Hardship routing fix (3 Oct)
+
+**What was wrong.** Hardship cases were capped at the gentlest *collections* actions, so they got automated
+payment reminders (email, push) and could never get a call, even from a certified agent offering help. That
+asks for payment before offering a programme (POL-COLL-004 §4.2). The card said "route to a certified agent",
+but most of these cases had no agent at all (§4.5). Programme eligibility was built and tested but never used by
+the queue. Every flagged case needed an individual approval, 36,020 a day with high balance included.
+
+**What changed.**
+- `nba/actions.py`: new action `support_call` (phone, harshness 0, never valued with the collections effect).
+- `nba/hardship.py`: flagged cases get `wait` or `support_call` only; `support_reason` / `waiting_reason` say why;
+  hardship level from `hardship_source`; eligibility also checks `max_uses_12m`; `options` gives the card entries.
+- `nba/queue.py`: loads the hardship history (plan end, offers before the as-of date, broken plans, uses in 12
+  months) and months on book (card / loan / deposit opening dates, new rule sources in `features/sources.py`);
+  approval never for `wait`; the report section lists the flagged cases by situation.
+- `nba/allocate.py`: support calls placed first; `assign_owners` gives every flagged case a certified owner.
+- `nba/explain.py`: card text for each support reason and each reason to wait.
+- `common/interfaces.py`: `DecisionCard` gains `support_reason` and `hardship_options` (optional, see `interfaces.md`).
+- `nba/review.py`: a support call, like any call, needs its agent's acceptance.
+- `reports/data_quality_report.md` L11: 688 offers and 1,645 answers are dated after the snapshot; the queue ignores
+  them (an offer counts only if made before the as-of date, its answer only if given before it).
+
+**Effect on the 28 Sep queue (35,648 flagged cases).**
+
+| | Before | After |
+|---|---|---|
+| Payment reminder or collections call | 23,408 | 0 |
+| No agent at all | 29,032 | 0 (all owned by an active certified agent) |
+| Individual approvals (flagged cases) | 35,648 | 8,051 (support calls only) |
+| Support calls | 0 | 8,051: 3,830 first offers, 2,340 vulnerable, 1,739 follow-ups, 142 plan reviews |
+| Waiting, nothing due | – | 17,879: 10,372 on a plan, 6,217 offered in the last 30 days, 1,290 vulnerable with no contact due |
+| Waiting, call due but blocked by a rule | – | 9,718: do not call 4,901, consent 2,251, contact limit 687, dispute 672, representative 552, cease contact 386, experiment holdout 268, insolvency 1 |
+
+Individual approvals across the whole queue are now 8,306 (hardship 4,484, vulnerability 3,567, high balance 255),
+plus one sign-off for the 35,912-case digital batch. Breakdown regenerated on every run in
+`reports/model_evaluation.md` ("Hardship and vulnerable cases").
+
+**Still open.**
+- 4,901 due support calls are blocked by `do_not_call`, which includes the National Do Not Call List. POL-COLL-001
+  §5.3 says that list does not apply to collection calls (and a support call is not telemarketing): fixing that
+  rule would unblock most of them.
+- 2,251 are blocked by phone consent: a hardship letter or email offering the programmes would reach them.
+- `broken_plan_90d` is approximated (offers carry no break date): a plan accepted in the last 90 days that is
+  now broken.
+- Hardship cases on a running plan wait; payments on the plan are not checked yet.

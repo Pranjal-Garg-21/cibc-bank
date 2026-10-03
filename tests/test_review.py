@@ -17,7 +17,7 @@ AGENTS = [  # agent_id, role, status
 RECS = [  # recommendation_id, agent_id, action, channel, requires_approval, approval_reason
     ("R-CALL", "AG-1", "agent_call", "phone", False, None),
     ("R-HB", "AG-1", "agent_call", "phone", True, "high_balance"),
-    ("R-HARD", None, "email_reminder", "email", True, "hardship"),
+    ("R-HARD", "HS-1", "support_call", "phone", True, "hardship"),
     ("R-SMS1", None, "sms_reminder", "sms", True, "digital_batch"),
     ("R-SMS2", None, "sms_reminder", "sms", True, "digital_batch"),
     ("R-WAIT", "AG-2", "wait", None, False, None),
@@ -71,6 +71,9 @@ def test_approvers_by_reason(con):
     _rejects(con, "R-CALL", "TL-1", "approved", match="does not need approval")
     review.record(con, "R-HARD", "HS-1", "approved", ts=T0)
     review.record(con, "R-HB", "TL-1", "approved", ts=T0)
+    assert _states(con)["R-HARD"] == "waiting_agent"  # a support call is a call: its agent accepts it too
+    review.record(con, "R-HARD", "HS-1", "accepted", ts=T0)
+    assert _states(con)["R-HARD"] == "ready"
 
 
 def test_states_follow_the_decisions(con):
