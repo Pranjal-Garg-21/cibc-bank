@@ -14,7 +14,10 @@ Needs OPENROUTER_API_KEY (environment or the gitignored .env) and warehouse/rag/
 """
 from __future__ import annotations
 
-import readline  # noqa: F401  (arrow keys and history in the prompt)
+try:
+    import readline  # noqa: F401  (arrow keys and history in the prompt; not available on Windows)
+except ImportError:
+    pass
 import time
 from datetime import date
 

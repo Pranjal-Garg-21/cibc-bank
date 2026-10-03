@@ -18,16 +18,33 @@ Settings: `customer_path:` in `config/settings.yaml`.
 
 ## 2. Run it
 
+**For agents: the dashboard.** Sign in once with an agent ID, see your cases, then type plain questions. No flags.
+
 ```bash
-pytest tests/test_customer_path.py
-python scripts/ask_customer.py "Summarise the most recent recorded call: what did the customer say and agree to?" --case CS-2026-614370
-python scripts/ask_customer.py "..." --case CS-2026-614370 --show-sources        # every item the model read
-python scripts/ask_customer.py "..." --case CS-2026-614370 --as-agent AG-0001     # access refused
-python scripts/ask_customer.py "What did they promise?" --customer G-0200543 --as-of 2026-09-10
+python scripts/agent_dashboard.py
 ```
 
-The CLI asks as the agent who holds the case on the as-of date (or as a team lead if nobody does). It needs
-`OPENROUTER_API_KEY` and a writable warehouse (the audit log is written).
+```
+your agent ID: AG-2407                     -> your cases on the snapshot date, most overdue first (team leads: the team's)
+ask> 3                                     -> opens case 3 from the list (or type a case ID, or a customer ID)
+CS-2026-614370 ask> what did they agree to on the last call?        -> answered from this customer's history
+CS-2026-614370 ask> What is the grace period before a promise is broken?   -> a rules question: policy documents
+ask> Summarise the most recent recorded call on case CS-2026-614370  -> a case ID in the question opens that case
+policy: ...  /  case: ...                  -> force the destination if the guess is wrong
+cases · close · sources · help · quit      -> short words, with or without "/"
+```
+
+Where a line goes is decided by `ask/rag/identify.py` (no model call): a case or customer ID in the text opens that
+customer; with a case open, anything that is not a rules question (policy, must, allowed, CASL, grace period, ...) is
+about that customer; otherwise the policy documents answer. The answer panel always says which source it used.
+When P2's router is wired into the app this logic moves there.
+
+**For developers:** `scripts/ask_customer.py "question naming CS-2026-614370"` prints everything the path did for one
+question. Its flags are only for testing: `--as-of` (another date), `--as-agent` / `--as-lead` (check refusals),
+`--show-sources`, `--budget`. `pytest tests/test_customer_path.py tests/test_identify.py`.
+
+Both need `OPENROUTER_API_KEY`. If another process holds the database, the dashboard opens it read-only and answers
+are not logged (it says so).
 
 ## 3. How it works
 

@@ -1,6 +1,9 @@
-"""Ask the customer path one question from the command line and see exactly what happens.
+"""Developer tool: ask the customer path ONE question and print everything it did. Agents use
+scripts/agent_dashboard.py instead (sign in once, type plain questions).
 
-    python scripts/ask_customer.py "Summarise the most recent recorded call: what did the customer say and agree to?" --case CS-2026-614370
+The case is found in the question itself; the flags are only for testing (another date, another user, more output).
+
+    python scripts/ask_customer.py "Summarise the most recent recorded call on case CS-2026-614370: what did the customer say and agree to?"
     python scripts/ask_customer.py "What did the customer promise last?" --customer G-0200543 --as-of 2026-09-10
     python scripts/ask_customer.py "..." --case CS-2026-614370 --show-sources   # print every item the model was given
     python scripts/ask_customer.py "..." --case CS-2026-614370 --as-agent AG-0001   # check the access rule refuses
@@ -15,6 +18,7 @@ import time
 from datetime import date
 
 from trustissues.ask.rag.customer_path import CustomerAccessDenied, case_assignee, resolve_case, run_customer
+from trustissues.ask.rag.identify import identify
 from trustissues.common import config, db
 from trustissues.common.audit import AuditLog
 from trustissues.common.llm import LLM
@@ -23,7 +27,7 @@ from trustissues.common.llm import LLM
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("question")
-    who = ap.add_mutually_exclusive_group(required=True)
+    who = ap.add_mutually_exclusive_group()  # normally neither: the case ID is read from the question
     who.add_argument("--case", help="case ID; the customer is found through gold.case_customer")
     who.add_argument("--customer", help="golden customer ID")
     ap.add_argument("--as-of", default=config.AS_OF_DATE.isoformat())
@@ -34,6 +38,11 @@ def main() -> None:
     ap.add_argument("--show-sources", action="store_true")
     a = ap.parse_args()
 
+    if not (a.case or a.customer):
+        tg = identify(a.question)
+        a.case, a.customer = tg.case_id, tg.customer_id
+        if not (a.case or a.customer):
+            sys.exit("name a case (CS-2026-614370) or customer (G-0200543) in the question")
     as_of = date.fromisoformat(a.as_of)
     con = db.connect(read_only=False)
     gid = a.customer or resolve_case(con, a.case)

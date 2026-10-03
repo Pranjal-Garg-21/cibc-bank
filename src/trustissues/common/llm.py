@@ -41,6 +41,10 @@ class LLMOutputError(LLMError):
     """The model answered, but not in the requested JSON shape."""
 
 
+class LLMNotConfigured(LLMError):
+    """No API key (or similar): retrying cannot help, so the call fails at once."""
+
+
 class Backend(Protocol):
     def complete(self, *, model: str, system: str, user: str, max_tokens: int, temperature: float) -> str: ...
 
@@ -89,7 +93,7 @@ class OpenAICompatibleBackend:
     def complete(self, *, model, system, user, max_tokens, temperature) -> str:
         key = os.environ.get(self.key_env)
         if not key:
-            raise LLMError(f"{self.key_env} is not set (put it in the environment or in the repo's .env file)")
+            raise LLMNotConfigured(f"{self.key_env} is not set (put it in the environment or in the repo's .env file)")
         body = json.dumps({
             "model": model, "max_tokens": max_tokens, "temperature": temperature,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -223,6 +227,8 @@ class LLM:
             try:
                 return self._backend().complete(model=model, system=system, user=user,
                                                 max_tokens=max_tokens, temperature=temperature)
+            except LLMNotConfigured:
+                raise
             except LLMTruncated as e:  # not a service failure: the answer needs more room, so give it more
                 last = e
                 if max_tokens >= cap:
