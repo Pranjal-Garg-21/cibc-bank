@@ -4,11 +4,11 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 
 ## 1. Summary
 
-- **51 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
-- **23 further checks found nothing** (section 10), so the coverage is visible.
+- **55 issues found** across the 31 tables, plus 2 context events from the operations log that are not data defects.
+- **23 further checks found nothing** (section 11), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **flagged** 19, **documented** 13, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
-- **Schema drift:** the loader recorded 6 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
+- How each issue was handled: **flagged** 19, **documented** 17, **standardised** 12, **fixed** 5, **deferred to identity layer** 1, **excluded from current view** 1.
+- **Schema drift:** the loader recorded 0 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
 **How to read the handling column**
@@ -31,6 +31,8 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | F9 | Card phone numbers masked (`450672xxx81`): digits missing | 384,422 | 58.2% | high | Flagged |
 | R6 | Account snapshot points to a CRM customer that does not exist | 328,891 | 2.62% | high | Flagged |
 | F12 | Deposit customer key lost its leading zeros (7 or 8 digits instead of the 10-digit CIF) | 156,837 | 20.1% | high | Fixed |
+| T1 | Collections cases change abruptly from April 2026: new cases surge, cures barely grow, and the 30-day cure rate falls | 147,733 | 40.2% | high | Documented |
+| T2 | Promise break rate rises from May 2026, mostly because fewer promises are for the full overdue amount | 76,727 | 37.5% | high | Documented |
 | R2 | Contact record points to a CRM customer that does not exist | 75,500 | 2.81% | high | Flagged |
 | R10 | Same person stored as more than one CRM record (identical national-ID hash) | 36,992 | 3.63% | high | Deferred to identity layer |
 | K1 | Contact channel renamed upstream: `channel` is empty and the value is in `channel_v2` | 19,463 | 55.1% | high | Fixed |
@@ -54,8 +56,10 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | R4 | Agent note points to a CRM customer that does not exist | 21,592 | 2.84% | medium | Flagged |
 | M5 | Bureau record says `hit` but has no risk score | 18,937 | 1.89% | medium | Flagged |
 | L2 | Loan delinquency bucket disagrees with days past due | 14,769 | 3.65% | medium | Flagged |
+| T4 | Every promise for 90% to 99.9% of the overdue amount was broken, while promises for the full amount almost never are | 11,277 | 5.52% | medium | Documented |
 | K4 | Bureau file converted with a shifted column for some rows: inquiry counts impossible (3 months above 6 months, or 6 above 12) | 9,918 | 0.99% | medium | Flagged |
 | F18 | Deposit balances in two currencies (7,780 USD accounts among CAD) with no exchange-rate field in the data | 7,780 | 1.00% | medium | Flagged |
+| T3 | Outcomes are recorded late: case cures stop before the snapshot date, and some promises stay open after their grace period | 5,286 | 16.0% | medium | Documented |
 | L3 | Case bucket disagrees with current days past due (one band higher than dpd implies) | 3,807 | 1.04% | medium | Flagged |
 | L7 | Promise marked kept but the amount paid is below the promised amount | 2,844 | 1.19% | medium | Flagged |
 | R5 | Call transcript points to a CRM customer that does not exist | 695 | 2.78% | medium | Flagged |
@@ -441,7 +445,43 @@ Fields that cannot all be true at once. Neither value was changed; the rows are 
 
 **Handling (documented).** Not changed.
 
-## 8. Is the data uniform now?
+## 8. Shifts and patterns that affect models
+
+Not wrong values in single rows, but patterns across time or across records that change what a model or a baseline learns. Nothing was changed. None of these is explained by an event in the operations log.
+
+### T1. Collections cases change abruptly from April 2026: new cases surge, cures barely grow, and the 30-day cure rate falls
+
+**Affected:** 147,733 of 367,229 (40.2%) · **Tables:** `collections_cases` · **Severity:** high
+
+*Evidence:* cases opened: 9,430 in Mar 2026, 13,479 in Apr, 33,001 in Aug. Cases paid up per month only move between 8,962 and 12,615 from Apr to Aug. Paid up within 30 days of opening: 60.8% of cases opened Oct 2025 to Mar 2026, 44.0% in Apr, 28.5% in Jul 2026. Cases opened in Apr 2026 that ended charged off, in legal, on insolvency hold or with an agency: 2,361, against 71 a month for Oct 2025 to Mar 2026. Before Apr 2026 the history looks fully settled: 0 of those cases are still open and 98.2% were paid up.
+
+**Handling (documented).** Not changed: the values agree with each other, and no event in the operations log explains the break. Anything trained or measured across Apr 2026 must allow for it: split by time, calibrate on the most recent fully observed months, and do not compare cure or roll rates across the break without saying so. In P3's case model the not-cured rate is 41% in training, 62% in validation and 80% in the holdout, so a model calibrated on earlier months under-predicts; the bank's own `cure_30d` score is badly calibrated after the break too (calibration error 0.25, `reports/model_evaluation.md`). Affected column counts cases opened from Apr 2026.
+
+### T2. Promise break rate rises from May 2026, mostly because fewer promises are for the full overdue amount
+
+**Affected:** 76,727 of 204,369 (37.5%) · **Tables:** `promises_to_pay` · **Severity:** high
+
+*Evidence:* broken or partly kept: 36.4% of promises made Jan 2025 to Apr 2026, then 47.5% in May, 57.7% in Jun and 64.5% in Aug 2026. Promises for the full overdue amount: 49.4% of them before May, 15.2% in Aug. Within each kind the rate moves less: full amount 2.1% to 2.9%, part amount 69.9% to 75.5%. Average days past due when the promise was made: 29.4 before May, 45.8 in Aug.
+
+**Handling (documented).** Not changed. Most of the rise is a change in mix: promises for the full amount are almost never broken, and they become rarer. The rest comes with promises made later in delinquency. It starts a month after T1. Handle it as T1: time-based splits and calibration on recent months. The certified promise-kept rate for periods after Apr 2026 is not comparable with earlier periods without this note. Affected column counts resolved promises made from May 2026.
+
+### T3. Outcomes are recorded late: case cures stop before the snapshot date, and some promises stay open after their grace period
+
+**Affected:** 5,286 of 33,005 (16.0%) · **Tables:** `collections_cases`, `promises_to_pay` · **Severity:** medium
+
+*Evidence:* last case cure recorded on 2026-09-15, while other case statuses run to 2026-09-28 and the snapshot is 2026-09-28; the open promises past their grace period were made in Sep 2026.
+
+**Handling (documented).** Not changed. Use the last fully recorded outcome date (the latest cure date), not the snapshot date, as the end of any outcome window: a case or promise whose window ends after it is unlabelled, not a failure. The P3 training sets already cut their labels there (`features/build_case_training_set.py`, `nba/actions.py`). Affected column counts open promises whose due date plus grace days is before the snapshot date.
+
+### T4. Every promise for 90% to 99.9% of the overdue amount was broken, while promises for the full amount almost never are
+
+**Affected:** 11,277 of 204,369 (5.52%) · **Tables:** `promises_to_pay` · **Severity:** medium
+
+*Evidence:* 11,277 of 11,277 resolved promises for 90% to 99.9% of the overdue amount were broken (typical shortfall $12.47); for exactly the full amount 1.9% were broken, for 50% to 90% 81.6%. The overdue amount on the promise matches the contact that created it for 96.0% of the 90% to 99.9% promises.
+
+**Handling (documented).** Not changed. Nothing in the data explains why a promise a few dollars short of the full amount should always break, so this is most likely a rule of how the synthetic data was made, not customer behaviour. It is not outcome leakage: both amounts are on record when the promise is made (see evidence). Break-risk models learn it, and it carries much of the P3 promise model's lead over the bank's `ptp_break` (`reports/model_evaluation.md`). Do not present it as a finding about customers.
+
+## 9. Is the data uniform now?
 
 Partly, and the difference matters.
 
@@ -460,7 +500,7 @@ Partly, and the difference matters.
 - **Currency is mixed** in deposit balances (flag `dq_non_cad`); no conversion is possible without a rate.
 - **Not examined:** free-text content (notes, transcripts), timezone differences between local and UTC timestamps, and enum values against reference lists beyond the contact codes in C20 and the case and spelling check that found F17.
 
-## 9. Method and limits
+## 10. Method and limits
 
 1. The six operations-log events were each searched for in the data, and the signature in the incident reports (a count, a drop in calls, a rate against baseline) was checked.
 2. For unlisted issues the data was profiled: formats per field per system, references between tables, missing values, contradictions between fields, reference codes, and case or spacing variants in all 192 enum columns.
@@ -468,7 +508,7 @@ Partly, and the difference matters.
 4. **Not covered yet:** unmatched records and open review items. They come from the customer identity step, which is not built; this report will gain them when it is.
 5. Unlisted issues may remain. The checks cover what was thought of; new data re-runs them automatically but does not add new kinds of check.
 
-## 10. Checks that found nothing
+## 11. Checks that found nothing
 
 | ID | Check | Rows checked |
 |---|---|---:|
@@ -496,7 +536,7 @@ Partly, and the difference matters.
 | C19 | Bureau score outside 300 to 900 | 1,000,000 |
 | C20 | Contact reference codes (strategy, outcome, templates, scripts) not in the reference table | 2,688,337 |
 
-## 11. Reproduce
+## 12. Reproduce
 
 ```bash
 python -m trustissues.factory.quality.dq_report     # applies the flags and derived columns, rewrites this file
