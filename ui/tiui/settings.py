@@ -49,8 +49,9 @@ class Settings:
             raise ValueError("Shared demo access requires a password and loopback hosts only.")
         if not self.require_mfa and not self.demo:
             raise ValueError("MFA may be disabled only with UI_DEMO=1 and synthetic data.")
-        if not 1 <= self.idle_minutes <= 30 or not 1 <= self.max_hours <= 12:
-            raise ValueError("Session limits must be 1-30 idle minutes and 1-12 absolute hours.")
+        idle_max = 60 if self.demo else 30
+        if not 1 <= self.idle_minutes <= idle_max or not 1 <= self.max_hours <= 12:
+            raise ValueError(f"Session limits must be 1-{idle_max} idle minutes and 1-12 absolute hours.")
         if not self.allowed_hosts or "*" in self.allowed_hosts:
             raise ValueError("Set an explicit list of UI_ALLOWED_HOSTS; wildcards are not accepted.")
 

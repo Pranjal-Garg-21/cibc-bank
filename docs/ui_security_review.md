@@ -29,10 +29,11 @@ unsupported roles are refused. Existing accounts and MFA keys are preserved. Per
 revocation are disabled. This loopback-only mode visibly disables MFA; stopping it ends all demo sessions.
 The inspected warehouse has 484 active agents, 135 active senior agents and 75 active team leads.
 
-Follow-up: shared demo sessions now have no automatic idle or absolute expiry, as requested. The countdown and
-expiry warning are removed for this mode. Explicit sign-out, account-status checks, session revocation and the
-three-session cap still work. Restarting ends all sessions. `UI_SESSION_TIMEOUTS=1` restores the normal limits;
-disabling expiry is refused outside a labelled demo.
+Latest follow-up: shared demo sessions now last one hour, as requested: 60 minutes idle and a one-hour absolute
+limit. This supersedes the temporary no-expiry setting. The countdown uses server-provided durations anchored
+to `performance.now()` instead of comparing the server's sign-in timestamp with the browser's wall clock.
+Explicit sign-out, account-status checks, session revocation and the three-session cap remain active.
+Restarting ends all sessions. Explicitly disabling expiry remains restricted to labelled demos.
 
 ## Implemented controls
 
@@ -49,7 +50,7 @@ disabling expiry is refused outside a labelled demo.
 
 ## Verification
 
-- Backend: **79 passed, 3 skipped**. Skips concern unmerged real P2/P3 integrations.
+- Backend: **80 passed, 3 skipped**. Skips concern unmerged real P2/P3 integrations.
 - Frontend: **14 passed**; TypeScript and production build passed.
 - `npm audit` and `pip-audit -r ui/requirements.txt`: no known dependency vulnerabilities at review time.
 - Chromium: authenticator sign-in, 32-character recovery challenge, sensitive-action cancellation and verified retry,
@@ -60,6 +61,8 @@ disabling expiry is refused outside a labelled demo.
 - Shared-access browser verification confirmed the existing account-file digest and warehouse size/mtime remained unchanged.
 - Follow-up: a simulated 24-hour backend session stayed valid without automatic expiry; Chromium showed no
   countdown or idle warning after advancing 16 minutes, and explicit sign-out still succeeded.
+- One-hour update: a backend session survives the old 15-minute cutoff and expires at exactly 3600 seconds,
+  including after activity. Chromium checks login with a browser clock one day ahead and delayed expiry polling.
 
 ## Deployment work
 

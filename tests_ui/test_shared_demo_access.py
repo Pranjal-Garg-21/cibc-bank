@@ -46,6 +46,26 @@ def test_demo_without_automatic_expiry_remains_signed_in(ui_settings):
         assert c.get('/api/session/me').status_code == 401
 
 
+def test_shared_demo_one_hour_session_boundary(ui_settings):
+    settings = replace(ui_settings, demo_password=PASSWORD, idle_minutes=60, max_hours=1)
+    app = create_app(settings)
+    now = [0.0]
+    app.state.sessions.clock = lambda: now[0]
+    with TestClient(app) as c:
+        r = c.post('/api/session/login', json={'staff_id': 'A1', 'role': 'agent', 'password': PASSWORD})
+        assert r.status_code == 200 and 'Max-Age=3600' in r.headers['set-cookie']
+        me = c.get('/api/session/me').json()
+        assert me['idle_minutes'] == 60 and me['max_hours'] == 1
+        now[0] = 15 * 60
+        assert c.get('/api/session/state').json()['absolute_seconds_left'] == 45 * 60
+        now[0] = 3599
+        assert c.get('/api/session/state').json()['absolute_seconds_left'] == 1
+        # Activity can renew idle time, but the entire session still ends at one hour.
+        c.post('/api/session/keepalive', json={}, headers={'X-CSRF-Token': me['csrf_token']})
+        now[0] = 3600
+        assert c.get('/api/session/state').status_code == 401
+
+
 def test_shared_access_uses_live_staff_and_preserves_accounts(ui_settings, tmp_path):
     before = ui_settings.accounts_file.read_bytes()
     accounts = tmp_path / 'no-accounts-created.json'

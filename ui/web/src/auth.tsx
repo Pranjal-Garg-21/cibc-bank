@@ -123,18 +123,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 /** Idle lock (§9.1): warn two minutes before the server's idle timeout, then sign out. */
-export function useIdleLock(idleMinutes: number | null, maxHours: number | null, signedInAt: string) {
+export function useIdleLock(idleMinutes: number | null, maxHours: number | null) {
   const { signOut } = useAuth()
   const [warning, setWarning] = useState(false)
   const [secondsLeft, setSecondsLeft] = useState<number | null>(idleMinutes === null && maxHours === null ? null
     : Math.min(idleMinutes === null ? Infinity : idleMinutes * 60, maxHours === null ? Infinity : maxHours * 3600))
-  const deadlines = useRef({ idle: idleMinutes === null ? Infinity : Date.now() + idleMinutes * 60000,
-    absolute: maxHours === null ? Infinity : Date.parse(signedInAt) + maxHours * 3600000 })
+  // The browser's wall clock can differ from the server. Anchor the server's remaining durations to a
+  // monotonic clock; never compare signed_in_at with Date.now() to decide whether to sign someone out.
+  const deadlines = useRef({ idle: idleMinutes === null ? Infinity : performance.now() + idleMinutes * 60000,
+    absolute: maxHours === null ? Infinity : performance.now() + maxHours * 3600000 })
   const warningRef = useRef(false)
   const lastKeepalive = useRef(0)
   const ending = useRef(false)
   const sync = useCallback((state: SessionState) => {
-    const now = Date.now()
+    const now = performance.now()
     deadlines.current = { idle: state.idle_seconds_left === null ? Infinity : now + state.idle_seconds_left * 1000,
       absolute: state.absolute_seconds_left === null ? Infinity : now + state.absolute_seconds_left * 1000 }
   }, [])
@@ -142,12 +144,12 @@ export function useIdleLock(idleMinutes: number | null, maxHours: number | null,
     let disposed = false
     let lastPoll = 0
     const poll = () => {
-      lastPoll = Date.now()
+      lastPoll = performance.now()
       void api.get<SessionState>('/api/session/state').then((state) => { if (!disposed) sync(state) }).catch(() => null)
     }
     const bump = () => {
-      if (document.visibilityState !== 'visible' || warningRef.current || ending.current || Date.now() - lastKeepalive.current < 60000) return
-      lastKeepalive.current = Date.now()
+      if (document.visibilityState !== 'visible' || warningRef.current || ending.current || performance.now() - lastKeepalive.current < 60000) return
+      lastKeepalive.current = performance.now()
       void api.post<SessionState>('/api/session/keepalive').then((state) => { if (!disposed) sync(state) }).catch(() => null)
     }
     const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
@@ -156,7 +158,7 @@ export function useIdleLock(idleMinutes: number | null, maxHours: number | null,
     document.addEventListener('visibilitychange', visibility)
     poll()
     const t = window.setInterval(() => {
-      const now = Date.now()
+      const now = performance.now()
       const deadline = Math.min(deadlines.current.idle, deadlines.current.absolute)
       const remaining = Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null
       setSecondsLeft(remaining)

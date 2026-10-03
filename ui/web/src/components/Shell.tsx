@@ -55,7 +55,7 @@ function accessList(me: Me): string[] {
 export function Shell() {
   const me = useMe()
   const { signOut } = useAuth()
-  const { warning, stay, secondsLeft } = useIdleLock(me.idle_minutes, me.max_hours, me.signed_in_at)
+  const { warning, stay, secondsLeft } = useIdleLock(me.idle_minutes, me.max_hours)
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileTab, setProfileTab] = useState<'profile' | 'security'>('profile')
 
