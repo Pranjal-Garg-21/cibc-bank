@@ -41,16 +41,16 @@ Reliability (score deciles):
 ## v0 LightGBM vs the incumbent
 
 Trained on 127,642 promises created before 2026-05-01, early-stopped
-(best iteration 563) and isotonic-calibrated on the 12,140 promises created
+(best iteration 576) and isotonic-calibrated on the 12,140 promises created
 from then until 2026-06-30. 45 features from `features/sql/`.
 Same 32,869 holdout promises for both models.
 
 | Metric | Incumbent ptp_break | v0 (calibrated) | v0 (raw) | v0 without amount features |
 |---|---|---|---|---|
-| AUC | 0.6946 | 0.9500 | 0.9504 | 0.6895 |
-| Brier score | 0.2293 | 0.0860 | 0.0860 | 0.2194 |
-| Calibration error | 0.1120 | 0.0175 | 0.0113 | 0.0870 |
-| Caught in riskiest 20% | 27.0% | 32.5% | 32.5% | 26.0% |
+| AUC | 0.6946 | 0.9503 | 0.9506 | 0.6907 |
+| Brier score | 0.2293 | 0.0857 | 0.0858 | 0.2193 |
+| Calibration error | 0.1120 | 0.0177 | 0.0128 | 0.0873 |
+| Caught in riskiest 20% | 27.0% | 32.5% | 32.5% | 26.1% |
 | Promises | 32,869 | 32,869 | 32,869 | 32,869 |
 
 The riskiest 20% can hold at most 20% / 61.4% = 32.5% of
@@ -73,10 +73,10 @@ Calibration matters here: the broken rate is 61.4% on the holdout, against
 |---|---|
 | Promises scored | 32,869 |
 | Broken rate (actual) | 61.4% |
-| Mean score | 0.629 |
-| AUC | **0.9500** |
-| Brier score (lower is better) | 0.0860 |
-| Expected calibration error | 0.0175 |
+| Mean score | 0.628 |
+| AUC | **0.9503** |
+| Brier score (lower is better) | 0.0857 |
+| Expected calibration error | 0.0177 |
 | Broken promises caught in riskiest 20% | **32.5%** |
 | Broken rate inside riskiest 20% | 100.0% |
 
@@ -84,38 +84,38 @@ Reliability (score deciles):
 
 | Decile | Promises | Mean score | Actual broken rate |
 |---|---|---|---|
-| 1 | 6,175 | 0.000 | 0.000 |
-| 2 | 3,472 | 0.197 | 0.211 |
-| 3 | 2,829 | 0.482 | 0.439 |
-| 4 | 3,704 | 0.725 | 0.694 |
-| 5 | 3,528 | 0.809 | 0.751 |
-| 6 | 2,704 | 0.974 | 0.950 |
-| 7 | 10,457 | 0.999 | 0.998 |
+| 1 | 6,273 | 0.002 | 0.003 |
+| 2 | 2,247 | 0.178 | 0.203 |
+| 3 | 4,433 | 0.439 | 0.405 |
+| 4 | 3,295 | 0.739 | 0.705 |
+| 5 | 3,267 | 0.800 | 0.744 |
+| 6 | 2,731 | 0.965 | 0.944 |
+| 7 | 10,623 | 0.999 | 0.997 |
 
 ### SHAP check (mean |SHAP| on a holdout sample, top 20)
 
 | Rank | Feature | Mean abs SHAP (log-odds) |
 |---|---|---|
-| 1 | `ptp_to_overdue_ratio` | 4.6973 |
-| 2 | `dpd_at_creation` | 0.6868 |
-| 3 | `ptp_amount` | 0.2736 |
-| 4 | `product` | 0.2224 |
-| 5 | `min_due_to_ptp_amount` | 0.1660 |
-| 6 | `overdue_at_creation` | 0.1558 |
-| 7 | `card_utilisation` | 0.1009 |
-| 8 | `balance_to_limit` | 0.1008 |
-| 9 | `days_to_due_at_creation` | 0.0565 |
-| 10 | `payment_made_last_snapshot` | 0.0393 |
-| 11 | `contacts_30d` | 0.0365 |
-| 12 | `days_since_snapshot` | 0.0304 |
-| 13 | `ptp_amount_to_salary` | 0.0285 |
-| 14 | `days_since_last_contact` | 0.0269 |
-| 15 | `calls_30d` | 0.0250 |
-| 16 | `salary_change_pct` | 0.0248 |
-| 17 | `snapshots_observed_12m` | 0.0246 |
-| 18 | `salary_last` | 0.0244 |
-| 19 | `dpd_last_snapshot` | 0.0226 |
-| 20 | `days_since_last_broken` | 0.0221 |
+| 1 | `ptp_to_overdue_ratio` | 4.6680 |
+| 2 | `dpd_at_creation` | 0.6902 |
+| 3 | `ptp_amount` | 0.2824 |
+| 4 | `product` | 0.2269 |
+| 5 | `min_due_to_ptp_amount` | 0.1676 |
+| 6 | `overdue_at_creation` | 0.1472 |
+| 7 | `balance_to_limit` | 0.0958 |
+| 8 | `card_utilisation` | 0.0953 |
+| 9 | `days_to_due_at_creation` | 0.0563 |
+| 10 | `payment_made_last_snapshot` | 0.0395 |
+| 11 | `contacts_30d` | 0.0377 |
+| 12 | `days_since_snapshot` | 0.0312 |
+| 13 | `calls_30d` | 0.0281 |
+| 14 | `salary_change_pct` | 0.0276 |
+| 15 | `days_since_last_contact` | 0.0276 |
+| 16 | `ptp_amount_to_salary` | 0.0275 |
+| 17 | `salary_last` | 0.0273 |
+| 18 | `dpd_last_snapshot` | 0.0247 |
+| 19 | `days_since_last_broken` | 0.0233 |
+| 20 | `snapshots_observed_12m` | 0.0214 |
 <!-- /section:v0 -->
 
 <!-- section:action_values -->
@@ -159,18 +159,18 @@ The rates are observational, so the values rank actions; they do not prove uplif
 
 | Action | Cases | With open promise | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
-| `wait` | 28,871 | 11,210 | 0.93 | 0.00 | 18,256 |
-| `agent_call` | 19,816 | 5,711 | 0.89 | 54.92 | 99 |
-| `email_reminder` | 17,822 | 7,692 | 0.90 | 22.94 | 17,822 |
-| `sms_reminder` | 12,983 | 3,947 | 0.85 | 18.60 | 12,983 |
-| `push_reminder` | 5,992 | 2,244 | 0.81 | 5.12 | 5,992 |
-| `letter` | 575 | 142 | 0.99 | 30.13 | 18 |
+| `wait` | 28,872 | 11,211 | 0.93 | 0.00 | 18,256 |
+| `agent_call` | 19,814 | 5,709 | 0.89 | 54.91 | 99 |
+| `email_reminder` | 17,823 | 7,693 | 0.89 | 22.93 | 17,823 |
+| `sms_reminder` | 12,983 | 3,947 | 0.85 | 18.61 | 12,983 |
+| `push_reminder` | 5,992 | 2,244 | 0.81 | 5.11 | 5,992 |
+| `letter` | 575 | 142 | 0.98 | 30.13 | 18 |
 
 | Approval reason | Cases |
 |---|---|
-| none | 30,889 |
+| none | 30,888 |
 | hardship | 23,513 |
-| digital_batch | 19,244 |
+| digital_batch | 19,245 |
 | vulnerability | 12,135 |
 | high_balance | 278 |
 
@@ -192,26 +192,26 @@ Example decision card:
 {
   "recommended_action": "push_reminder",
   "channel": "push",
-  "risk_score": 0.8333,
+  "risk_score": 0.8396,
   "top_reasons": [
     {
       "feature": "ptp_to_overdue_ratio",
       "text": "Promised 60% of the overdue amount",
-      "contribution": 4.4908
+      "contribution": 4.492
     },
     {
       "feature": "ptp_amount",
       "text": "Promised $105",
-      "contribution": 0.5279
+      "contribution": 0.4885
     },
     {
       "feature": "product",
       "text": "Product: personal_loan",
-      "contribution": 0.1996
+      "contribution": 0.1822
     }
   ],
   "runner_up_action": "email_reminder",
-  "why_beat_runner_up": "Expected net $1.89 vs $1.48 for email_reminder ($0.41 more after contact cost)",
+  "why_beat_runner_up": "Expected net $1.91 vs $1.49 for email_reminder ($0.42 more after contact cost)",
   "blocked_actions": [
     {
       "action": "agent_call",
@@ -221,7 +221,7 @@ Example decision card:
   "evidence": [],
   "requires_approval": true,
   "approval_reason": "hardship",
-  "summary": "High risk of breaking (0.83): Promised 60% of the overdue amount; Promised $105. Send an app push reminder. Hardship or vulnerability sign: route to a certified agent."
+  "summary": "High risk of breaking (0.84): Promised 60% of the overdue amount; Promised $105. Send an app push reminder. Hardship or vulnerability sign: route to a certified agent."
 }
 ```
 <!-- /section:nba_queue -->
