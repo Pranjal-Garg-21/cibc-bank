@@ -1,0 +1,4 @@
+# UI server only (ui/). The backend's own packages come from the repo's requirements.txt.
+fastapi==0.141.1     # API
+uvicorn==0.52.4      # server
+httpx==0.28.1        # tests only (FastAPI TestClient)

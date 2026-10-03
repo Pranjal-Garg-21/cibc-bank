@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+
+/* Formal dark theme (docs/ui_design.md §8). Structural colour is grey; colour carries meaning only. */
+@theme {
+  --color-bg: #0e1116;
+  --color-surface: #151a21;
+  --color-raised: #1c232c;
+  --color-border: #2a333e;
+  --color-border-strong: #3a4552;
+  --color-text: #e6eaf0;
+  --color-muted: #a3adba;
+  --color-faint: #7d8896;
+  --color-accent: #2f5a8f;
+  --color-accent-hover: #3a6aa6;
+  --color-accent-text: #7ba3d9;
+  --color-ok: #5bb98c;
+  --color-warn: #e0b04f;
+  --color-danger: #e5736b;
+  --color-info: #7ba3d9;
+
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-bg);
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent-text);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: #2f5a8f80;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  dialog::backdrop {
+    background: #0008;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Printed decision cards and reports: light, with the confidentiality footer. */
+@media print {
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  nav, header, .no-print {
+    display: none !important;
+  }
+  .print-footer {
+    display: block !important;
+  }
+  * {
+    border-color: #999 !important;
+    color: #000 !important;
+    background: transparent !important;
+  }
+}
