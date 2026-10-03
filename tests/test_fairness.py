@@ -18,10 +18,10 @@ def _rows(n_per_group: dict[str, int], miscalibrated: str | None = None, seed: i
             cid = f"{g}-{i}"
             p = rng.uniform(0.1, 0.6)
             y = int(rng.random() < p)
-            rows.append({"crm_customer_id": cid, "label": y, "ours": p + (0.3 if g == miscalibrated else 0.0), "bank": p})
+            rows.append({"golden_customer_id": cid, "label": y, "ours": p + (0.3 if g == miscalibrated else 0.0), "bank": p})
             if g != "missing-from-crm":
                 groups[cid] = g
-    gdf = pd.DataFrame({"gender_code": list(groups.values())}, index=pd.Index(list(groups), name="crm_customer_id"))
+    gdf = pd.DataFrame({"gender_code": list(groups.values())}, index=pd.Index(list(groups), name="golden_customer_id"))
     return pd.DataFrame(rows), gdf
 
 
@@ -42,7 +42,7 @@ def test_a_miscalibrated_group_is_flagged_and_only_for_that_score():
 
 def test_missing_and_unmatched_groups_are_shown_but_not_screened():
     df, groups = _rows({"F": 3000, "M": 3000, "missing-from-crm": 3000})
-    df.loc[df["crm_customer_id"].str.startswith("missing"), "ours"] += 0.3  # badly scored, but not a protected group
+    df.loc[df["golden_customer_id"].str.startswith("missing"), "ours"] += 0.3  # badly scored, but not a protected group
     t, overall = fairness.model_by_group(df, groups, "gender_code")
     assert fairness.NOT_IN_CRM in set(t["group"])
     assert not any(fairness.NOT_IN_CRM in f for f in fairness.model_flags(t, overall, "ours"))
@@ -62,6 +62,7 @@ def test_report_holds_aggregates_only():
     text = fairness.build_report(con)
     ids = set(sources.protected_attributes(con).df()["crm_customer_id"].sample(2000, random_state=1))
     assert not ids & set(re.findall(r"\b[A-Z]{3}-\d{4}\b", text))
+    assert not re.search(r"\bG-\d{7}\b", text)  # no golden customer ID either
     for label in fairness.ATTRIBUTES.values():
         assert label in text
 

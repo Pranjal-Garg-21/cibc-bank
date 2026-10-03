@@ -172,13 +172,13 @@ if it helps on both folds**; otherwise delete it and record the result.
 
 ## Step 7. Governance gates, before anyone uses the new queue (1 h)
 
-- [ ] **Fairness**: protected attributes joined through `customer_xref` (still only in `nba/fairness.py`);
+- [x] **Fairness**: protected attributes joined through `customer_xref` (still only in `nba/fairness.py`);
       `python -m trustissues.nba.fairness`. No new calibration flag for our models; the "not in CRM" group shrinks to
       the unresolved cases; re-check the small language groups flagged on 3 Oct.
-- [ ] **Proxy audit** (in the same report): any new feature group pushing an attribute's proxy AUC above 0.60 is
+- [x] **Proxy audit** (in the same report): any new feature group pushing an attribute's proxy AUC above 0.60 is
       reviewed, and dropped if the outcome check shows that group treated differently.
-- [ ] **Monitoring**: reset the drift reference to the new holdout; `python -m trustissues.governance.monitoring`.
-- [ ] **Leakage**: `python -m pytest tests/test_feature_leakage.py -q` with every new group included.
+- [x] **Monitoring**: reset the drift reference to the new holdout; `python -m trustissues.governance.monitoring`.
+- [x] **Leakage**: `python -m pytest tests/test_feature_leakage.py -q` with every new group included.
 
 **Done when:** all four reports regenerated and clean (or every flag explained in `p3_plan.md`).
 

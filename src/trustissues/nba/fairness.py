@@ -3,7 +3,8 @@
     python -m trustissues.nba.fairness     # writes reports/fairness_report.md
 
 Protected attributes (config/sensitivity.yaml) are never model features and never reach a rule or a decision.
-They are joined back here, and only here, by crm_customer_id (`sources.protected_attributes`), to check:
+They are joined back here, and only here, to the PERSON (golden customer): `sources.protected_attributes` per CRM
+record, through `sources.customer_xref` to the golden ID that model rows and decisions carry. To check:
 
 1. The models, ours and the bank's on the same holdout rows (promise break risk vs `ptp_break`, case risk vs
    `cure_30d`). Within each group: is the score as accurate (AUC) and as honest (calibration: mean score minus
@@ -46,7 +47,7 @@ PROXY_AUC_FLAG = 0.60
 Z = 1.96  # a flagged difference must be at least this many standard errors (5% two-sided)
 MIN_AUC_CLASS = 100  # rows of each outcome a group needs before its AUC can be flagged
 NOT_RECORDED = "not recorded"
-NOT_IN_CRM = "not in CRM"  # the case points at a CRM customer that does not exist (DQ check R1): not a protected group
+NOT_IN_CRM = "not in CRM"  # the person has no CRM record, or identity could not tie the case to one: not a protected group
 COLLECTIONS = ("agent_call", "sms_reminder", "email_reminder", "push_reminder", "letter")
 
 ATTRIBUTES = {
@@ -77,9 +78,12 @@ PROXY_TARGETS = {
 # ---------------------------------------------------------------- data
 
 def load_groups(con) -> pd.DataFrame:
-    """crm_customer_id -> each attribute as a group label (missing = 'not recorded')."""
-    df = sources.protected_attributes(con).df()
-    out = pd.DataFrame(index=df["crm_customer_id"])
+    """golden_customer_id -> each attribute as a group label (missing = 'not recorded'). A person with several CRM
+    records takes each attribute from the first record (by CRM ID) that has it."""
+    xref = sources.customer_xref(con).df()[["crm_customer_id", "golden_customer_id"]]
+    df = sources.protected_attributes(con).df().merge(xref, on="crm_customer_id")
+    df = df.sort_values("crm_customer_id").groupby("golden_customer_id", sort=True).first().reset_index()
+    out = pd.DataFrame(index=df["golden_customer_id"])
     for c in ("gender_code", "age_band", "marital_status", "citizenship_status", "preferred_language"):
         out[c] = df[c].fillna(NOT_RECORDED).to_numpy()
     for c in ("newcomer_program_flag", "accessibility_needs_flag"):
@@ -90,7 +94,7 @@ def load_groups(con) -> pd.DataFrame:
 
 
 def model_rows(con) -> dict[str, pd.DataFrame]:
-    """Holdout rows with both scores: crm_customer_id, label, ours, bank (risk of the bad outcome)."""
+    """Holdout rows with both scores: golden_customer_id, label, ours, bank (risk of the bad outcome)."""
     from trustissues.features.compute import CASE_FEATURES_FILE, FEATURES_FILE
     from trustissues.nba import evaluate, train
     from trustissues.nba.model import BreakModel
@@ -103,7 +107,7 @@ def model_rows(con) -> dict[str, pd.DataFrame]:
     cases = pd.read_parquet(config.p3_dir() / CASE_FEATURES_FILE).query("split == 'holdout'").reset_index(drop=True)
     bank_case = train.incumbent_cure_risk(con)
     cases = cases.assign(ours=BreakModel(train.CASE_MODEL_NAME).predict(cases), bank=cases["row_id"].map(bank_case))
-    keep = ["crm_customer_id", "label", "ours", "bank"]
+    keep = ["golden_customer_id", "label", "ours", "bank"]
     return {
         "Promise break risk (ours `ptp_break_v0` vs the bank's `ptp_break`)": promises.dropna(subset=["bank"])[keep],
         "Case risk of not curing in 30 days (ours `case_nocure_v0` vs the bank's 1 - `cure_30d`)":
@@ -119,7 +123,7 @@ def _auc(y, s) -> float | None:
 
 def model_by_group(df: pd.DataFrame, groups: pd.DataFrame, attr: str) -> tuple[pd.DataFrame, dict]:
     """Per group metrics for both scores, and the overall values they are compared with."""
-    d = df.join(groups[[attr]], on="crm_customer_id")
+    d = df.join(groups[[attr]], on="golden_customer_id")
     d[attr] = d[attr].fillna(NOT_IN_CRM)
     overall = {}
     for m in ("ours", "bank"):
@@ -211,8 +215,8 @@ def proxy_audit(groups: pd.DataFrame, sample: int = 60000) -> list[dict]:
 
     model = BreakModel(train.CASE_MODEL_NAME)
     df = pd.read_parquet(config.p3_dir() / CASE_FEATURES_FILE)
-    df = df.sort_values("as_of_date").drop_duplicates("crm_customer_id", keep="last")  # one row per customer
-    df = df.sample(min(sample, len(df)), random_state=11).join(groups, on="crm_customer_id")
+    df = df.sort_values("as_of_date").drop_duplicates("golden_customer_id", keep="last")  # one row per person
+    df = df.sample(min(sample, len(df)), random_state=11).join(groups, on="golden_customer_id")
     X = model.frame(df)
     out = []
     for attr, (what, pos, neg) in PROXY_TARGETS.items():
@@ -373,10 +377,12 @@ def build_report(con) -> str:
     w("")
     w("</details>")
     w("")
-    w("## 4. Cases whose customer is not in the CRM")
+    w("## 4. People with no CRM record")
     w("")
-    w("Not a protected group, so left out of the screens above, but worth knowing: these cases point at a CRM customer "
-      "that does not exist (data quality check R1). They are rows of every table above, labelled *not in CRM*.")
+    w("Not a protected group, so left out of the screens above, but worth knowing: identity resolution found these "
+      "people only in the card, loan or deposit systems (or could not tie the case to anyone), so there are no "
+      "protected attributes to compare. They are rows of every table above, labelled *not in CRM*. Cases whose CRM ID "
+      "does not exist (data quality check R1) are no longer here when identity tied them to a person.")
     w("")
     for title, g, overall in crm_gap:
         if len(g):
@@ -388,8 +394,6 @@ def build_report(con) -> str:
         r = crm_queue.iloc[0]
         w(f"- Morning queue: {r['cases']:,} cases, {r['collections']:.1%} get any contact and {r['wait']:.1%} wait. With "
           "no CRM record there is no consent on any channel, so the rules allow nothing but waiting (default deny).")
-    w("")
-    w("These close once identity resolution links these cases to a golden customer record.")
     w("")
     w("## 5. Proxy audit: can the features stand in for a protected attribute?")
     w("")

@@ -654,3 +654,34 @@ Monitoring: case calibration **ok** (gap +0.010 in June, out of sample; 0.000 in
 Queue: mean case risk 0.715 -> 0.811, close to the true not-cured rate; calls 1,469 -> 1,837 (higher honest risk makes
 more calls worth their cost), waits 33,532 -> 33,459. `p3_submission_text.md` updated (numbers, golden customer, the
 open points for P1).
+
+### Golden records, Step 7: governance gates (3 Oct)
+
+**Fairness** (`nba/fairness.py`): protected attributes are joined to the PERSON: `protected_attributes` per CRM record,
+through `customer_xref` to the golden ID that model rows, the queue and the proxy audit (one row per person) carry; a
+person with several CRM records takes each attribute from the first record that has it. Since Step 2 the queue rows
+carried golden IDs while the groups were keyed by CRM ID, so that section was wrong until this step. The report's
+section 4 now describes people with no CRM record; `tests/test_fairness.py` also checks no golden ID is printed.
+
+| | Before golden (3 Oct) | Now |
+|---|---|---|
+| Screening flags, promise model (ours / bank's) | 5 / 3 | 5 / 2 |
+| Screening flags, case model (ours / bank's) | 6 / 2 | 7 / 2 |
+| "Not in CRM" holdout rows, promise / case | 1,042 / 2,202 | **127 / 256** |
+| Those case rows: share in our riskiest 20%, calibration gap | 4.3%, -0.143 | 24.2%, -0.026 |
+| Queue cases with no CRM record (no consent: all wait) | 2,568 | 322 |
+| Queue screens (contact, contact vs risk, support calls) | no flags | no flags |
+
+No new calibration flag for our models: the case model's 65+ gap is the same flag as on 3 Oct (about 0.06 from
+overall then, -0.029 vs -0.088, and now, +0.065 vs +0.004). The extra case flag is age band selection, ratio 0.79 for
+55-64 vs 35-44, on the 0.8 line (it was in the 3 Oct report, gone in Step 2, back now). The small language groups
+from 3 Oct: AR calibration -0.053 (n=203) persists; TL is now flagged on bad outcomes caught only (0.73, was also
+selection 0.66). Bank's newcomer calibration flag gone. **Proxy audit:** newcomer programme still predictable from
+the case features (AUC 0.644, was 0.646: entry_overdue, balance_to_limit, card_utilisation); no new feature group was
+added (Step 5), so nothing new to review.
+
+**Monitoring:** the drift reference is built from the current holdout on every run, so the retrain reset it.
+`case_nocure_v0` **ok** (recalibrated, Step 6). `ptp_break_v0` **act** on score drift, as on 3 Oct (PSI 2.25, was
+2.18: today's open promises are a different mix from resolved ones, DQ T2); feature drift `balance_to_limit` 0.35
+(was 0.34) and `card_utilisation` 0.26 (new: cards now reach the person), `ptp_to_overdue_ratio` 0.75.
+**Leakage:** `tests/test_feature_leakage.py` passes on every group (no group added). 196 tests pass.
