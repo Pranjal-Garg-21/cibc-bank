@@ -36,3 +36,13 @@ def test_dictionary_step_works_without_curate_config(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
     assert load_curate_cfg() == {}
     assert load_overrides() == {}
+
+
+def test_dq_flags_and_derived_columns_get_labels():
+    tables = {"deposit_accounts": {"src_customer_ref": "direct_pii"}, "external": {}}
+    curated = {"deposit_accounts": ["cif10", "dq_non_cad"], "external": ["dq_inquiries_inconsistent"]}
+    dq = {"derived_columns": [{"table": "curated.deposit_accounts", "column": "cif10", "from": "src_customer_ref"}]}
+    derive_labels(tables, curated, {}, dq)
+    assert tables["deposit_accounts"]["cif10"] == "direct_pii"            # a derived key is as sensitive as its source
+    assert tables["deposit_accounts"]["dq_non_cad"] == "none"             # a data-quality flag is not personal data
+    assert tables["external"]["dq_inquiries_inconsistent"] == "none"

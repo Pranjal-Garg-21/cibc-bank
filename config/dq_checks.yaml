@@ -1,0 +1,556 @@
+# Data quality checks. Drives src/trustissues/factory/quality/dq_report.py, which
+#   1. creates the derived columns and flag columns below (the "handling" that changes data),
+#   2. evaluates every check against the warehouse (affected rows, total rows),
+#   3. writes reports/data_quality_report.md.
+# Add a check here and it appears in the report on the next run. {as_of} is replaced by AS_OF_DATE.
+#
+# A check is either
+#   table + where   -> affected = rows matching `where`, total = all rows of `table`
+#   sql             -> a query returning exactly two numbers: affected, total
+# Optional: evidence (a query returning one text value), event (ops_events id whose reported count is shown),
+#           flag (name of a boolean column created from `where` on `table`, and on <table>_current if it exists).
+#
+# status: fixed | standardised | flagged | deferred | documented | context | excluded
+# severity: high (breaks joins or keys, or large share of a table) | medium | low | info
+
+derived_columns:
+  - table: curated.contact_history
+    column: channel_resolved
+    type: VARCHAR
+    expr: "coalesce(channel_v2, channel)"
+    from: channel
+    note: "REL-0926 renamed channel to channel_v2; the value is in one column or the other, never conflicting"
+  - table: curated.deposit_accounts
+    column: cif10
+    type: VARCHAR
+    expr: "lpad(src_customer_ref, 10, '0')"
+    from: src_customer_ref
+    note: "deposit customer keys lost their leading zeros; the 10-digit CIF is the key bureau and external use"
+
+  - table: curated.customers
+    column: salutation_std
+    type: VARCHAR
+    expr: "case lower(rtrim(trim(salutation), '.')) when 'mr' then 'Mr.' when 'ms' then 'Ms.' when 'mrs' then 'Mrs.' when 'm' then 'M.' when 'mme' then 'Mme' when 'dr' then 'Dr.' when 'mx' then 'Mx.' else salutation end"
+    from: salutation
+    note: "the same salutation arrives as Mr., mr and MR."
+
+orphan_refs:   # references to a customer that does not exist; summarised in curated.dq_orphan_customer_refs
+  - {table: curated.collections_cases, column: coll_customer_ref, parent: curated.customers, parent_column: crm_customer_id}
+  - {table: curated.contact_history, column: crm_customer_id, parent: curated.customers, parent_column: crm_customer_id}
+  - {table: curated.promises_to_pay, column: crm_customer_id, parent: curated.customers, parent_column: crm_customer_id}
+  - {table: curated.agent_notes, column: crm_customer_id, parent: curated.customers, parent_column: crm_customer_id}
+  - {table: curated.call_transcripts, column: crm_customer_id, parent: curated.customers, parent_column: crm_customer_id}
+  - {table: curated.account_monthly_snapshot, column: crm_customer_id, parent: curated.customers, parent_column: crm_customer_id}
+
+checks:
+  # ------------------------------------------------------------------ A. known incidents
+  - id: K1
+    area: known_incident
+    event: REL-0926
+    title: "Contact channel renamed upstream: `channel` is empty and the value is in `channel_v2`"
+    tables: [contact_history]
+    severity: high
+    status: fixed
+    sql: "select count(*) filter (where channel is null and channel_v2 is not null), count(*) filter (where contact_ts_utc >= '2026-09-26') from curated.contact_history"
+    evidence: "select 'channel_v2 first appears on ' || min(contact_ts_utc)::date || '; the two columns never disagree (' || count(*) filter (where channel is not null and channel_v2 is not null and channel <> channel_v2) || ' conflicts); after COALESCE ' || count(*) filter (where coalesce(channel_v2, channel) is null) || ' rows have no channel' from curated.contact_history where channel_v2 is not null or channel is null"
+    how: "New column `channel_resolved` = COALESCE(channel_v2, channel). Downstream code must use it, not `channel`. Total column is rows on or after 26 Sep 2026."
+  - id: K2
+    area: known_incident
+    event: INC-0923
+    title: "Predictive dialer outage, 23 Sep 08:00 to 24 Sep 21:00: about 60% fewer outbound calls"
+    tables: [contact_history]
+    severity: medium
+    status: flagged
+    table: curated.contact_history
+    where: "contact_ts_local >= '2026-09-23 08:00' and contact_ts_local < '2026-09-24 21:00'"
+    flag: dq_dialer_outage_window
+    evidence: "select 'outbound calls per day: median ' || format('{:,}', cast(median(n) filter (where d < date '2026-09-23') as int)) || ' for 14-22 Sep, then ' || format('{:,}', max(n) filter (where d = date '2026-09-23')) || ' on 23 Sep and ' || format('{:,}', max(n) filter (where d = date '2026-09-24')) || ' on 24 Sep' from (select cast(contact_ts_local as date) d, count(*) n from curated.contact_history where direction = 'outbound' and coalesce(channel_v2, channel) = 'call' and contact_ts_local >= '2026-09-14' and contact_ts_local < '2026-09-26' group by 1)"
+    how: "Values are real, so nothing is changed. Rows inside the window are flagged `dq_dialer_outage_window` so features do not read the drop in calls as a change in customer behaviour (the incident report says it is not). The reported 35,000 is not the number of contact rows in the window (found: see above) and cannot be reproduced from the data; the two figures probably measure different things (for example calls that would have been attempted)."
+  - id: K3
+    area: known_incident
+    event: INC-0914
+    title: "App outage 14 Sep: payments not posted, late fees charged in error; late-fee disputes about 3x baseline 15-22 Sep"
+    tables: [collections_cases, card_statements]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where dispute_type = 'late_fee' and dispute_date between '2026-09-15' and '2026-09-22'), count(*) filter (where dispute_type = 'late_fee') from curated.collections_cases"
+    evidence: "select 'late-fee disputes per day 15-22 Sep: ' || round(count(*) filter (where dispute_date between '2026-09-15' and '2026-09-22') / 8.0, 1) || ' against a baseline of ' || round(count(*) filter (where dispute_date >= '2026-06-03' and dispute_date < '2026-09-01') / 90.0, 1) || ' (' || round((count(*) filter (where dispute_date between '2026-09-15' and '2026-09-22') / 8.0) / (count(*) filter (where dispute_date >= '2026-06-03' and dispute_date < '2026-09-01') / 90.0), 1) || 'x). The share of statements due 14 Sep with a fee is normal, so the roughly 1,900 accounts charged in error cannot be identified in this release; no fee reversals are posted yet' from curated.collections_cases where dispute_type = 'late_fee'"
+    how: "Not changed and not flaggable per account (the data does not identify them). Documented: treat late-fee disputes dated 15-22 Sep 2026 as inflated when computing dispute baselines. Affected column counts the late-fee disputes inside that window."
+  - id: K4
+    area: known_incident
+    event: DFI-0812
+    title: "Bureau file converted with a shifted column for some rows: inquiry counts impossible (3 months above 6 months, or 6 above 12)"
+    tables: [external]
+    severity: medium
+    status: flagged
+    table: curated.external
+    where: "inquiries_hard_3m > inquiries_hard_6m or inquiries_hard_6m > inquiries_hard_12m"
+    flag: dq_inquiries_inconsistent
+    evidence: "select 'the rate is about ' || round(100 * median(r), 1) || '% in every monthly bureau file (' || round(100 * min(r), 1) || '% to ' || round(100 * max(r), 1) || '%), so the bad rows are scattered through the data, not one bad load' from (select src_file_name, avg(case when inquiries_hard_3m > inquiries_hard_6m or inquiries_hard_6m > inquiries_hard_12m then 1.0 else 0.0 end) r from curated.external group by 1 having count(*) > 1000)"
+    how: "The correct values cannot be recovered. Rows are flagged `dq_inquiries_inconsistent`; the inquiry columns of flagged rows must not be used as features. A rule on these three fields finds the large majority of the reported records but not necessarily all of them."
+  - id: K5
+    area: known_incident
+    event: ECO-0715
+    title: "Regional employer layoffs (Windsor-Essex): more hardship and job-loss in one region"
+    tables: [customers]
+    severity: info
+    status: context
+    sql: "select count(*) filter (where city ilike 'windsor%'), count(*) from curated.customers"
+    how: "Not a data defect. A real change in customer behaviour from 15 Jul to 28 Sep 2026. Customers in Windsor are counted (all of them, since the data does not mark who was laid off). Models trained across this period will see a regional shift."
+  - id: K6
+    area: known_incident
+    event: POL-0301
+    title: "Hardship policy v4.2 from 1 Mar 2026: reduced-payment programme changed to 50% for 3 months"
+    tables: [hardship_programs, offers]
+    severity: info
+    status: context
+    sql: "select count(*) filter (where policy_section is not null), count(*) from curated.hardship_programs"
+    how: "Not a data defect. A policy change that means older offers and programmes follow the previous version; policy search must pick the version in force on the as-of date. Affected column counts programme rows."
+
+  # ------------------------------------------------------------------ B. formats
+  - id: F1
+    area: format
+    title: "Month-end date written in four formats in `account_monthly_snapshot.month_end_date` (ISO, YYYYMMDD, DD/MM/YYYY, MM/DD/YYYY)"
+    tables: [account_monthly_snapshot]
+    severity: high
+    status: fixed
+    sql: "select coalesce(sum(recovered_rows), 0), (select count(*) from curated.account_monthly_snapshot) from curated._format_recoveries where table_name = 'account_monthly_snapshot' and column_name = 'month_end_date'"
+    how: "Recovered when exactly one reading is valid (every value is a month-end, so the day is always above 12). 0 NULLs remain; the original text of any unrecoverable value would be kept in `month_end_date__raw`."
+  - id: F2
+    area: format
+    title: "CRM date of birth not in ISO format (`dob_raw`: ISO, MM/DD/YYYY, `Mon DD YYYY`)"
+    tables: [customers]
+    severity: medium
+    status: standardised
+    sql: "select count(*) filter (where dob_raw is not null and trim(dob_raw) <> '' and not regexp_matches(dob_raw, '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')), count(*) from raw.customers"
+    how: "Parsed into `std_dob`. Original `dob_raw` is kept unchanged."
+  - id: F3
+    area: format
+    title: "Card date of birth in DD-MM-YYYY (every filled value)"
+    tables: [card_accounts]
+    severity: medium
+    status: standardised
+    sql: "select count(*) filter (where cardholder_dob_raw is not null and trim(cardholder_dob_raw) <> ''), count(*) from raw.card_accounts"
+    how: "Parsed into `std_dob`."
+  - id: F4
+    area: format
+    title: "Loan date of birth in YYYY/MM/DD (every filled value)"
+    tables: [loan_accounts]
+    severity: low
+    status: standardised
+    sql: "select count(*) filter (where borrower_dob_raw is not null and trim(borrower_dob_raw) <> ''), count(*) from raw.loan_accounts"
+    how: "Parsed into `std_dob`."
+  - id: F5
+    area: format
+    title: "Deposit date of birth in YYYYMMDD (every filled value)"
+    tables: [deposit_accounts]
+    severity: low
+    status: standardised
+    sql: "select count(*) filter (where holder_dob_raw is not null and trim(holder_dob_raw) <> ''), count(*) from raw.deposit_accounts"
+    how: "Parsed into `std_dob`."
+  - id: F6
+    area: format
+    title: "Date of birth with day and month both 12 or less: two readings possible (CRM)"
+    tables: [customers]
+    severity: medium
+    status: standardised
+    table: curated.customers
+    where: "std_dob_ambiguous"
+    how: "Both readings kept (`std_dob` and `std_dob_alt`, flag `std_dob_ambiguous`). Matching must try both; the value is never guessed."
+  - id: F7
+    area: format
+    title: "Date of birth with day and month both 12 or less: two readings possible (cards)"
+    tables: [card_accounts]
+    severity: medium
+    status: standardised
+    table: curated.card_accounts
+    where: "std_dob_ambiguous"
+    how: "Same as F6."
+  - id: F8
+    area: format
+    title: "CRM phone numbers in 10 different formats"
+    tables: [customers]
+    severity: low
+    status: standardised
+    table: curated.customers
+    where: "std_phone_primary_e164 is not null and primary_phone_raw is not null and primary_phone_raw <> std_phone_primary_e164"
+    how: "Normalised into `std_phone_primary_e164` (+1 and ten digits). Original kept."
+  - id: F9
+    area: format
+    title: "Card phone numbers masked (`450672xxx81`): digits missing"
+    tables: [card_accounts]
+    severity: high
+    status: flagged
+    table: curated.card_accounts
+    where: "std_phone_primary_masked"
+    how: "Cannot be repaired. Kept as `std_phone_primary_prefix` and `_suffix` with flag `std_phone_primary_masked`. To be treated as weak evidence in matching (the design rule is that a phone alone never links two records); the identity layer is not built yet."
+  - id: F10
+    area: format
+    title: "CRM postal code written with and without a space, or truncated"
+    tables: [customers]
+    severity: low
+    status: standardised
+    table: curated.customers
+    where: "postal_code_raw is not null and std_postal is not null and postal_code_raw <> std_postal"
+    how: "Normalised into `std_postal` (A1A1A1) and `std_fsa`."
+  - id: F11
+    area: format
+    title: "CRM postal code invalid after cleaning (truncated, e.g. `A 9A9`, `A9A9`)"
+    tables: [customers]
+    severity: low
+    status: flagged
+    table: curated.customers
+    where: "postal_code_raw is not null and trim(postal_code_raw) <> '' and std_postal is null"
+    how: "`std_postal` is NULL and the original stays in `postal_code_raw`. Not repaired."
+  - id: F12
+    area: format
+    title: "Deposit customer key lost its leading zeros (7 or 8 digits instead of the 10-digit CIF)"
+    tables: [deposit_accounts]
+    severity: high
+    status: fixed
+    table: curated.deposit_accounts
+    where: "length(src_customer_ref) < 10"
+    evidence: "select 'after padding to 10 digits, ' || format('{:,}', count(*) filter (where exists (select 1 from curated.external e where e.bank_subject_ref = d.cif10))) || ' of ' || format('{:,}', count(*)) || ' deposit rows match a bureau subject (before padding, only the 10-digit ones did)' from curated.deposit_accounts d"
+    how: "New column `cif10` = left-padded key. Use it, not `src_customer_ref`, to join to `external` and `bureau_history`."
+  - id: F13
+    area: format
+    title: "Card first name is only an initial (`J. LANGLOIS`)"
+    tables: [card_accounts]
+    severity: medium
+    status: standardised
+    table: curated.card_accounts
+    where: "std_name_first_is_initial"
+    how: "Kept as `std_name_first` with `std_name_first_is_initial` = true. Matching uses surname plus initial."
+  - id: F14
+    area: format
+    title: "Deposit first name is only an initial (`DYER D C`)"
+    tables: [deposit_accounts]
+    severity: medium
+    status: standardised
+    table: curated.deposit_accounts
+    where: "std_name_first_is_initial"
+    how: "As F13. Deposit names carry no full first name, so deposit name evidence is surname plus initial."
+  - id: F15
+    area: format
+    title: "ALL-CAPS two-word card names with no comma: word order not stated (`JESSICA SMIRNOV`)"
+    tables: [card_accounts]
+    severity: medium
+    status: standardised
+    sql: "select count(*) filter (where cardholder_name_raw = upper(cardholder_name_raw) and cardholder_name_raw not like '%,%' and cardholder_name_raw not like '%.%' and length(cardholder_name_raw) - length(replace(cardholder_name_raw, ' ', '')) = 1), count(*) from raw.card_accounts"
+    how: "Read first-last (cards' convention). Checked against the CRM's own names: about 99% agree."
+  - id: F16
+    area: format
+    title: "ALL-CAPS two-word loan names with no comma: word order not stated (`KAPOOR CASEY`)"
+    tables: [loan_accounts]
+    severity: medium
+    status: standardised
+    sql: "select count(*) filter (where borrower_name_raw = upper(borrower_name_raw) and borrower_name_raw not like '%,%' and borrower_name_raw not like '%.%' and length(borrower_name_raw) - length(replace(borrower_name_raw, ' ', '')) = 1), count(*) from raw.loan_accounts"
+    how: "Read last-first (loans' convention). Checked against the CRM's own names: every one agrees."
+
+  - id: F17
+    area: format
+    title: "Customer salutation spelled several ways (`Mr.`, `mr`, `MR.`; 20 spellings of 7 values)"
+    tables: [customers]
+    severity: low
+    status: standardised
+    table: curated.customers
+    where: "salutation is not null and salutation not in ('Mr.', 'Ms.', 'Mrs.', 'M.', 'Mme', 'Dr.', 'Mx.')"
+    evidence: "select 'found by checking all 192 enum columns for values that differ only by case or spacing; this was the only one' from curated.customers limit 1"
+    how: "New column `salutation_std` with one spelling per value. Original `salutation` is kept. `M.` and `m` are read as the same value."
+  - id: F18
+    area: format
+    title: "Deposit balances in two currencies (7,780 USD accounts among CAD) with no exchange-rate field in the data"
+    tables: [deposit_accounts]
+    severity: medium
+    status: flagged
+    table: curated.deposit_accounts
+    where: "currency <> 'CAD'"
+    flag: dq_non_cad
+    how: "Amounts are not converted (the data has no rate). Flagged `dq_non_cad`. Totals across accounts must filter to CAD or convert, otherwise they mix currencies."
+
+  # ------------------------------------------------------------------ C. references and duplicates
+  - id: R1
+    area: reference
+    title: "Collections case points to a CRM customer that does not exist"
+    tables: [collections_cases]
+    severity: high
+    status: flagged
+    sql: "select count(*) filter (where coll_customer_ref is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.coll_customer_ref)), count(*) from curated.collections_cases c"
+    how: "Rows kept. The missing IDs are listed with row counts in `curated.dq_orphan_customer_refs`. They cannot be tied to a customer record. The identity layer (not yet built) is meant to treat them as unresolved, and customer-level features should leave them out. The IDs have the right format and do not resolve by case, spacing, or duplicate-merge pointers; the likely explanation is CRM records missing from the extract, but the data cannot confirm it."
+  - id: R2
+    area: reference
+    title: "Contact record points to a CRM customer that does not exist"
+    tables: [contact_history]
+    severity: high
+    status: flagged
+    sql: "select count(*) filter (where crm_customer_id is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.crm_customer_id)), count(*) from curated.contact_history c"
+    how: "As R1."
+  - id: R3
+    area: reference
+    title: "Promise to pay points to a CRM customer that does not exist"
+    tables: [promises_to_pay]
+    severity: high
+    status: flagged
+    sql: "select count(*) filter (where crm_customer_id is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.crm_customer_id)), count(*) from curated.promises_to_pay c"
+    how: "As R1. These promises cannot enter a customer-level training set."
+  - id: R4
+    area: reference
+    title: "Agent note points to a CRM customer that does not exist"
+    tables: [agent_notes]
+    severity: medium
+    status: flagged
+    sql: "select count(*) filter (where crm_customer_id is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.crm_customer_id)), count(*) from curated.agent_notes c"
+    how: "As R1."
+  - id: R5
+    area: reference
+    title: "Call transcript points to a CRM customer that does not exist"
+    tables: [call_transcripts]
+    severity: medium
+    status: flagged
+    sql: "select count(*) filter (where crm_customer_id is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.crm_customer_id)), count(*) from curated.call_transcripts c"
+    how: "As R1."
+  - id: R6
+    area: reference
+    title: "Account snapshot points to a CRM customer that does not exist"
+    tables: [account_monthly_snapshot]
+    severity: high
+    status: flagged
+    sql: "select count(*) filter (where crm_customer_id is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.crm_customer_id)), count(*) from curated.account_monthly_snapshot c"
+    evidence: "select format('{:,}', count(distinct crm_customer_id)) || ' distinct missing IDs, almost one per row, so these look like stray IDs rather than a few missing customers' from curated.account_monthly_snapshot c where crm_customer_id is not null and not exists (select 1 from curated.customers p where p.crm_customer_id = c.crm_customer_id)"
+    how: "As R1."
+  - id: R7
+    area: reference
+    title: "Contact record points to a collections case that does not exist"
+    tables: [contact_history]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where case_id is not null and not exists (select 1 from curated.collections_cases p where p.case_id = c.case_id)), count(*) from curated.contact_history c"
+    how: "Rows kept; not changed. Case-level features must left-join and tolerate a missing case."
+  - id: R8
+    area: reference
+    title: "Collections case with no assignment history"
+    tables: [collections_cases]
+    severity: info
+    status: documented
+    sql: "select count(*) filter (where not exists (select 1 from curated.case_assignment_history h where h.case_id = c.case_id)), count(*) from curated.collections_cases c"
+    how: "May be legitimate (unassigned or auto-treated cases); not changed. Agent-scope queries will not see these cases."
+  - id: R9
+    area: reference
+    title: "Routing rule used in assignments is missing from the reference table (RR-EARLY-03, RR-MID-03, RR-LATE-03, RR-REC-03)"
+    tables: [case_assignment_history]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where routing_rule_id is not null and routing_rule_id not in (select code from curated.code_lookups where code_type = 'routing_rule')), count(routing_rule_id) from curated.case_assignment_history"
+    how: "Not changed. The four codes look like champion/challenger variants of defined rules; the reference table is incomplete. Total column counts non-null rule IDs."
+  - id: R10
+    area: reference
+    title: "Same person stored as more than one CRM record (identical national-ID hash)"
+    tables: [customers]
+    severity: high
+    status: deferred
+    sql: "select count(*), (select count(*) from curated.customers) from curated.customers where national_id_hash in (select national_id_hash from curated.customers where national_id_hash is not null group by 1 having count(*) > 1)"
+    evidence: "select count(*) || ' records carry duplicate_of_crm_id, so most duplicate pairs are not marked by the source' from curated.customers where duplicate_of_crm_id is not null"
+    how: "Not merged here. Curation never merges people. The identity layer (not yet built) is meant to link them (national-ID hash is its first exact rule) and assign one golden ID. Affected counts the records sitting in a duplicate group."
+  - id: R11
+    area: reference
+    title: "CRM record marked deleted (change-data operation D)"
+    tables: [customers]
+    severity: low
+    status: excluded
+    table: curated.customers
+    where: "coalesce(is_deleted, false)"
+    how: "Kept in `curated.customers`, excluded from `curated.customers_current`."
+
+  # ------------------------------------------------------------------ D. missing values
+  - id: M1
+    area: missing
+    title: "CRM date of birth blank"
+    tables: [customers]
+    severity: low
+    status: documented
+    sql: "select count(*) filter (where dob_raw is null or trim(dob_raw) = ''), count(*) from raw.customers"
+    how: "Left blank. These records cannot use date of birth as evidence."
+  - id: M2
+    area: missing
+    title: "Loan date of birth blank"
+    tables: [loan_accounts]
+    severity: low
+    status: documented
+    sql: "select count(*) filter (where borrower_dob_raw is null or trim(borrower_dob_raw) = ''), count(*) from raw.loan_accounts"
+    how: "As M1."
+  - id: M3
+    area: missing
+    title: "Deposit date of birth blank"
+    tables: [deposit_accounts]
+    severity: low
+    status: documented
+    sql: "select count(*) filter (where holder_dob_raw is null or trim(holder_dob_raw) = ''), count(*) from raw.deposit_accounts"
+    how: "As M1."
+  - id: M4
+    area: missing
+    title: "Bureau date of birth blank"
+    tables: [external]
+    severity: low
+    status: documented
+    sql: "select count(*) filter (where subject_dob_reported is null), count(*) from curated.external"
+    evidence: "select format('{:,}', count(*) filter (where hit_status = 'no_hit')) || ' of these are no_hit records, where no identity details are expected because the bureau found no file; the other ' || format('{:,}', count(*) filter (where hit_status <> 'no_hit')) || ' are not explained by hit status' from curated.external where subject_dob_reported is null"
+    how: "Left blank. The `no_hit` share is expected. The remainder is a real gap and is not imputed; those records cannot use the bureau date of birth as evidence."
+  - id: M5
+    area: missing
+    title: "Bureau record says `hit` but has no risk score"
+    tables: [external]
+    severity: medium
+    status: flagged
+    table: curated.external
+    where: "hit_status = 'hit' and risk_score is null"
+    flag: dq_hit_without_score
+    how: "Flagged `dq_hit_without_score`. Treated as a missing score, never as zero."
+  - id: M6
+    area: missing
+    title: "Card days-past-due missing"
+    tables: [card_accounts]
+    severity: medium
+    status: documented
+    table: curated.card_accounts
+    where: "dpd is null"
+    how: "Left NULL (not assumed 0). Delinquency features must handle missing."
+  - id: M7
+    area: missing
+    title: "Loan days-past-due missing"
+    tables: [loan_accounts]
+    severity: medium
+    status: documented
+    table: curated.loan_accounts
+    where: "dpd is null"
+    how: "As M6."
+  - id: M8
+    area: missing
+    title: "CRM employer name blank"
+    tables: [customers]
+    severity: info
+    status: documented
+    table: curated.customers
+    where: "employer_name is null"
+    how: "May be genuine (not employed). Not imputed."
+
+  # ------------------------------------------------------------------ E. contradictions
+  - id: L1
+    area: logic
+    title: "Card delinquency bucket disagrees with days past due (e.g. dpd 0 but bucket 1-30, or one band too high)"
+    tables: [card_accounts]
+    severity: medium
+    status: flagged
+    table: curated.card_accounts
+    where: "dpd is not null and dpd_bucket is not null and dpd_bucket <> (case when dpd <= 0 then 'current' when dpd <= 30 then '1-30' when dpd <= 60 then '31-60' when dpd <= 90 then '61-90' when dpd <= 120 then '91-120' when dpd <= 150 then '121-150' when dpd <= 180 then '151-180' else '180+' end)"
+    flag: dq_bucket_dpd_mismatch
+    how: "Neither value is changed (the cause is not known; likely the bucket is fixed at the cycle date while dpd is current). Flagged `dq_bucket_dpd_mismatch`."
+  - id: L2
+    area: logic
+    title: "Loan delinquency bucket disagrees with days past due"
+    tables: [loan_accounts]
+    severity: medium
+    status: flagged
+    table: curated.loan_accounts
+    where: "dpd is not null and dpd_bucket is not null and dpd_bucket <> (case when dpd <= 0 then 'current' when dpd <= 30 then '1-30' when dpd <= 60 then '31-60' when dpd <= 90 then '61-90' when dpd <= 120 then '91-120' when dpd <= 150 then '121-150' when dpd <= 180 then '151-180' else '180+' end)"
+    flag: dq_bucket_dpd_mismatch
+    how: "As L1."
+  - id: L3
+    area: logic
+    title: "Case bucket disagrees with current days past due (one band higher than dpd implies)"
+    tables: [collections_cases]
+    severity: medium
+    status: flagged
+    table: curated.collections_cases
+    where: "current_dpd is not null and current_bucket is not null and current_bucket <> (case when current_dpd <= 0 then 'current' when current_dpd <= 30 then '1-30' when current_dpd <= 60 then '31-60' when current_dpd <= 90 then '61-90' when current_dpd <= 120 then '91-120' when current_dpd <= 150 then '121-150' when current_dpd <= 180 then '151-180' else '180+' end)"
+    flag: dq_bucket_dpd_mismatch
+    how: "As L1."
+  - id: L4
+    area: logic
+    title: "Deposit overdraft used exceeds the overdraft limit"
+    tables: [deposit_accounts]
+    severity: low
+    status: flagged
+    table: curated.deposit_accounts
+    where: "overdraft_used > overdraft_limit"
+    flag: dq_overdraft_over_limit
+    how: "Values kept; flagged `dq_overdraft_over_limit`."
+  - id: L5
+    area: logic
+    title: "Right-party contacts exceed total contact attempts on a case"
+    tables: [collections_cases]
+    severity: low
+    status: flagged
+    table: curated.collections_cases
+    where: "rpc_count > contact_attempts_total"
+    flag: dq_rpc_above_attempts
+    how: "May include inbound contacts that are not counted as attempts. Values kept; flagged `dq_rpc_above_attempts`."
+  - id: L6
+    area: logic
+    title: "Case promise counts do not add up (kept + broken + open is not total)"
+    tables: [collections_cases]
+    severity: low
+    status: flagged
+    table: curated.collections_cases
+    where: "promises_kept + promises_broken + promises_open <> promises_total"
+    flag: dq_promise_counts_mismatch
+    how: "Values kept; flagged `dq_promise_counts_mismatch`. Promise-level tables are the safer source."
+  - id: L7
+    area: logic
+    title: "Promise marked kept but the amount paid is below the promised amount"
+    tables: [promises_to_pay]
+    severity: medium
+    status: flagged
+    table: curated.promises_to_pay
+    where: "ptp_status = 'kept' and amount_paid_against < ptp_amount * 0.99"
+    flag: dq_kept_but_underpaid
+    how: "Label noise for any model that predicts broken promises. Values kept; flagged `dq_kept_but_underpaid`. The label rule should decide how to treat them."
+  - id: L8
+    area: logic
+    title: "Bureau: oldest trade is younger than newest trade (impossible)"
+    tables: [external]
+    severity: medium
+    status: flagged
+    table: curated.external
+    where: "months_since_oldest_trade < months_since_newest_trade"
+    flag: dq_trade_age_inconsistent
+    how: "Not the same rows as the shifted-column incident (K4). Flagged `dq_trade_age_inconsistent`."
+  - id: L9
+    area: logic
+    title: "Bureau: file-since date is after the pull date"
+    tables: [external]
+    severity: low
+    status: documented
+    table: curated.external
+    where: "file_since_date > pull_date"
+    how: "Not changed."
+  - id: L10
+    area: logic
+    title: "Card utilisation outside 0 to 1.5"
+    tables: [card_accounts]
+    severity: low
+    status: documented
+    table: curated.card_accounts
+    where: "utilisation < 0 or utilisation > 1.5"
+    how: "Not changed."
+
+clean_checks:   # checks that found nothing; listed so the coverage is visible
+  - {id: C1, title: "Exact duplicate rows removed (all tables)", sql: "select coalesce(sum(dupes_removed), 0), coalesce(sum(raw_rows), 0) from curated._build_log"}
+  - {id: C2, title: "Customer date of birth in the future, or age under 18 or over 110", table: curated.customers, where: "std_dob is not null and (cast(std_dob as date) > date '{as_of}' or date_diff('year', cast(std_dob as date), date '{as_of}') < 18 or date_diff('year', cast(std_dob as date), date '{as_of}') > 110)"}
+  - {id: C3, title: "Customer stored age differs from age computed from date of birth by more than 1 year", table: curated.customers, where: "age is not null and date_of_birth is not null and abs(age - date_diff('year', date_of_birth, date '{as_of}')) > 1"}
+  - {id: C4, title: "Customer relationship starts before date of birth", table: curated.customers, where: "customer_since_date < date_of_birth"}
+  - {id: C5, title: "Customer tenure disagrees with relationship start by more than 2 months", table: curated.customers, where: "tenure_months is not null and customer_since_date is not null and abs(tenure_months - date_diff('month', customer_since_date, date '{as_of}')) > 2"}
+  - {id: C6, title: "Cease-contact, deceased or bankruptcy flag set with no matching date", table: curated.customers, where: "(cease_communication_flag and cease_communication_date is null) or (deceased_flag and deceased_notified_date is null) or (bankruptcy_flag and insolvency_filed_date is null)"}
+  - {id: C7, title: "Declared income zero, negative or over 5,000,000", table: curated.customers, where: "declared_annual_income <= 0 or declared_annual_income > 5000000"}
+  - {id: C8, title: "CRM record created after its extract time", table: curated.customers, where: "record_created_ts > extract_ts"}
+  - {id: C9, title: "Duplicate primary keys in the four identity tables", sql: "select (select count(*) - count(distinct crm_customer_id) from curated.customers) + (select count(*) - count(distinct card_account_id) from curated.card_accounts) + (select count(*) - count(distinct loan_id) from curated.loan_accounts) + (select count(*) - count(distinct deposit_account_id) from curated.deposit_accounts), (select count(*) from curated.customers)"}
+  - {id: C10, title: "Card account opened after its snapshot date", table: curated.card_accounts, where: "open_date > snapshot_date"}
+  - {id: C11, title: "Loan matures before it was originated", table: curated.loan_accounts, where: "maturity_date < origination_date"}
+  - {id: C12, title: "Loan balance above original amount, or interest rate outside 0 to 40", table: curated.loan_accounts, where: "principal_balance > original_amount * 1.001 or interest_rate < 0 or interest_rate > 40"}
+  - {id: C13, title: "Deposit account opened after its snapshot date", table: curated.deposit_accounts, where: "open_date > snapshot_date"}
+  - {id: C14, title: "Case status dated before the case opened", table: curated.collections_cases, where: "case_status_date < case_open_date"}
+  - {id: C15, title: "Promise due date before it was created, non-positive amount, or paid before created", table: curated.promises_to_pay, where: "ptp_due_date < cast(ptp_created_ts as date) or ptp_amount <= 0 or paid_date < cast(ptp_created_ts as date)"}
+  - {id: C16, title: "Call ends before it starts, duration off by more than 5 s, or talk ratios above 1.05", table: curated.call_transcripts, where: "call_end_ts < call_start_ts or abs(duration_sec - date_diff('second', call_start_ts, call_end_ts)) > 5 or customer_talk_ratio + agent_talk_ratio > 1.05"}
+  - {id: C17, title: "Contact dated after the as-of date", table: curated.contact_history, where: "contact_ts_utc > date '{as_of}' + 1"}
+  - {id: C18, title: "Bureau pull dated after the as-of date, or negative balances and counts", table: curated.external, where: "pull_date > date '{as_of}' or total_balance_all_trades < 0 or collection_items_count < 0 or judgment_count < 0"}
+  - {id: C19, title: "Bureau score outside 300 to 900", table: curated.external, where: "risk_score < 300 or risk_score > 900"}
+  - {id: C20, title: "Contact reference codes (strategy, outcome, templates, scripts) not in the reference table", sql: "select count(*) filter (where outcome_code is not null and outcome_code not in (select code from curated.code_lookups where code_type = 'outcome_code')) + count(*) filter (where strategy_code is not null and strategy_code not in (select code from curated.code_lookups where code_type = 'strategy_code')), count(*) from curated.contact_history"}

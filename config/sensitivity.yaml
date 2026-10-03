@@ -52,7 +52,6 @@ tables:
     salary_credit_amount: none
     batch_id: none
     year: unclassified
-    month_end_date__raw: none
   agent_notes:
     note_id: none
     contact_id: none
@@ -349,6 +348,9 @@ tables:
     std_phone_primary_suffix: direct_pii
     std_postal: quasi_identifier
     std_fsa: quasi_identifier
+    dq_bucket_dpd_mismatch: none
+  card_accounts_current:
+    dq_bucket_dpd_mismatch: none
   card_statements:
     card_account_id: none
     statement_date: none
@@ -553,6 +555,9 @@ tables:
     batch_id: none
     extract_ts: none
     record_hash: none
+    dq_bucket_dpd_mismatch: none
+    dq_rpc_above_attempts: none
+    dq_promise_counts_mismatch: none
   contact_history:
     contact_id: none
     source_platform: none
@@ -682,6 +687,8 @@ tables:
     script_id: none
     disclosure_version: none
     recording_retention_until: none
+    channel_resolved: none
+    dq_dialer_outage_window: none
   customers:
     crm_customer_id: none
     customer_uuid: none
@@ -854,6 +861,7 @@ tables:
     std_postal: quasi_identifier
     std_fsa: quasi_identifier
     std_employer: quasi_identifier
+    salutation_std: quasi_identifier
   deposit_accounts:
     deposit_account_id: none
     snapshot_date: none
@@ -1014,6 +1022,12 @@ tables:
     std_phone_primary_suffix: direct_pii
     std_postal: quasi_identifier
     std_fsa: quasi_identifier
+    cif10: none
+    dq_non_cad: none
+    dq_overdraft_over_limit: none
+  deposit_accounts_current:
+    dq_non_cad: none
+    dq_overdraft_over_limit: none
   external:
     bureau_request_id: none
     bureau_name: none
@@ -1147,6 +1161,9 @@ tables:
     std_dob_ambiguous: direct_pii
     std_postal: direct_pii
     std_fsa: direct_pii
+    dq_inquiries_inconsistent: none
+    dq_hit_without_score: none
+    dq_trade_age_inconsistent: none
   geo_reference:
     fsa: none
     province_code: none
@@ -1335,6 +1352,9 @@ tables:
     std_phone_primary_suffix: direct_pii
     std_postal: quasi_identifier
     std_fsa: quasi_identifier
+    dq_bucket_dpd_mismatch: none
+  loan_accounts_current:
+    dq_bucket_dpd_mismatch: none
   loan_instalments:
     loan_id: none
     instalment_no: none
@@ -1465,6 +1485,7 @@ tables:
     customer_stated_income_date: none
     src_system: none
     batch_id: none
+    dq_kept_but_underpaid: none
   qa_checklist:
     item_no: none
     item_code: none
