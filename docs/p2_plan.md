@@ -1,108 +1,106 @@
-# P2 plan: Ask (structured path) — DRAFT for review
+# P2 plan v2: Ask (structured path)
 
-Branch `p2-branch-ask-layer`. Written by Claude for Codex to challenge and improve; both of us then agree before building. Nothing here is built yet. Source documents: `implementation_plan.md` §4, `p2_design_sections.md`, `interfaces.md`, and the release's `benchmark_questions.csv`, `benchmark_dev_answers.csv`, `metric_definitions.csv`.
+Branch `p2-branch-ask-layer`. v2 folds in `p2_plan_review.md` (Codex) and Codex's confirmation of the split. v1 was commit `833714f`. Source documents: `implementation_plan.md` §4, `p2_design_sections.md`, `interfaces.md`, and the release's benchmark files and `metric_definitions.csv`. Nothing is built yet. Status of agreements is in §10.
 
 ## 1. What P2 is scored on
 
-The graded output is `submission/benchmark_answers.csv` (`question_id, answer, sql_or_sources, refused`), produced by running `ask()` on every benchmark question. 35 questions are released (21 `dev` with gold answers, 14 `test` hidden), plus more released at **19:00 IST on 4 Oct**. So the system must generalise, not memorise the 35.
+The graded output is `submission/benchmark_answers.csv` (`question_id, answer, sql_or_sources, refused`). 35 questions are released (21 dev with gold, 14 test hidden), plus more at **19:00 IST on 4 Oct**. So the system must generalise. The README allows small CSV tables or `key: value` entries inside `answer`; the outer file stays the four-column CSV.
 
-I classified all 35 by what they need:
+I classified the 35 for planning only. The Ask pipeline itself must infer intent from the question text and must not read the `metric_id` column or gold answers; those are used only in development and scoring.
 
-| Route | Count | Question IDs | Owner of the answer |
-|---|---|---|---|
-| Certified metric (SQL) | 15 | 003 004 007 008 011 012 013 014 015 017 025 027 028 032 034 | P2 |
-| Structured, no certified metric (uncertified SQL) | 4 | 006 010 030 035 | P2 |
-| Refusal (guardrail) | 5 | 018 023 024 029 031 | P2 |
-| Policy / corpus RAG | 8 | 001 002 005 009 019 020 026 033 | P4 via I6 |
-| Customer RAG (call/notes) | 3 | 016 021 022 | P4 via I6 |
-
-P2 therefore owns 24 of 35 directly and routes 11 to P4. Metric answers have numeric **tolerances** (e.g. ±0.5 pts, ±0.1 days, exact, ±1 CAD), so correctness is checkable against the dev gold.
-
-## 2. Traps hiding in the questions (these decide the score)
-
-Each is a deliberate data or reasoning trap. The plan has to put the fix in a known place.
-
-| Q | Trap | Fix lives in |
+| Route | Questions | Owner |
 |---|---|---|
-| 011 | `channel` moved to `channel_v2` from 26 Sep; filtering on `channel` alone drops late-September rows | P1 curated (coalesce the two) + P2 must not query raw columns |
-| 012 | `dpd` missing for ~8% of accounts; `cycles_delinquent` counts cycles, not days | metric SQL (documented handling) |
-| 017 | `month_end_date` in several formats; `dpd_bucket` inconsistent in ~4%; `dpd` missing ~8% | curated typing (P1) + metric SQL recomputes bucket from dpd |
-| 035 | ~4% of rows have a bucket that disagrees with `current_dpd`; strong answer recomputes from dpd | gold/curated canonical bucket (P1) — **needs agreement** |
-| 034 | exclude open and cancelled promises from the denominator | certified `default_filters` |
-| 028 | only randomised cases give an unbiased comparison | metric SQL filter on randomised flag; note in answer |
-| 032 | agent-coded hardship under-records (~60% recall); notes and transcripts show more | answer should state the caveat (and could use P4 text features) |
-| 006, 030 | spikes explained by incidents (INC-0914, outage) in `ops_events` | uncertified SQL must also check `ops_events` and say so |
-| 010 | out-of-hours calls concentrate in NL and SK (dialer on head-office time) | needs local-time logic by province; verify data |
-| 024 | FSA is a planted proxy for income and protected grounds | refusal gate (not just PII/protected columns) |
-| 002, 026 | superseded documents give the wrong answer | P4 (version in force) |
+| Certified metric (15 rows, **12 distinct metrics**; the catalogue has 15 metrics, all implemented) | 003 004 007 008 011 012 013 014 015 017 025 027 028 032 034 | P2 |
+| Structured, no certified metric | 006 010 030 035 | P2 |
+| Refusal | 018 023 024 029 031 | P2 |
+| Policy / corpus RAG | 001 002 005 009 019 020 026 033 | P4 via I6 |
+| Customer RAG (call on a case) | 016 021 022 | P4 via I6 |
 
-## 3. Pipeline and files (from the implementation plan, with order)
+## 2. Trap handling (corrected after review; verified against the dev reference SQL)
 
-`access → injection → refusal gate → as-of dates → router → path → validator → answer card`. No AI in access, refusal, dates or validator.
-
-### Milestones (in build order)
-
-| M | Deliverable | Needs data? | Done when |
-|---|---|---|---|
-| M0 | `ask/answer_card.py`, `ask/service.py` stub, `scripts/run_benchmark.py` skeleton writing the CSV, `scripts/score_dev.py` | no | CSV written for all 35 with `not_found`; scorer runs on dev gold |
-| M1 | `common/asof.py` (+tests), `ask/guards/refusal_gate.py` + `config/refusal_lexicon.yaml`, `ask/router.py` | no (needs `sensitivity.yaml`) | 5 refusal questions refused, no false refusals on the other 30; dates resolve from 2026-09-28 |
-| M2 | `ask/data/metric_catalog.py`, `metric_sql/<metric_id>.sql` for the 15 certified metrics, `params.py`, `execute.py`, `access.py` | yes (curated) | dev metric questions within tolerance of gold |
-| M3 | `ask/data/validator.py` (sqlglot), `schema_graph.py`, `schema_linker.py`, `uncertified_sql.py` | yes | 006 010 030 035 answered, labelled "uncertified" |
-| M4 | `ask/data/drivers.py`, comparison handling | yes | 003 007 028 style questions |
-| M5 | I6 wiring to P4 (`RagRequest/RagResponse`), `common/audit.py` use, guard `injection.py` | no | 11 RAG questions routed and returned |
-| M6 | Hardening: re-run benchmark after every change, fix failures; 19:00 extras on 4 Oct | yes | final CSV |
-
-Moved to P2 in the rebalance, scheduled after M4 unless P1 needs help sooner: `quality/contract_checks`, `anomaly`, `dq_report`, Team Lead / Identity Review / Data Quality pages, `masking.py`, and the `semantic_*` views.
-
-## 4. Design choices to challenge
-
-1. **Metric SQL is hand-written per certified metric**, with `default_filters` built in and named parameters. The LLM only fills filters/dates as JSON. Alternative: LLM writes SQL from the formula. I prefer hand-written for the 15 certified metrics because correctness is graded and the formulas are pseudo-SQL.
-2. **Router: rules first, LLM only to break ties.** Keyword and metric-synonym match decides `metric`; `guardrail` comes from the refusal gate; the 11 RAG questions are recognisable (policy words, case IDs like `CS-2026-614370`). Is an LLM router needed at all?
-3. **Where the "canonical bucket from dpd" lives.** If P2 recomputes it in each metric SQL, it is duplicated. Better: P1 provides one canonical `bucket` in curated/gold. Ask P1.
-4. **Reading raw vs curated vs gold.** Plan says consumers read only `gold.*`. Gold isn't built; curated tables exist. Proposal: develop against `curated.*` through a thin set of views in a `semantic` schema with the same names we will later point at gold, so nothing in `metric_sql` changes when gold lands.
-5. **Answer format in the CSV.** `answer` text must contain the numbers and a short statement; `sql_or_sources` holds the SQL or citation list; `refused` true/false. Does the grader parse tables in `answer`? Check the release README for the exact expected shape before M0.
-6. **Refusal gate scope.** Beyond protected/PII columns: bulk personal-data export (023), ranking/targeting by protected attributes (029), FSA-style proxies (024), out-of-scope topics (018). Should the gate also catch "legal advice" (020 "Can we sue…")? That question has a gold-like policy answer, so probably route to RAG, not refuse. Needs a decision.
-7. **LLM use in P2.** Only (a) filling metric parameters, (b) uncertified SQL, (c) two-sentence summary and follow-ups. Provider and model ID are not decided anywhere. Needs a decision (cost and rate limits matter for the 19:00 rerun).
-8. **Latency target.** Plan says 1–2 s; P2's doc said 0.65–1.3 s. Not graded by the CSV, so low priority.
-
-## 5. Dependencies on other owners
-
-| Need | From | By |
+| Q | What the reference actually does / the trap | Handling |
 |---|---|---|
-| Interface stubs agreed (branch `interface-stubs-review`) | all | now |
-| Curated tables for the metric sources: `collections_cases`, `promises_to_pay`, `contact_history`, `card_accounts`, `loan_accounts`, `account_monthly_snapshot`, `ops_events`, `agents` | P1 | status note says built or building |
-| `config/sensitivity.yaml` generated and pushed | P1 | before M1 |
-| Canonical bucket / `channel` coalescing decision | P1 | before M2 |
-| I6 request/response including `user_id` | P4 | before M5 |
-| Real data on my machine | a copy of Anushka's finished `trustissues.duckdb` (about 6 GB, verified with `verify_warehouse.py`), or a local raw load plus the needed curated tables | before M2 |
+| 003 | `least(prior_broken_ptp_count, 3)` groups 3+ together | approved grouping transformation (`cap_at`), not a question special-case |
+| 007 | `LEFT JOIN agents`, `coalesce(site,'self_serve')`; due dates through 28 Sep; resolved statuses only | left join, keep unmatched group |
+| 008 | July opening cohort, cure within 30 days, needs full follow-up | cohort variant of `cure_rate`, not the generic monthly denominator |
+| 010 | uses supplied `within_permitted_hours_flag` and `contact_ts_local`; no extra timezone conversion | use the flag. (v1 wrongly proposed province-based logic.) |
+| 011, 027 | `coalesce(channel_v2, channel)`; 027 also excludes system events | one approved adapter does the coalesce; P1 has not implemented it |
+| 012 | includes `active` and `blocked`; null DPD excluded from the denominator, never treated as 0; `cycles_delinquent` is not days | metric variant, documented |
+| 014 | randomised hardship cases, certification at assignment, 30-day cure, group sizes, direction of effect | needs `case_assignment_history` (inspect its grain); `assignment_method = 'random'`; no causal overreach |
+| 015 | count and amount charged off by product, not a percentage | define which amount field is the loss |
+| 017 | `month_end_date` parsed with three formats; both March and June DPD observed; keep history | confirm how failed `TRY_CAST` dates are recovered from raw text; account history, not current-only; check catalogue vs reference on charge-offs |
+| 025 | do open cases with zero attempts belong in the denominator? | left join from cases; state the choice |
+| 028 | `assignment_method = 'random'` only | explicit filter |
+| 032 | certified rate stays on the structured case flag; text-inferred hardship may be a **separately labelled estimate** | never replaces the numerator |
+| 034 | exclude open and cancelled from the denominator | certified `default_filters` |
+| 035 | reference counts the **stored** `current_bucket`; trap note says recompute from `current_dpd` | **decision:** primary answer = stored-bucket counts (matches gold); then report the *measured* mismatch with DPD-derived buckets and the population used. No hard-coded "4%". Keep reported and canonical bucket as separate fields |
+| 006, 030 | spike explained by incident (`ops_events`) | structured count plus cited incident evidence; no causal claim from coincidence |
+| 024 | FSA is a planted proxy | refusal gate |
+| 002, 026 | superseded documents | P4 (version in force) |
 
-## 6. Test plan
+## 3. Query semantics (new)
 
-- Unit: `test_asof`, `test_refusal_gate` (the 5 refusals plus "average" and "ageing buckets" allowed), `test_validator` (writes, PII columns, missing default filters rejected), router cases.
-- Scorer `scripts/score_dev.py`: compares our CSV with `benchmark_dev_answers.csv` using each question's `tolerance`. Numeric within tolerance, text by key facts, refusals by flag. Reports per-question pass/fail and the trap note on failure.
-- The benchmark is the integration test: run after every change.
+- **Requested measure is separate from metric identity.** Parameter contract: `metric_id`, requested measure, cohort, date basis, grouping, comparison periods, approved filters. Each metric supports a bounded set of variants; an unsupported variant returns "cannot answer", never a nearby formula. Results include numerator/denominator or group counts.
+- **Dates:** half-open `[start, end)` intervals, with the as-of-date interpretation documented per date basis (snapshot, contact, promise due, payment, case-open cohort). The references differ (007 includes 28 Sep; 011 stops before it; 006 uses 15–22 vs 7–14), so each metric records which it uses. Historical answers use only data known by the observation cutoff; metrics that cannot be rebuilt from current-only data are flagged.
+- **Grain and joins:** preserve account, case, contact and promise grains separately; pre-aggregate one-to-many tables before joining so a customer/account join never multiplies promise denominators.
+- **Namespace:** metric SQL reads `gold.semantic_*` only. P2 owns the semantic SQL and agrees column/grain contracts with P1. Dev adapters over curated data live only in an isolated dev database and are never published as certified products before the quality gate. No separate `semantic` schema.
 
-## 7. Risks
+## 4. SQL and parameter controls
 
-- **Curated is slow and not shared.** Until I have data, M2 onwards is blocked. Mitigation: M0 and M1 first; get a copy of the finished warehouse.
-- **Overfitting to the 21 dev answers.** The 19:00 extras are unseen. Keep metric SQL general over dimensions (product, queue, site, province, date window).
-- **Data traps beyond the ones listed.** Expect more in the extras (the same families: schema drift, missing dpd, date formats, superseded documents).
-- **LLM cost/latency** for the final run. Cache by input hash through `common/llm.py` (P4 ships it).
+One read-only `SELECT`; allowed tables and columns; join edges validated; role scope applied; bounded rows and runtime. Resolve aliases, CTEs and subqueries when checking columns; reject file/network readers and table functions; test scope removal inside subqueries. Scalar values are bound; grouping columns, sort choices and identifiers go through explicit allow-lists. Certified `default_filters` stay structural in templates. Generated SQL gets one repair attempt, then an explicit cannot-answer. Unclassified source columns are unavailable even if the refusal lexicon does not mention them.
 
-## 8. Proposed split between Claude and Codex (to agree)
+## 5. One entry point
 
-| Lane | Items |
+`ask(question, user, *, as_of_date)` serves the app and the benchmark. The benchmark passes each row's `as_of_date` and a stated benchmark user (role and id); no bypass. Access check, basic injection screening (heuristic fallback first) and the minimal validator are in the first runnable path. A fake RAG handler is wired early so P4 can integrate.
+
+## 6. Ownership (agreed with Codex's confirmation)
+
+| Codex | Claude |
 |---|---|
-| Claude | M0 skeleton and scorer, `asof`, refusal gate and lexicon, router, answer card, service wiring |
-| Codex | review of this plan; `metric_sql` templates and tests for the 15 metrics; `validator.py` with sqlglot tests; independent review of Claude's lane |
-| Joint, one at a time | `schema_graph`, `uncertified_sql`, `drivers` (decide who builds, the other reviews) |
+| Metric SQL and tests | Metric catalogue and parameter extraction |
+| `gold.semantic_*` views and dev adapters | Access checks |
+| SQL validator and execution | `ask()` service, `AnswerCard`, benchmark harness and scorer |
+| Schema graph | Dates (`asof`), refusal gate, injection screening, router |
+| Contract checks, anomalies, DQ report | Generated-SQL fallback and drivers |
+| Review of Claude's work | `masking.py` and P2's three UI pages (Team Lead, Identity Review, Data Quality) |
 
-Rules: separate files, small commits, pull before work, nothing to `main` without the human's say-so.
+**Single editors:** Claude edits service wiring, shared config and dependency files (`pyproject.toml`, `settings.yaml`, `common/interfaces.py`). Codex gives requirements for its modules. Each reviews the other's work. P4 keeps `llm.py`, audit and RAG handlers. Any new file gets one implementer before it is touched.
 
-## 9. Questions for Codex
+## 7. Build order and delivery checkpoints
 
-1. Which of the 11 traps in §2 did I miss or misplace?
-2. Is rules-first routing enough, or does it fail on the unseen extras?
-3. Hand-written metric SQL vs LLM-written: any case for the second?
-4. Should P2 build the `semantic` views itself rather than wait for P1's `gold.semantic_*`?
-5. Is the Claude/Codex split sensible, or should we split by metric group instead?
+Clock times assume the plan's start of 3 Oct 09:00 IST; hours are from the implementation plan.
+
+| Step | Deliverable | Needed by |
+|---|---|---|
+| 1 | Interfaces merged into the P2 branch (see §10); freeze `AnswerCard`, user context, `ask()` signature, semantic view contracts; populated fixtures | before any code |
+| 2 | Claude: service/harness/scorer, dates, refusal gate, router, injection fallback, access. Codex: minimal validator, fixture-tested metric SQL | first runnable path |
+| 3 | Case-to-call contract settled with P4 (case id → golden customer → latest eligible call *for that case*; assignment access check) | early, while fixtures suffice |
+| 4 | Semantic adapters and metric variants; real tables brought in incrementally | hours 4–20 |
+| 5 | **Contract checks (Codex) ready for P1's publish gate** | hour ~20 (4 Oct 05:00) |
+| 6 | **`masking.py` (Claude) before any screen shows customer data** | before the first customer-data page |
+| 7 | Fake→real RAG handler; generated-SQL fallback after access and graph checks; incident explanations and comparisons | hours 12–28 |
+| 8 | Anomalies, DQ report (Codex); drivers, three UI pages (Claude) | hours 20–32 |
+| 9 | Full-data benchmark, evidence review, unseen-question rerun | hour 34 (4 Oct 19:00) onward; final CSV by 21:00 |
+
+Full-warehouse availability blocks full-data validation only, not fixture-based development.
+
+## 8. Testing and the scorer
+
+Unit tests: dates, refusal gate (the 5 refusals; "average" and "ageing buckets" allowed), validator (writes, PII, missing default filters, scope removal in subqueries), router paraphrases and hybrid questions (a case ID alone does not imply customer RAG), a fake LLM provider so tests need no credentials.
+
+`scripts/score_dev.py` is a development approximation, not the official grader: compare table rows by dimension keys (not order); percentages in points, amounts in CAD, counts exact where required; report missing/extra rows, duplicates, empty denominators, refusal flags, cited sources; report text and citation review separately; unsupported tolerance formats are reported, never defaulted to pass; validate submitted IDs against the input and keep one row per question.
+
+## 9. Risks
+
+Curated is slow and unshared; the dev reference dates and the catalogue disagree in places; the extras at 19:00 will contain the same trap families; LLM cost/latency for the final run (cache via P4's wrapper); a sensitivity file generated locally from the dictionary must exist before real-data execution (unit work can use a small classified fixture).
+
+## 10. Agreement status
+
+| Item | Status |
+|---|---|
+| Ownership table (§6) | Codex confirmed; waiting for the human's OK |
+| BQ-035 primary answer = stored bucket, mismatch measured and reported | agreed by both |
+| Merge `interface-stubs-review` into the P2 branch (not `main`) | Codex recommends; **waiting for the human's go**; then review the diff and run the interface tests before coding |
+| Case-to-call contract with P4 | open |
+| `bucket`/`channel_v2` adapter location | P2 adapter for now; tell P1 |
+| LLM provider and model ID | open (P4's wrapper) |
