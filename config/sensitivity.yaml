@@ -1168,6 +1168,8 @@ tables:
     std_dob: direct_pii
     std_dob_alt: direct_pii
     std_dob_ambiguous: direct_pii
+    std_dob_was_ambiguous: direct_pii
+    std_dob_basis: direct_pii
     std_postal: direct_pii
     std_fsa: direct_pii
     dq_inquiries_inconsistent: none

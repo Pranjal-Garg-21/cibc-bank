@@ -22,7 +22,7 @@ This is a skeleton, not an exhaustive list. Add files when a new purpose comes u
 | Identity | Rules in SQL, Splink, LLM second opinion, human review | Design §3 |
 | Data quality | Great Expectations, driven by the contract YAML | Design §3, P1 §9 |
 | Ask | sqlglot, networkx (join graph), pyahocorasick (refusal gate), Chroma (policy only), LLM | Design §4, P2, P4 |
-| Feature store | Feast registry; offline store on Parquet/DuckDB; online store Redis | Design §5 |
+| Feature store | Feast registry; offline store on Parquet/DuckDB. No online store: Redis was built and removed (nothing real-time reads it; see `p3_plan.md` step 5) | Design §5 |
 | Model | LightGBM + SHAP | Design §6 |
 | UI | Streamlit multipage app, with a role picker for the demo | Not in docs. Fastest route to a working screen in 36 h |
 | LLM | One wrapper (`common/llm.py`). Model IDs live in config. Use a small model for bulk jobs (text features, identity pairs) and a larger one for answers | Not specified in docs |
@@ -43,7 +43,6 @@ cibc-trustissues/
 ├── README.md                     # SUBMISSION: how to run, what changed from design, AI tools used
 ├── pyproject.toml                # deps + `trustissues` console entry points
 ├── Makefile                      # make data | pipeline | features | train | queue | app | benchmark | test
-├── docker-compose.yml            # Redis for the Feast online store (and nothing else)
 ├── .env.example                  # LLM API key, MAPLE_DATA_DIR, WAREHOUSE_DIR
 ├── config/
 │   ├── settings.yaml             # AS_OF_DATE, paths, match thresholds (0.95 / 0.80), model IDs, token budgets
@@ -196,11 +195,11 @@ Pipeline order: **access check → injection classifier → refusal gate → as-
 
 ## 5. Layer 3: Feature Store (P3, text features P4)
 
-One definition per feature. The same code serves training (point-in-time at `ptp_created_ts`) and live scoring (latest values pushed to Redis).
+One definition per feature. The same SQL serves training (point-in-time at `ptp_created_ts`) and the morning scoring (the same files run as of `AS_OF_DATE`).
 
 | File | Intention |
 |---|---|
-| `feature_repo/feature_store.yaml` | Feast config: file/DuckDB offline store, Redis online store. |
+| `feature_repo/feature_store.yaml` | Feast config: file/DuckDB offline store (no online store). |
 | `feature_repo/entities.py` | Entities: `golden_customer_id`, `ptp_id`, `account_id`. |
 | `feature_repo/feature_views.py` | One feature view per group below. Sources are Parquet exports of the SQL in `features/sql/`. |
 | `features/sql/delinquency.sql` | Days past due now and worst in the last 12 months. |
@@ -213,7 +212,6 @@ One definition per feature. The same code serves training (point-in-time at `ptp
 | `features/text_eval.py` | Scores extraction against `data/labels/hand_labelled_notes.csv` (~200) and the release's public labels. Writes `reports/text_feature_eval.md`. Text features are gated on passing this. |
 | `features/asr_check.py` | **Stretch (P4).** Transcribes ~50 recordings with local Whisper and writes the word error rate against the JSON transcripts into `reports/text_feature_eval.md`. |
 | `features/build_training_set.py` | Point-in-time join on `gold.promises_enriched` using Feast historical retrieval. Label = promise broken (status `broken`, or `partially_kept` per metric definition). |
-| `features/materialize.py` | After the nightly batch, writes the latest values to Redis. Stretch: re-push on a payment or new-promise event. |
 
 ---
 
@@ -234,7 +232,7 @@ Rules first, then model, then action choice, then explanation, then human review
 | `nba/reword.py` | **Stretch (cut first).** Optional LLM rewording, then a fact check (numbers, reasons and dates must match the template). Falls back to the template on mismatch. |
 | `nba/queue.py` | Nightly morning queue into `gold.nba_decisions` (decision card JSON, model version, feature snapshot ID). |
 | `nba/review.py` | Accept or override with a reason code (I7). Team-lead approval of the daily digital-reminder batch. Mandatory approval for hardship, vulnerability and high-balance cases. Writes `gold.nba_overrides`. |
-| `nba/promise_coach.py` | **Stretch.** Break risk for alternative dates and amounts during a call, from Redis plus the model, no LLM, under 100 ms. |
+| `nba/promise_coach.py` | **Stretch.** Break risk for alternative dates and amounts during a call, from the model, no LLM, under 100 ms (would need an online store again). |
 
 ---
 
@@ -284,7 +282,7 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 | `download_data.sh` | `hf download nuxsh/maple-collections-hackathon` and unzip both zips into `maple_data/`, then move the voice pack's `files/voice/` into `maple_collections_release/files/` so `voice_samples.file_path` resolves. |
 | `run_benchmark.py` | Runs `ask.service.ask` on every benchmark question (plus the 7 PM extras) at each question's `as_of_date`. Writes `submission/benchmark_answers.csv` (`question_id, answer, sql_or_sources, refused`) in the template format. Reports a dev score against the dev answers file. Run it after every Ask change. |
 | `label_notes.py` | Small CLI for hand-labelling ~200 notes. |
-| `nightly.py` | Pipeline, then text features, then feature materialisation, then scoring, then queue. Used for the demo "morning" run. |
+| `nightly.py` | Pipeline, then text features, then features, then scoring, then queue. Used for the demo "morning" run. |
 
 **`tests/`** (prioritise the governance guarantees)
 
@@ -296,7 +294,7 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 - `test_asof.py`: relative dates resolve from 2026-09-28.
 - `test_hardship_monotonic.py`: a hardship signal never makes the recommended action harsher.
 - `test_rules_hard_stops.py`: no contact action survives cease, deceased, bankruptcy or dispute.
-- `test_feature_parity.py`: offline and online values match for the same entity and timestamp.
+- `test_feast_offline.py`: Feast's point-in-time retrieval returns the computed feature values.
 - `test_card_fact_check.py`: reworded cards with changed facts fall back to the template.
 
 ---

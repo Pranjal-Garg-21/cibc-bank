@@ -30,6 +30,7 @@ AREAS = [
     ("reference", "C. Broken references and duplicate customers"),
     ("missing", "D. Missing values"),
     ("logic", "E. Values that contradict each other"),
+    ("shift", "F. Shifts and patterns that affect models"),
 ]
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 STATUS_TEXT = {
@@ -258,6 +259,8 @@ def render(issues: list[Result], clean: list[Result], cfg: dict, con=None) -> st
         "reference": "Records that point at something that is not there, and people stored more than once.",
         "missing": "Values that are blank where they should not be. None were imputed.",
         "logic": "Fields that cannot all be true at once. Neither value was changed; the rows are flagged.",
+        "shift": "Not wrong values in single rows, but patterns across time or across records that change what a model "
+                 "or a baseline learns. Nothing was changed. None of these is explained by an event in the operations log.",
     }
     for key, label in AREAS:
         rows = [r for r in found if r.area == key]

@@ -26,7 +26,7 @@ Proposed shapes, taken from `implementation_plan.md` §7.1 and the `p1`–`p4` d
 2. **`decisioning_customer` columns (P1, P3):** the list is a proposal. P3, say what you need. `fsa` and `age` are left out and only joined back in the fairness test.
 3. **Consent columns (P1):** `consent_phone/sms/email/mail` are guessed names. Match them to the dictionary.
 4. **`ptp_intent_strength` values (P4, P3):** `strong | moderate | weak | none` is a guess.
-5. **`reason_code` list for overrides (P3):** still open in the P4 doc.
+5. **`reason_code` list for overrides (P3):** settled in `nba/review.py` (`REASON_CODES`): `customer_already_paid`, `customer_contacted_today`, `hardship_disclosed`, `vulnerability_concern`, `dispute_raised`, `customer_requested_channel`, `contact_details_wrong`, `card_facts_wrong`, `too_much_contact`, `other`. The same list covers a team lead's rejections. `decision` also takes `approved` / `rejected` for approvals; the columns are unchanged.
 6. **`label_broken` (P1, P3):** is `partially_kept` broken? The plan defers to the metric definition.
 7. **`bucket_transitions` columns (P1, P2):** marked TBC in the P1 doc.
 8. **Timeline interface number:** the plan never gave it one.
@@ -38,7 +38,7 @@ Proposed shapes, taken from `implementation_plan.md` §7.1 and the `p1`–`p4` d
 3. **Row grain (P1, P3):** `decisioning_customer` is now a history table, one row per `(golden_customer_id, valid_from)`. `valid_from` is when values became true; `available_from` is when we could have known them, and is the point-in-time join key. `feature_ts` is gone. Confirm the grain.
 4. **`apply_stubs`:** now raises `StubMismatch` if an existing table is missing a stub column or has a different type. Extra columns are allowed.
 5. **Tests:** the exact table set, history columns, outcome-column ordering, I6 dataclass fields, the mismatch check and the fixtures are covered. Still not done: types of every column, and checking the protected and PII lists against the generated `sensitivity.yaml`, which is not on `main` yet.
-6. **`decision_card` JSON (P3, app):** shape is the `DecisionCard` dataclass (action, channel, risk score, top reasons, runner-up, blocked actions, evidence quotes, approval fields, summary).
+6. **`decision_card` JSON (P3, app):** shape is the `DecisionCard` dataclass (action, channel, risk score, top reasons, runner-up, blocked actions, evidence quotes, approval fields, summary). **Added 3 Oct (P3), optional:** `support_reason` (why a certified agent should call today: `offer_programme`, `plan_ending`, `follow_up`, `vulnerable_contact`) and `hardship_options` (eligible hardship programmes: `program_id`, `version`, `name`, `policy_section`, `approver_level`). Older cards without them stay valid. `gold.nba_decisions.action` gains the value `support_call` (a certified agent offering help to a hardship or vulnerable customer); the columns are unchanged.
 7. **Fixture fixes:** `load_fixtures` refuses a real warehouse (only in-memory or a file named `*fixture*`). Fixture buckets now use the release labels (`1-30`, `31-60`, `61-90`), and the fixture decision card no longer claims email was blocked by consent when consent is `yes`.
 
 Still open: confirm the history grain; P2's `semantic_*` views; P3's explicit feature allow-list (the outcome list alone does not prevent leakage).
