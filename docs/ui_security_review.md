@@ -1,7 +1,8 @@
 # Banking console refinement and security record
 
-Implemented locally on `ui/banking-polish-security`, 2026-10-04. Previous pushed baseline: **`3c87423`**.
-Local rollback tag: **`rollback-ui-3c87423`**. No push, pull request or public deployment.
+Implemented on `ui/banking-polish-security`, 2026-10-04, and pushed to GitHub at the user's request.
+Previous pushed baseline: **`3c87423`**. Published rollback tag: **`rollback-ui-3c87423`**.
+The original `ui/react-app` branch remains at the baseline. No pull request or public deployment.
 
 ## Interface
 
@@ -107,7 +108,7 @@ npm ci
 npm run build
 ```
 
-Restart using the original branch's normal server command. The local `rollback-ui-3c87423` tag records the exact
+Restart using the original branch's normal server command. The published `rollback-ui-3c87423` tag records the exact
 previous push. Avoid `reset --hard`: unrelated local files must be preserved.
 
 The verification and previews did not reset real staff credentials. Before any future deployed credential

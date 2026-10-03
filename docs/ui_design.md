@@ -1,11 +1,12 @@
 # TrustIssues: UI Implementation Design (v0.2)
 
-**2026-10-04 implementation update:** the local `ui/banking-polish-security` branch refines the existing CIBC
+**2026-10-04 implementation update:** the `ui/banking-polish-security` branch refines the existing CIBC
 interface and extends authentication with MFA, recovery codes, fresh verification and session management.
-The previous pushed baseline is `3c87423`, also recorded by local tag `rollback-ui-3c87423`.
+The previous pushed baseline is `3c87423`, also recorded by tag `rollback-ui-3c87423` on GitHub.
 See [current controls, verification and rollback](ui_security_review.md) for the current implementation;
 this document's original v1 tables below describe the baseline. Shared demo access is an explicit temporary
-mode using active DuckDB staff, with no per-person credentials written. No GitHub publication was requested.
+mode using active DuckDB staff, with no per-person credentials written. The branch and rollback tag are pushed
+to GitHub; the original `ui/react-app` branch remains at the baseline.
 
 **Status: draft, 2026-10-03; v1 built on branch `ui/react-app` (see `ui/README.md`). Owner: Anushka (P1). Not yet reviewed by P2–P4.**
 Builds on the stack proposal (FastAPI + React). Where this note and the proposal disagree, see §3 and
