@@ -226,3 +226,13 @@ def test_i6_entry_point(con, tmp_path):
     assert r.citations[0].kind == "contact" and r.citations[0].source_id == "C-9"
     with pytest.raises(PermissionError):
         answer_customer(RagRequest("x", "rag_customer", "agent", "AG-NOW", AS_OF), con=con, llm=llm)
+
+
+def test_a_quote_joining_call_lines_passes_only_if_every_line_is_real(con, tmp_path):
+    stitched = "customer: I've been off work sick since July.\ncustomer: I can pay $95 Oct 14."  # not adjacent in CALL
+    invented = "customer: I've been off work sick since July.\ncustomer: I will pay everything tomorrow."
+    reply = {"answer": "Sick; promised $95.", "not_found": False, "confidence": 0.9, "conflict_note": None,
+             "evidence": [{"source": "S4", "quote": stitched}, {"source": "S4", "quote": invented}]}
+    llm, _ = make_llm(tmp_path, reply)
+    r = run_customer("What was said?", "G-1", con=con, llm=llm, as_of=AS_OF, user_role="agent", user_id="AG-NOW").response
+    assert r.evidence == [stitched]

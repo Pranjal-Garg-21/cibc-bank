@@ -96,6 +96,16 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", _MD.sub("", s)).strip().lower()
 
 
+def _quoted_in(quote: str, text: str) -> bool:
+    """True if the quote is in the text word for word. A quote spanning several lines (call turns that were not next
+    to each other) passes only if every one of its lines is itself in the text word for word."""
+    body = _norm(text)
+    if _norm(quote) in body:
+        return True
+    lines = [ln for ln in quote.splitlines() if ln.strip()]
+    return len(lines) > 1 and all(_norm(ln) in body for ln in lines)
+
+
 def policy_sources(result) -> list[Source]:
     """Policy search output -> sources. Hardship rows are authoritative (D5)."""
     out = [Source("policy", s.doc_id, s.text, s.version, s.section_id) for s in result.sections]
@@ -146,7 +156,7 @@ def answer_question(question: str, sources: list[Source], *, llm: LLM, as_of: da
         if not m or not quote or not 1 <= int(m.group(1)) <= len(sources):
             continue
         src = sources[int(m.group(1)) - 1]
-        if _norm(quote) in _norm(src.text):
+        if _quoted_in(quote, src.text):
             evidence.append(quote)
             if src not in used:
                 used.append(src)
