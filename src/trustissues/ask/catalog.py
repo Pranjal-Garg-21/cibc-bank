@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from .asof import Period, days_before, parse_periods
+from .asof import MONTHS, Period, days_before, parse_periods
 from .data.metric_templates import DIMENSIONS, FAMILIES
 from .requested_shape import requests_entity_count
 
@@ -65,8 +65,31 @@ class Unsupported:
     reason: str
 
 
+def requests_contact_quantity(question: str) -> bool:
+    """Bind a contact-count numerator to a case denominator before topic retrieval.
+
+    Cost and duration quantities are different measures, even when their context
+    mentions attempts. This describes the requested unit, not a metric synonym.
+    """
+    q = question.lower()
+    if re.search(r"\b(costs?|expenses?|expenditure|spend|spending|cad|dollars?)\b", q):
+        return False
+    contacts = r"\b(?:contacts?|attempts?|touch(?:es)?|calls?|dials?)\b"
+    duration = re.search(r"\b(?:average|mean)\s+(?:number of\s+)?(?:days?|hours?|minutes?|dpd)\b", q)
+    contact = re.search(contacts, q)
+    if duration and (not contact or duration.start() < contact.start()):
+        return False
+    cases = r"\b(?:per|each|every)\s+(?:(?:open|active|collections)\s+)?cases?\b"
+    return bool(re.search(contacts + r"[^.;?]{0,80}" + cases, q)
+                or re.search(cases + r"[^.;?]{0,80}" + contacts, q)
+                or re.search(r"\b(?:average|mean)\s+(?:[a-z]+\s+){0,4}" + contacts
+                             + r"[^.;?]{0,80}\b(?:open|active)\s+cases?\b", q))
+
+
 def detect_metric(question: str) -> str | None:
     q = question.lower()
+    if requests_contact_quantity(q):
+        return "contact_attempts_per_case"
     for metric_id, rx in TRIGGERS:
         if re.search(rx, q):
             return metric_id
@@ -125,7 +148,7 @@ def _dimensions(question: str, metric_id: str) -> tuple[tuple[str, ...], str | N
                     r"august\b|september\b|october\b|november\b|december\b|today\b|tomorrow\b)", tail):
             continue
         # These units are denominators already represented by the named metric.
-        units = {"contact_attempts_per_case": r"per\s+(?:open\s+)?cases?\b",
+        units = {"contact_attempts_per_case": r"(?:per|for each|for every|on each)\s+(?:(?:open|active|collections)\s+)?cases?\b",
                  "cost_per_contact": r"per\s+(?:contacts?|calls?|attempts?|dials?)\b",
                  "cost_per_rpc": r"per\s+(?:rpc|right[- ]party(?:\s+contact)?)\b"}
         if metric_id in units and re.match(units[metric_id], tail):
@@ -139,14 +162,83 @@ def _clamp(p: Period, as_of: date) -> tuple[date, date]:
     return p.start, min(p.end, as_of + timedelta(days=1))
 
 
+# Catalogue capabilities for this release, not dates inferred from the clock.
+# semantic_snapshots contains these eleven quarterly observations; current case
+# and account DPD have no historical state. Cure uses dated case events instead.
+ROLL_SNAPSHOTS = frozenset(date.fromisoformat(value) for value in (
+    "2023-12-31", "2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31",
+    "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30",
+))
+CASE_EVENTS_START = date(2016, 10, 2)
+
+
+def _population_problem(question: str) -> str | None:
+    """Reject entity identities the portfolio templates cannot bind as filters."""
+    entity = r"(?:case|customer|golden_customer|crm_customer|borrower|account|agent|loan|contact|promise)"
+    identity = re.search(
+        r"\bCS-\d{4}-\d{5,7}\b|"
+        r"\b(?:GC|G|CUST|CUSTOMER|CRM|ACC|ACCOUNT|AG|AGENT|LOAN|LN|CARD|PTP|CONTACT)[_-][\w-]+\b|"
+        r"\b(?:GC|G|CUST|ACC|AG)\d+\b|"
+        rf"\b{entity}[ _](?:id|identifier|key|ref|number)\b|"
+        rf"\b{entity}\s*(?:[=:#]|named\b|called\b)\s*\S+|"
+        rf"\b(?:for|of|from|to|on|with)\s+(?:the\s+)?{entity}\s+"
+        r"(?:['\"]|(?=[\w-]*\d)[\w-]+)|"
+        rf"\b(?:assigned to|handled by|owned by)\s+(?:{entity}\s+)?\S+",
+        question, re.I,
+    )
+    # A singular entity followed by a value selects an identity, regardless of
+    # name capitalisation. Generic entity attributes/populations are not names.
+    attributes = {"age", "province", "site", "product", "queue", "status", "accounts", "cases", "contacts"}
+    named = any(m[1].lower() not in attributes and m[1].lower() not in MONTHS
+                for m in re.finditer(rf"\b(?:for|of|from|to|on|with)\s+(?:the\s+)?{entity}\s+"
+                                     r"([\w-]+)\b", question, re.I))
+    if identity or named:
+        return "Named-entity filters are not supported by this portfolio metric; the requested population cannot be preserved."
+    return None
+
+
+def _period_problem(question: str, metric_id: str, periods: list[Period], as_of: date) -> str | None:
+    if metric_id in {"delinquency_rate", "average_dpd"}:
+        # A current-month request may use the current snapshot, but a past
+        # month/day or an interval spanning history cannot be substituted.
+        current_month = date(as_of.year, as_of.month, 1)
+        if any(not (p.start == as_of and p.end == as_of + timedelta(days=1)
+                    or p.start == current_month and p.start <= as_of < p.end
+                    and (p.end - p.start).days <= 31) for p in periods):
+            return f"{metric_id.replace('_', ' ')} is available only at the current snapshot ({as_of}); historical periods cannot be reconstructed."
+        dates = [date.fromisoformat(m[0]) for m in re.finditer(r"\b\d{4}-\d{2}-\d{2}\b", question)]
+        for m in re.finditer(r"\b(\d{1,2})\s+(" + "|".join(MONTHS) + r")\s+(\d{4})\b", question, re.I):
+            dates.append(date(int(m[3]), MONTHS[m[2].lower()], int(m[1])))
+        if any(d != as_of for d in dates) or re.search(r"\b(?:last|previous|prior)\s+(?:day|week|month|quarter|year)\b|\byesterday\b", question, re.I):
+            return f"Only the current snapshot ({as_of}) is available; the requested historical or future snapshot is unsupported."
+    elif metric_id == "roll_rate":
+        if any(p.end != p.start + timedelta(days=1) or p.start not in ROLL_SNAPSHOTS or p.start > as_of for p in periods):
+            return "Roll rate requires available quarterly month-end snapshots from December 2023 through June 2026, on or before the as-of date."
+    elif metric_id == "cure_rate":
+        if any(p.start < CASE_EVENTS_START or p.start > as_of for p in periods):
+            return f"Cure event history starts on {CASE_EVENTS_START} and is observed only through {as_of}; the requested period is unsupported."
+    return None
+
+
 def build_call(question: str, metric_id: str, as_of: date) -> MetricCall | Unsupported:
     q = question.lower()
+    if requests_contact_quantity(question) and metric_id != "contact_attempts_per_case":
+        return Unsupported("An average count of contacts per case cannot be answered with a different quantity such as days past due.")
     if metric_id == "average_dpd" and requests_entity_count(question):
         return Unsupported("A count of cases or accounts cannot be answered with average days past due.")
-    periods = parse_periods(question, as_of)
+    try:
+        periods = parse_periods(question, as_of)
+        period_problem = _period_problem(question, metric_id, periods, as_of)
+    except ValueError:
+        return Unsupported("The requested date is invalid; supply a valid reporting period.")
+    if period_problem:
+        return Unsupported(period_problem)
     dims, bad = _dimensions(question, metric_id)
     if bad:
         return Unsupported(bad)
+    population_problem = _population_problem(question)
+    if population_problem:
+        return Unsupported(population_problem)
     observation_end = (as_of + timedelta(days=1)).isoformat()
     call = MetricCall(metric_id, {}, dims)
     random_only = bool(re.search(r"randomi[sz]ed|champion|challenger", q))
