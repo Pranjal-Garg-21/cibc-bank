@@ -285,27 +285,30 @@ The mapping lives in `ui/tiui/deps.py` only. Confirm with P2 (Q3).
 - Colour carries meaning only. Everything structural is grey; colour appears in the accent (actions, links,
   focus) and in status badges, and status is always paired with a text label.
 
-### 8.2 Tokens (`ui/web/src/styles/tokens.css`)
+### 8.2 Tokens and components
 
-Starting values. Check every text/background pair with a contrast checker in the token PR (target WCAG AA:
-4.5:1 for body text, 3:1 for large text and UI borders).
+Built with **shadcn/ui** (Radix primitives, components copied into `ui/web/src/components/ui`, so there is no
+runtime UI library to upgrade). The theme is a banking operations palette defined once in
+`ui/web/src/styles/index.css` and read by every shadcn component:
 
 | Token | Value | Use |
 |---|---|---|
-| `--bg` | `#0E1116` | page background |
-| `--surface` | `#151A21` | cards, tables, side nav |
-| `--surface-raised` | `#1C232C` | dialogs, menus, sticky action bar, hovered row |
-| `--border` | `#2A333E` | dividers, table lines, inputs |
-| `--text` | `#E6EAF0` | primary text |
-| `--text-muted` | `#A3ADBA` | labels, secondary text |
-| `--text-faint` | `#7D8896` | placeholders, disabled (never for information that matters) |
-| `--accent` | `#2F5A8F` | primary button fill (white text) |
-| `--accent-text` | `#7BA3D9` | links, active nav item, focus ring |
-| `--ok` / `--warn` / `--danger` / `--info` | `#5BB98C` / `#E0B04F` / `#E5736B` / `#7BA3D9` | badge text and icon; badge fill is the same hue at ~15% opacity |
-| `--demo` | `#E0B04F` | the `DEMO` environment tag |
+| `--background` | `#0a111e` | page (deep navy) |
+| `--card` / `--popover` | `#0f1828` / `#131e31` | panels, dialogs, menus |
+| `--sidebar` | `#08101c` | navigation rail |
+| `--border` / `--input` | `#1f2c42` / `#2a3a55` | dividers, table lines, inputs |
+| `--foreground` / `--muted-foreground` | `#e6ebf2` / `#97a4b8` | text |
+| `--primary` | `#2c6bd6` | institutional blue: primary actions (white text) |
+| `--gold` | `#c9a45a` | brand mark and section eyebrows only |
+| `--ok` / `--warn` / `--danger` / `--info` | `#4fb889` / `#dcaa48` / `#e0645b` / `#79a6e6` | status badges, always with a text label |
 
-Tailwind reads these variables (`bg-[var(--surface)]` via theme extension), so changing the accent colour (Q6)
-is a one-line change.
+Bank-specific layout: a navigation rail grouped into *Collections operations* and *Data governance*; a header
+with the business date, a secure-session indicator and the `DEMO ENVIRONMENT` tag; an **operator bar** that always
+shows the signed-in person's name, staff ID, role, team and site; and a **staff profile** panel (staff record,
+reporting line, languages, vulnerable-customer certification, access granted, session details).
+
+The component library's scroll lock adds one `<style>` element; the server gives each page load a fresh CSP nonce
+for it (`get-nonce`), so the policy still has no `'unsafe-inline'`.
 
 ### 8.3 Type and layout
 

@@ -6,15 +6,16 @@ Serves /api/* and the built React app (ui/web/dist). See ui/README.md.
 """
 from __future__ import annotations
 
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import errors
 from .audit import AccessLog
-from .middleware import SecurityMiddleware
+from .middleware import SecurityMiddleware, csp
 from .routers import ask, identity, nba, session, status
 from .security import RateLimiter, SessionStore
 from .settings import Settings, from_env
@@ -56,7 +57,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             target = (dist / path).resolve()
             if path and target.is_file() and dist.resolve() in target.parents:
                 return FileResponse(target)
-            return FileResponse(dist / "index.html", headers={"Cache-Control": "no-cache"})
+            nonce = secrets.token_urlsafe(16)
+            html = (dist / "index.html").read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+            return HTMLResponse(html, headers={"Cache-Control": "no-store", "Content-Security-Policy": csp(nonce)})
     return app
 
 

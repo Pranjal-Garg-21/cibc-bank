@@ -180,3 +180,16 @@ def test_fallback_masks_sensitive_columns():
     assert rows[0][cols.index("dpd")] == 30
     if "first_name" in cols:
         assert rows[0][cols.index("first_name")] != "ANNA"
+
+
+def test_app_page_gets_a_fresh_style_nonce(make_client, tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text('<meta name="csp-nonce" content="__CSP_NONCE__">', encoding="utf-8")
+    c = make_client(dist_dir=dist)
+    r1, r2 = c.get("/"), c.get("/queue")
+    n1 = r1.text.split('content="')[1].split('"')[0]
+    assert n1 != "__CSP_NONCE__" and f"'nonce-{n1}'" in r1.headers["content-security-policy"]
+    assert n1 not in r2.text  # a new nonce on every response
+    assert "unsafe-inline" not in r1.headers["content-security-policy"]
+    assert "script-src 'self';" in r1.headers["content-security-policy"]  # scripts never get a nonce

@@ -14,8 +14,15 @@ UNSAFE = ("POST", "PUT", "PATCH", "DELETE")
 # Writes allowed without a session (and so without a CSRF token): signing in.
 CSRF_EXEMPT = ("/api/session/login",)
 
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
-       "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'")
+def csp(style_nonce: str | None = None) -> str:
+    """The Content Security Policy. The app page gets a per-response nonce so the component library's scroll lock
+    can add its one <style> element; nothing else inline is ever allowed (no 'unsafe-inline')."""
+    style = f"'self' 'nonce-{style_nonce}'" if style_nonce else "'self'"
+    return (f"default-src 'self'; script-src 'self'; style-src {style}; img-src 'self' data:; font-src 'self'; "
+            "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'")
+
+
+CSP = csp()
 
 
 def _refuse(request: Request, status: int, code: str, message: str) -> JSONResponse:
@@ -61,7 +68,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
     def _headers(self, request: Request, response) -> None:
         h = response.headers
-        h["Content-Security-Policy"] = CSP
+        if "content-security-policy" not in h:  # the app page sets its own, with a nonce
+            h["Content-Security-Policy"] = CSP
         h["X-Frame-Options"] = "DENY"
         h["X-Content-Type-Options"] = "nosniff"
         h["Referrer-Policy"] = "no-referrer"

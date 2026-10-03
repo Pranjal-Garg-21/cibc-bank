@@ -1,61 +1,131 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+@import './shadcn.css';
 
-/* Formal dark theme (docs/ui_design.md §8). Structural colour is grey; colour carries meaning only. */
-@theme {
-  --color-bg: #0e1116;
-  --color-surface: #151a21;
-  --color-raised: #1c232c;
-  --color-border: #2a333e;
-  --color-border-strong: #3a4552;
-  --color-text: #e6eaf0;
-  --color-muted: #a3adba;
-  --color-faint: #7d8896;
-  --color-accent: #2f5a8f;
-  --color-accent-hover: #3a6aa6;
-  --color-accent-text: #7ba3d9;
-  --color-ok: #5bb98c;
-  --color-warn: #e0b04f;
-  --color-danger: #e5736b;
-  --color-info: #7ba3d9;
+@custom-variant dark (&:is(.dark *));
 
+/*
+ * Banking operations theme (docs/ui_design.md §8): deep navy surfaces, one institutional blue for actions,
+ * a restrained gold for the brand mark only. Status colour is always paired with a text label.
+ * shadcn components read the variables in .dark below; the app is dark-only on screen, light when printed.
+ */
+@theme inline {
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-heading: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* status and brand */
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-gold: var(--gold);
+  --color-faint: var(--faint);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root,
+.dark {
+  --radius: 0.5rem;
+
+  --background: #0a111e; /* page */
+  --foreground: #e6ebf2;
+  --card: #0f1828; /* panels */
+  --card-foreground: #e6ebf2;
+  --popover: #131e31;
+  --popover-foreground: #e6ebf2;
+  --primary: #2c6bd6; /* institutional blue: primary actions */
+  --primary-foreground: #ffffff;
+  --secondary: #182438;
+  --secondary-foreground: #e6ebf2;
+  --muted: #142033;
+  --muted-foreground: #97a4b8;
+  --accent: #1a2840; /* hover */
+  --accent-foreground: #e6ebf2;
+  --destructive: #e0645b;
+  --border: #1f2c42;
+  --input: #2a3a55;
+  --ring: #6f9be6;
+
+  --sidebar: #08101c;
+  --sidebar-foreground: #c8d2e0;
+  --sidebar-primary: #2c6bd6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #13203a;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #18243a;
+  --sidebar-ring: #6f9be6;
+
+  --ok: #4fb889;
+  --warn: #dcaa48;
+  --danger: #e0645b;
+  --info: #79a6e6;
+  --gold: #c9a45a;
+  --faint: #6f7d92;
 }
 
 @layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
   html {
     color-scheme: dark;
-    background: var(--color-bg);
+    background: var(--background);
   }
   body {
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-family: var(--font-sans);
+    @apply bg-background text-foreground font-sans antialiased;
     font-size: 14px;
     line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
   }
-  h1, h2, h3 {
+  h1,
+  h2,
+  h3 {
     font-weight: 600;
-    letter-spacing: -0.005em;
-  }
-  :focus-visible {
-    outline: 2px solid var(--color-accent-text);
-    outline-offset: 2px;
-  }
-  ::selection {
-    background: #2f5a8f80;
+    letter-spacing: -0.01em;
   }
   table {
     font-variant-numeric: tabular-nums;
   }
-  dialog::backdrop {
-    background: #0008;
+  ::selection {
+    background: #2c6bd666;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     transition: none !important;
     animation: none !important;
   }
@@ -63,11 +133,14 @@
 
 /* Printed decision cards and reports: light, with the confidentiality footer. */
 @media print {
-  html, body {
+  html,
+  body {
     background: #fff !important;
     color: #000 !important;
   }
-  nav, header, .no-print {
+  [data-slot='sidebar'],
+  header,
+  .no-print {
     display: none !important;
   }
   .print-footer {
@@ -77,5 +150,6 @@
     border-color: #999 !important;
     color: #000 !important;
     background: transparent !important;
+    box-shadow: none !important;
   }
 }

@@ -13,12 +13,18 @@ export type Me = {
   as_of_date: string
   idle_minutes: number
   demo: boolean
+  site: string | null
+  team_lead_id: string | null
+  languages: string | null
+  employment_type: string | null
+  signed_in_at: string
+  max_hours: number
   features: { queue: boolean; ask: boolean; identity: boolean; status: boolean }
   can: { ask: boolean; my_queue: boolean; approvals: boolean; identity_review: boolean; status: boolean }
 }
 
 export type Options = { demo_login: boolean; as_of_date: string; idle_minutes: number }
-export type StaffRow = { agent_id: string; name: string | null; role: string; team_id: string | null }
+export type StaffRow = { agent_id: string; name: string | null; role: string; team_id: string | null; site: string | null }
 
 export type AnswerCard = {
   question: string

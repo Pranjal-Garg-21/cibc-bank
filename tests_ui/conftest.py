@@ -30,13 +30,14 @@ def build_warehouse(path: Path) -> None:
     for s in ("curated", "gold"):
         con.execute(f"CREATE SCHEMA {s}")
     con.execute("""CREATE TABLE curated.agents (agent_id VARCHAR, agent_display_name VARCHAR, team_id VARCHAR,
-        role VARCHAR, vulnerable_customer_certified BOOLEAN, status VARCHAR)""")
+        role VARCHAR, vulnerable_customer_certified BOOLEAN, status VARCHAR, site VARCHAR, team_lead_id VARCHAR,
+        languages VARCHAR, employment_type VARCHAR)""")
     con.execute("""INSERT INTO curated.agents VALUES
-        ('A1', 'Agent One', 'T1', 'agent', false, 'active'),
-        ('A2', 'Agent Two', 'T1', 'agent', true, 'active'),
-        ('L1', 'Lead One', 'T1', 'team_lead', false, 'active'),
-        ('Q1', 'QA One', 'T9', 'qa_analyst', false, 'active'),
-        ('X1', 'Gone', 'T1', 'agent', false, 'terminated')""")
+        ('A1', 'Agent One', 'T1', 'agent', false, 'active', 'TOR', 'L1', 'en', 'full_time'),
+        ('A2', 'Agent Two', 'T1', 'agent', true, 'active', 'TOR', 'L1', 'en|fr', 'full_time'),
+        ('L1', 'Lead One', 'T1', 'team_lead', false, 'active', 'TOR', NULL, 'en', 'full_time'),
+        ('Q1', 'QA One', 'T9', 'qa_analyst', false, 'active', 'MTL', NULL, 'fr', 'part_time'),
+        ('X1', 'Gone', 'T1', 'agent', false, 'terminated', 'TOR', 'L1', 'en', 'full_time')""")
     con.execute("""CREATE TABLE gold.identity_review_queue (pair_id VARCHAR, node_a VARCHAR, node_b VARCHAR,
         reason VARCHAR, source_system_a VARCHAR, source_system_b VARCHAR, record_a VARCHAR, record_b VARCHAR,
         splink_probability DOUBLE, splink_explanation VARCHAR, llm_match BOOLEAN, llm_probability DOUBLE,

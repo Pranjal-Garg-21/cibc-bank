@@ -24,6 +24,7 @@ def test_me_lists_permissions(client):
     sign_in(client, "Q1")
     me = client.get("/api/session/me").json()
     assert me["role"] == "qa_analyst" and me["ask_role"] == "analyst"
+    assert me["site"] == "MTL" and me["languages"] == "fr" and me["signed_in_at"].endswith("+00:00")
     assert me["can"]["identity_review"] is True and me["can"]["approvals"] is False
     assert set(me["features"]) == {"queue", "ask", "identity", "status"}
 

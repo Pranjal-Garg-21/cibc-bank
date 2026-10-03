@@ -12,6 +12,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from functools import lru_cache
 
 import yaml
@@ -29,6 +30,7 @@ class Session:
     csrf: str
     created: float
     last_seen: float
+    signed_in_at: str = ""  # ISO 8601 UTC, for the profile card
 
 
 class SessionStore:
@@ -39,7 +41,8 @@ class SessionStore:
 
     def create(self, user_id: str, role: str) -> Session:
         now = self.clock()
-        s = Session(secrets.token_urlsafe(32), user_id, role, secrets.token_urlsafe(32), now, now)
+        s = Session(secrets.token_urlsafe(32), user_id, role, secrets.token_urlsafe(32), now, now,
+                    datetime.now(timezone.utc).isoformat(timespec="seconds"))
         with self._lock:
             self._s[s.sid] = s
         return s

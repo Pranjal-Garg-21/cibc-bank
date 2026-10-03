@@ -1,12 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Check, Printer, ShieldAlert, ThumbsUp, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api } from '../api/client'
-import type { CaseResponse, Reasons } from '../api/types'
-import { useMe } from '../auth'
-import { Badge, Button, DataTable, ErrorState, FieldLabel, KeyValues, NotConnected, PageHeader, Panel, Spinner, cx, inputClass } from '../components/ui'
-import { amount, cell, humanize, isoDate, pct } from '../lib/format'
-import { ACTION_LABEL, APPROVAL_LABEL, STATE_LABEL, STATE_TONE, label } from '../lib/labels'
+import { api } from '@/api/client'
+import type { CaseResponse, Reasons } from '@/api/types'
+import { useMe } from '@/auth'
+import { DataTable, ErrorState, KeyValues, Loading, NotConnected, PageHeader, Section, StatusBadge } from '@/components/app'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { cad, cell, humanize, isoDate, pct } from '@/lib/format'
+import { ACTION_LABEL, APPROVAL_LABEL, STATE_LABEL, STATE_TONE, label } from '@/lib/labels'
+import { cn } from '@/lib/utils'
 
 type Decision = 'accepted' | 'overridden' | 'approved' | 'rejected'
 
@@ -18,15 +23,15 @@ export function DecisionCard() {
     queryFn: () => api.get<CaseResponse>(`/api/cases/${encodeURIComponent(recId)}`),
     enabled: me.features.queue,
   })
-  const back = me.can.my_queue ? '/queue' : '/approvals'
-
   return (
     <>
-      <Link to={back} className="mb-3 inline-block text-sm text-accent-text hover:underline">
-        ← Back to queue
-      </Link>
+      <Button asChild variant="ghost" size="sm" className="mb-3 -ml-2 text-muted-foreground">
+        <Link to={me.can.my_queue ? '/queue' : '/approvals'}>
+          <ArrowLeft /> Back to queue
+        </Link>
+      </Button>
       {!me.features.queue && <NotConnected feature="Decision cards" owner="P3" />}
-      {q.isLoading && <Spinner />}
+      {q.isLoading && <Loading />}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.data && <CardView data={q.data} />}
     </>
@@ -40,106 +45,101 @@ function CardView({ data }: { data: CaseResponse }) {
   return (
     <div className="pb-28">
       <PageHeader
+        eyebrow={`Decision card · Case ${rec.case_id}`}
         title={label(ACTION_LABEL, rec.action)}
-        subtitle={
+        description={
           <span className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs">{rec.recommendation_id}</span>
-            <span>· Case {rec.case_id}</span>
-            <span>· As of {isoDate(rec.as_of_date)}</span>
-            {state && <Badge tone={STATE_TONE[state] ?? 'neutral'}>{label(STATE_LABEL, state)}</Badge>}
-            {rec.requires_approval && <Badge tone="info">Needs approval: {label(APPROVAL_LABEL, rec.approval_reason)}</Badge>}
+            <span>· Business date {isoDate(rec.as_of_date)}</span>
+            {state && <StatusBadge tone={STATE_TONE[state] ?? 'neutral'}>{label(STATE_LABEL, state)}</StatusBadge>}
+            {rec.requires_approval && <StatusBadge tone="info">Approval: {label(APPROVAL_LABEL, rec.approval_reason)}</StatusBadge>}
           </span>
         }
         actions={
-          <Button variant="ghost" className="no-print" onClick={() => window.print()}>
-            Print
+          <Button variant="outline" className="no-print" onClick={() => window.print()}>
+            <Printer /> Print
           </Button>
         }
       />
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+      <div className="grid gap-6 xl:grid-cols-[3fr_2fr]">
         <div className="space-y-6">
-          <Panel title="Recommendation">
-            {card.summary && <p className="text-[15px] leading-relaxed text-text">{card.summary}</p>}
-            <div className="mt-4">
-              <KeyValues
-                items={[
-                  ['Channel', cell(card.channel ?? rec.channel)],
-                  ['Risk of not paying', pct(card.risk_score ?? rec.risk_score, 0)],
-                  ['Expected value', `CAD ${amount(rec.expected_value)}`],
-                  ...(card.contact_window ? [['Contact window', card.contact_window] as [string, string]] : []),
-                  ...(card.runner_up_action ? [['Runner-up', label(ACTION_LABEL, card.runner_up_action)] as [string, string]] : []),
-                  ['Model', <span className="font-mono text-xs">{rec.model_version ?? '—'}</span>],
-                ]}
-              />
-            </div>
+          <Section title="Recommendation">
+            {card.summary && <p className="mb-4 text-[15px] leading-relaxed text-foreground">{card.summary}</p>}
+            <KeyValues
+              columns={2}
+              items={[
+                ['Channel', cell(card.channel ?? rec.channel)],
+                ['Risk of non-payment', pct(card.risk_score ?? rec.risk_score, 0)],
+                ['Expected value', cad(rec.expected_value)],
+                ['Runner-up action', label(ACTION_LABEL, card.runner_up_action ?? null)],
+                ...(card.contact_window ? [['Contact window', card.contact_window] as [string, string]] : []),
+                ['Model version', <span className="font-mono text-xs">{rec.model_version ?? '—'}</span>],
+              ]}
+            />
             {card.why_beat_runner_up && (
-              <p className="mt-4 border-l-2 border-accent-text/60 pl-3 text-sm text-muted">{card.why_beat_runner_up}</p>
+              <p className="mt-4 border-l-2 border-primary pl-3 text-sm text-muted-foreground">{card.why_beat_runner_up}</p>
             )}
-          </Panel>
+          </Section>
 
           {!!card.top_reasons?.length && (
-            <Panel title="Main reasons (model)">
-              <ol className="space-y-2">
+            <Section title="Main reasons" description="From the risk model (SHAP contributions)">
+              <ol className="divide-y divide-border">
                 {card.top_reasons.map((r, i) => (
-                  <li key={r.feature} className="flex items-start gap-3 text-sm">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-raised text-xs text-muted">
-                      {i + 1}
-                    </span>
-                    <span className="text-text">{r.text}</span>
-                    <span className={cx('ml-auto font-mono text-xs', r.contribution > 0 ? 'text-warn' : 'text-ok')}>
-                      {r.contribution > 0 ? 'raises risk' : 'lowers risk'}
-                    </span>
+                  <li key={r.feature} className="flex items-start gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-secondary text-xs text-muted-foreground">{i + 1}</span>
+                    <span className="text-foreground">{r.text}</span>
+                    <StatusBadge tone={r.contribution > 0 ? 'warn' : 'ok'}>{r.contribution > 0 ? 'Raises risk' : 'Lowers risk'}</StatusBadge>
                   </li>
                 ))}
               </ol>
-            </Panel>
+            </Section>
           )}
 
           {!!card.blocked_actions?.length && (
-            <Panel title="Actions ruled out">
+            <Section title="Actions ruled out" description="Hard rules applied before the model">
               <DataTable
                 data={card.blocked_actions.map((b) => ({ action: label(ACTION_LABEL, b.action), rule: humanize(b.rule) }))}
                 caption="Actions ruled out"
                 columns={[{ key: 'action', label: 'Action' }, { key: 'rule', label: 'Ruled out by' }]}
               />
-            </Panel>
+            </Section>
           )}
 
           {!!card.hardship_options?.length && (
-            <Panel title="Hardship options">
+            <Section title="Hardship options">
               <DataTable data={card.hardship_options} caption="Hardship options" />
-            </Panel>
+            </Section>
           )}
 
           {!!card.evidence?.length && (
-            <Panel title="Evidence from notes and calls (AI-extracted)">
-              <ul className="space-y-2 text-sm">
+            <Section title="Evidence from notes and calls" description="Extracted by AI; check before relying on it">
+              <ul className="space-y-3 text-sm">
                 {card.evidence.map((e) => (
-                  <li key={e.source_id} className="border-l-2 border-info/50 pl-3">
-                    <p className="text-text">“{e.quote}”</p>
+                  <li key={e.source_id} className="border-l-2 border-info/60 pl-3">
+                    <p className="text-foreground">“{e.quote}”</p>
                     <p className="text-xs text-faint">
                       {e.source_id} · {isoDate(e.source_ts)}
                     </p>
                   </li>
                 ))}
               </ul>
-            </Panel>
+            </Section>
           )}
         </div>
 
         <div className="space-y-6">
-          <Panel title="Case">
+          <Section title="Account and case">
             <KeyValues items={Object.entries(data.context.facts).map(([k, v]) => [humanize(k), cell(v, k)])} />
-          </Panel>
-          <Panel title="Recent contacts">
+          </Section>
+          <Section title="Recent contacts">
             <DataTable data={data.context.contacts} empty="No recent contacts." caption="Recent contacts" />
-          </Panel>
-          <Panel title="Promises to pay">
+          </Section>
+          <Section title="Promises to pay">
             <DataTable data={data.context.promises} empty="No promises on record." caption="Promises to pay" />
-          </Panel>
-          <Panel title="Decision history">
+          </Section>
+          <Section title="Decision history" description="Append-only; the latest decision of each kind applies">
             <DataTable data={rec.history} empty="No decisions yet." caption="Decision history" />
-          </Panel>
+          </Section>
         </div>
       </div>
       <ActionBar data={data} />
@@ -148,14 +148,14 @@ function CardView({ data }: { data: CaseResponse }) {
 }
 
 function ActionBar({ data }: { data: CaseResponse }) {
+  const me = useMe()
   const qc = useQueryClient()
   const rec = data.recommendation
   const reasons = useQuery({ queryKey: ['reasons'], queryFn: () => api.get<Reasons>('/api/review/reasons') })
   const [mode, setMode] = useState<'overridden' | 'rejected' | null>(null)
   const [reason, setReason] = useState('')
   const decide = useMutation({
-    mutationFn: (d: { decision: Decision; reason_code?: string }) =>
-      api.post(`/api/review/${encodeURIComponent(rec.recommendation_id)}`, d),
+    mutationFn: (d: { decision: Decision; reason_code?: string }) => api.post(`/api/review/${encodeURIComponent(rec.recommendation_id)}`, d),
     onSuccess: () => {
       setMode(null)
       setReason('')
@@ -167,12 +167,14 @@ function ActionBar({ data }: { data: CaseResponse }) {
   const { agent_decision, approval } = data.allowed
   if (!agent_decision && !approval) return null
   const status = rec.status ?? {}
-  const agentDone = status.agent && status.agent !== 'pending' && status.agent !== 'not_needed'
-  const approvalDone = status.approval && status.approval !== 'pending' && status.approval !== 'not_needed'
+  const safeguard = (code: string) => reasons.data?.safeguard_reasons.includes(code)
 
   return (
-    <div className="no-print fixed right-0 bottom-0 left-60 border-t border-border-strong bg-raised/95 backdrop-blur">
+    <div className="no-print fixed right-0 bottom-0 left-(--sidebar-width) z-30 border-t border-border bg-popover/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-end gap-3 px-6 py-3">
+        <p className="mr-2 self-center text-xs text-muted-foreground">
+          Recording as <span className="font-mono text-foreground">{me.agent_id}</span>
+        </p>
         {mode ? (
           <form
             className="flex flex-1 flex-wrap items-end gap-3"
@@ -181,19 +183,26 @@ function ActionBar({ data }: { data: CaseResponse }) {
               if (reason) decide.mutate({ decision: mode, reason_code: reason })
             }}
           >
-            <div className="min-w-72">
-              <FieldLabel htmlFor="reason">{mode === 'overridden' ? 'Override reason' : 'Rejection reason'} (required)</FieldLabel>
-              <select id="reason" className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus>
-                <option value="">Choose a reason…</option>
-                {reasons.data?.reasons.map((r) => (
-                  <option key={r.code} value={r.code}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
+            <div className="min-w-80">
+              <Label htmlFor="reason" className="mb-1.5 text-xs">
+                {mode === 'overridden' ? 'Override reason' : 'Rejection reason'} (required)
+              </Label>
+              <Select value={reason} onValueChange={setReason}>
+                <SelectTrigger id="reason" className="w-full">
+                  <SelectValue placeholder="Choose a reason…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reasons.data?.reasons.map((r) => (
+                    <SelectItem key={r.code} value={r.code}>
+                      {r.label}
+                      {safeguard(r.code) && <ShieldAlert className="text-warn" />}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <Button type="submit" variant="danger" disabled={!reason || decide.isPending}>
-              {mode === 'overridden' ? 'Confirm override' : 'Confirm rejection'}
+            <Button type="submit" variant="destructive" disabled={!reason || decide.isPending}>
+              <Check /> {mode === 'overridden' ? 'Confirm override' : 'Confirm rejection'}
             </Button>
             <Button type="button" variant="ghost" onClick={() => setMode(null)}>
               Cancel
@@ -203,34 +212,42 @@ function ActionBar({ data }: { data: CaseResponse }) {
           <div className="flex flex-1 flex-wrap items-center gap-3">
             {agent_decision && (
               <>
-                <Button variant="primary" disabled={decide.isPending} onClick={() => decide.mutate({ decision: 'accepted' })}>
-                  Accept
+                <Button size="lg" disabled={decide.isPending} onClick={() => decide.mutate({ decision: 'accepted' })}>
+                  <ThumbsUp /> Accept
                 </Button>
-                <Button variant="secondary" disabled={decide.isPending} onClick={() => setMode('overridden')}>
+                <Button size="lg" variant="outline" disabled={decide.isPending} onClick={() => setMode('overridden')}>
                   Override…
                 </Button>
-                {agentDone && <span className="text-xs text-muted">Your decision: {String(status.agent)} (a new one replaces it)</span>}
+                {status.agent && !['pending', 'not_needed'].includes(String(status.agent)) && (
+                  <span className="text-xs text-muted-foreground">Your decision: {String(status.agent)} (a new one replaces it)</span>
+                )}
               </>
             )}
             {approval && (
               <>
-                <Button variant="primary" disabled={decide.isPending} onClick={() => decide.mutate({ decision: 'approved' })}>
-                  Approve
+                <Button size="lg" disabled={decide.isPending} onClick={() => decide.mutate({ decision: 'approved' })}>
+                  <Check /> Approve
                 </Button>
-                <Button variant="danger" disabled={decide.isPending} onClick={() => setMode('rejected')}>
-                  Reject…
+                <Button size="lg" variant="destructive" disabled={decide.isPending} onClick={() => setMode('rejected')}>
+                  <X /> Reject…
                 </Button>
-                {approvalDone && <span className="text-xs text-muted">Approval: {String(status.approval)}</span>}
+                {status.approval && !['pending', 'not_needed'].includes(String(status.approval)) && (
+                  <span className="text-xs text-muted-foreground">Approval: {String(status.approval)}</span>
+                )}
               </>
             )}
           </div>
+        )}
+        {decide.isSuccess && (
+          <span role="status" className={cn('self-center text-sm text-ok')}>
+            Saved.
+          </span>
         )}
         {decide.error && (
           <div className="w-full">
             <ErrorState error={decide.error} />
           </div>
         )}
-        {decide.isSuccess && <span className="text-sm text-ok" role="status">Saved.</span>}
       </div>
     </div>
   )

@@ -1,13 +1,13 @@
 # TrustIssues web UI
 
-A formal, dark-themed web app for the collections system: **Ask**, **My queue**, **Decision card**,
+A banking-style operations console (dark navy theme, built with shadcn/ui) for the collections system: **Ask**, **My queue**, **Decision card**,
 **Team & approvals**, **Identity review** and **Data status**. Design: [`docs/ui_design.md`](../docs/ui_design.md).
 
 ```
 ui/
   serve.py        start the server (API + built app), 127.0.0.1 only
   tiui/           FastAPI adapter over trustissues.* (package named tiui so it never clashes with app/ui.py)
-  web/            React + TypeScript (Vite, Tailwind)
+  web/            React + TypeScript (Vite, Tailwind, shadcn/ui; components in web/src/components/ui)
 tests_ui/         API, security and integration tests
 ```
 
@@ -68,3 +68,9 @@ TI_UI_INTEGRATION=1 python -m pytest tests_ui/test_integration.py -q   # real P2
 ```
 
 The integration tests skip until P2's and P3's modules are importable.
+
+## Adding shadcn components
+
+`cd ui/web && npx shadcn@latest add <component>`. The CLI is run on demand and is not an app dependency (its own
+dependencies carry audit findings); its stylesheet is vendored in `web/src/styles/shadcn.css`. New components import
+`cn` from the `cn` package (shadcn's own). Check `npm audit` stays clean afterwards.

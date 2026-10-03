@@ -60,6 +60,10 @@ class User:
     certified: bool
     status: str
     display_name: str | None = None
+    site: str | None = None
+    team_lead_id: str | None = None
+    languages: str | None = None
+    employment_type: str | None = None
 
     @property
     def ask_role(self) -> str:
@@ -77,9 +81,14 @@ class User:
 
 def lookup_staff(con, agent_id: str) -> User | None:
     """Read straight from curated.agents (the same source nba.agent_view.staff uses), so sign-in works on main."""
-    row = con.execute("""SELECT agent_id, role, team_id, coalesce(vulnerable_customer_certified, false), status,
-                                agent_display_name
-                         FROM curated.agents WHERE agent_id = ?""", [agent_id]).fetchone()
+    cols = {r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'curated' AND table_name = 'agents'")
+        .fetchall()}
+    opt = lambda c: c if c in cols else f"NULL AS {c}"  # noqa: E731  (optional profile fields)
+    row = con.execute(f"""SELECT agent_id, role, team_id, coalesce(vulnerable_customer_certified, false), status,
+                                 agent_display_name, {opt('site')}, {opt('team_lead_id')}, {opt('languages')},
+                                 {opt('employment_type')}
+                          FROM curated.agents WHERE agent_id = ?""", [agent_id]).fetchone()
     return User(*row) if row else None
 
 

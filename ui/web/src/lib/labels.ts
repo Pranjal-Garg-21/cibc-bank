@@ -36,6 +36,44 @@ export const ROLE_LABEL: Record<string, string> = {
   qa_analyst: 'QA analyst',
 }
 
+/** What each role does, in the bank's words (shown on the profile and the sign-in list). */
+export const ROLE_DUTY: Record<string, string> = {
+  agent: 'Works assigned collections cases; accepts or overrides recommended contacts.',
+  senior_agent: 'Works complex collections cases; accepts or overrides recommended contacts.',
+  team_lead: 'Approves high-balance, hardship and vulnerability cases and the daily digital batch.',
+  hardship_specialist: 'Approves hardship and vulnerability cases; handles payment arrangements.',
+  qa_analyst: 'Reviews decisions and data quality; resolves customer identity matches.',
+}
+
+export const EMPLOYMENT_LABEL: Record<string, string> = {
+  employee: 'Bank employee',
+  vendor: 'Vendor (outsourced)',
+}
+
+const LANGUAGE_NAMES = new Intl.DisplayNames(['en-CA'], { type: 'language' })
+
+/** '["EN", "FR"]' (as stored) -> 'English, French'. */
+export function languages(v: string | null | undefined): string {
+  if (!v) return '—'
+  return v
+    .replace(/[[\]"']/g, '')
+    .split(/[|,;/\s]+/)
+    .filter(Boolean)
+    .map((code) => {
+      try {
+        return LANGUAGE_NAMES.of(code.toLowerCase()) ?? code
+      } catch {
+        return code
+      }
+    })
+    .join(', ')
+}
+
+export function initials(name: string | null | undefined, fallback: string): string {
+  const parts = (name ?? '').replace(/[^A-Za-z\s.-]/g, '').split(/[\s.]+/).filter(Boolean)
+  return (parts.length ? parts.slice(0, 2).map((p) => p[0]) : [fallback.slice(-2)]).join('').toUpperCase()
+}
+
 export const APPROVAL_LABEL: Record<string, string> = {
   vulnerability: 'Vulnerability',
   hardship: 'Hardship',

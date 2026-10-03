@@ -42,16 +42,17 @@ def staff(request: Request, q: str = Query("", max_length=40)):
     s = request.app.state.settings
     if not s.demo_login:
         raise ApiError(404, "not_found", "Not found.")
-    like = f"%{q.strip().lower()}%"
+    like = f"%{q.strip().lower().replace('_', ' ')}%"
     with warehouse(s) as con:
         rows = con.execute("""
-            SELECT agent_id, agent_display_name, role, team_id FROM curated.agents
+            SELECT agent_id, agent_display_name, role, team_id, site FROM curated.agents
             WHERE status = 'active' AND (lower(agent_id) LIKE ? OR lower(agent_display_name) LIKE ?
-                                         OR lower(role) LIKE ? OR lower(team_id) LIKE ?)
+                                         OR lower(replace(role, '_', ' ')) LIKE ? OR lower(team_id) LIKE ?
+                                         OR lower(site) LIKE ?)
             ORDER BY CASE role WHEN 'team_lead' THEN 0 WHEN 'hardship_specialist' THEN 1 WHEN 'qa_analyst' THEN 2
                      ELSE 3 END, agent_id
-            LIMIT 50""", [like] * 4).fetchall()
-    return {"staff": [{"agent_id": r[0], "name": r[1], "role": r[2], "team_id": r[3]} for r in rows]}
+            LIMIT 50""", [like] * 5).fetchall()
+    return {"staff": [{"agent_id": r[0], "name": r[1], "role": r[2], "team_id": r[3], "site": r[4]} for r in rows]}
 
 
 class Login(BaseModel):
@@ -102,6 +103,9 @@ def me(request: Request):
     return {
         "agent_id": user.agent_id, "name": user.display_name, "role": user.role, "team_id": user.team_id,
         "certified": user.certified, "ask_role": user.ask_role, "csrf_token": sess.csrf,
+        "site": user.site, "team_lead_id": user.team_lead_id, "languages": user.languages,
+        "employment_type": user.employment_type, "signed_in_at": sess.signed_in_at,
+        "max_hours": s.max_hours,
         "as_of_date": AS_OF.isoformat(), "idle_minutes": s.idle_minutes, "demo": s.demo_login,
         "features": f,
         "can": {

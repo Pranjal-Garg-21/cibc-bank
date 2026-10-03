@@ -73,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useIdleLock(idleMinutes: number) {
   const { signOut } = useAuth()
   const [warning, setWarning] = useState(false)
+  const [minutesLeft, setMinutesLeft] = useState(idleMinutes)
   const last = useRef(Date.now())
   useEffect(() => {
     const bump = () => {
@@ -82,6 +83,7 @@ export function useIdleLock(idleMinutes: number) {
     events.forEach((e) => window.addEventListener(e, bump, { passive: true }))
     const t = window.setInterval(() => {
       const idle = (Date.now() - last.current) / 60000
+      setMinutesLeft(Math.max(0, Math.ceil(idleMinutes - idle)))
       if (idle >= idleMinutes) void signOut('You were signed out after a period of inactivity.')
       else setWarning(idle >= idleMinutes - 2)
     }, 5000)
@@ -93,7 +95,8 @@ export function useIdleLock(idleMinutes: number) {
   const stay = useCallback(async () => {
     last.current = Date.now()
     setWarning(false)
+    setMinutesLeft(idleMinutes)
     await api.get('/api/session/me').catch(() => null) // touches the server session
-  }, [])
-  return { warning, stay }
+  }, [idleMinutes])
+  return { warning, stay, minutesLeft }
 }
