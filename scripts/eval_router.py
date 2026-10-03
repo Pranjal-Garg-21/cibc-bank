@@ -19,13 +19,15 @@ from trustissues.common.config import REPO_ROOT
 from trustissues.ask.service import classify
 
 CASES = REPO_ROOT / "eval" / "router_cases.csv"
+HELDOUT = REPO_ROOT / "eval" / "router_heldout.csv"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min", type=float, default=0.0)
+    ap.add_argument("--heldout", action="store_true", help="score eval/router_heldout.csv (never tune against it)")
     a = ap.parse_args()
-    rows = list(csv.DictReader(open(CASES, encoding="utf-8")))
+    rows = list(csv.DictReader(open(HELDOUT if a.heldout else CASES, encoding="utf-8")))
     by: dict[str, list[bool]] = defaultdict(list)
     misses = []
     for r in rows:
