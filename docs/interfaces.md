@@ -43,7 +43,7 @@ Proposed shapes, taken from `implementation_plan.md` §7.1 and the `p1`–`p4` d
 6. **`decision_card` JSON (P3, app):** shape is the `DecisionCard` dataclass (action, channel, risk score, top reasons, runner-up, blocked actions, evidence quotes, approval fields, summary). **Added 3 Oct (P3), optional:** `support_reason` (why a certified agent should call today: `offer_programme`, `plan_ending`, `follow_up`, `vulnerable_contact`) and `hardship_options` (eligible hardship programmes: `program_id`, `version`, `name`, `policy_section`, `approver_level`). Also `contact_window` (calls and texts: when they may be made that day, customer-local). Older cards without them stay valid. `gold.nba_decisions.action` gains the value `support_call` (a certified agent offering help to a hardship or vulnerable customer); the columns are unchanged.
 7. **Fixture fixes:** `load_fixtures` refuses a real warehouse (only in-memory or a file named `*fixture*`). Fixture buckets now use the release labels (`1-30`, `31-60`, `61-90`), and the fixture decision card no longer claims email was blocked by consent when consent is `yes`.
 
-Still open: confirm the history grain; building P2's `semantic_*` views in the warehouse (their shapes are now named in `src/trustissues/ask/data/semantic.py`, see `merge.md` §5); P3's explicit feature allow-list (the outcome list alone does not prevent leakage).
+Still open: confirm the history grain; P2's `semantic_*` views are built and published since 4 Oct (`docs/semantic_views.md`); P3's explicit feature allow-list (the outcome list alone does not prevent leakage).
 
 ## Case to call (P2 ↔ P4): "summarise the most recent call on case X"
 

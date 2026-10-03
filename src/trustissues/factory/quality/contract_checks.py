@@ -7,6 +7,7 @@ Rules are SQL returning (violations, total), except two kinds computed here:
   decisioning_allow_list  no column of gold.decisioning_customer is protected, direct PII or a proxy anywhere in
                           config/sensitivity.yaml, or in the rule's forbidden_extra list
   interface_shape         every P1 table carries the columns and types agreed in contracts/interfaces/stubs.sql
+  semantic_shape          every gold.semantic_* table has exactly the columns and types in P2's ask/data/semantic.py
 
 Plain SQL, not Great Expectations as the plan suggested: the rules already are SQL, and one fewer dependency
 keeps the gate fast and easy to read. Results go to <schema>._contract_results.
@@ -78,6 +79,23 @@ def interface_shape(con, schema: str) -> list[str]:
             for t, c, d in expected if t in P1_TABLES and actual.get((t, c)) != d]
 
 
+def semantic_shape(con, schema: str) -> list[str]:
+    """P2's validator allows exactly the columns in SCHEMAS, so a semantic table must match them: none missing, none extra."""
+    from trustissues.ask.data.semantic import SCHEMAS
+
+    actual = {}
+    for t, c, d in con.execute("SELECT table_name, column_name, data_type FROM information_schema.columns "
+                               "WHERE table_schema = ? AND table_name LIKE 'semantic\\_%' ESCAPE '\\'", [schema]).fetchall():
+        actual.setdefault(t, {})[c] = d
+    problems = []
+    for qualified, cols in SCHEMAS.items():
+        t = qualified.split(".", 1)[1]
+        have = actual.get(t, {})
+        problems += [f"{t}.{c}: expected {d}, found {have.get(c, 'missing')}" for c, d in cols.items() if have.get(c) != d]
+        problems += [f"{t}.{c}: not in the contract" for c in have if c not in cols]
+    return problems
+
+
 def run(con, schema: str = "gold_stage") -> list[RuleResult]:
     contract = load_contract()
     results = []
@@ -88,6 +106,11 @@ def run(con, schema: str = "gold_stage") -> list[RuleResult]:
                 cols = [r[0] for r in con.execute(f"DESCRIBE {schema}.decisioning_customer").fetchall()]
                 bad = sorted(set(cols) & forbidden_columns(rule.get("forbidden_extra", [])))
                 results.append(RuleResult(rule["id"], rule["title"], rule["blocking"], len(bad), len(cols), ", ".join(bad)))
+            elif kind == "semantic_shape":
+                from trustissues.ask.data.semantic import SCHEMAS
+                problems = semantic_shape(con, schema)
+                results.append(RuleResult(rule["id"], rule["title"], rule["blocking"], len(problems), len(SCHEMAS),
+                                          "; ".join(problems[:10])))
             elif kind == "interface_shape":
                 problems = interface_shape(con, schema)
                 results.append(RuleResult(rule["id"], rule["title"], rule["blocking"], len(problems), len(P1_TABLES),

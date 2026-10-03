@@ -50,7 +50,7 @@ Everything built is on `main` except `config/sensitivity.yaml` (generated; run `
 
 ## 5b. Consumer views: published (new)
 
-`gold.promises_enriched`, `customer_safeguards`, `decisioning_customer` (point-in-time history), `customer_timeline`, `bucket_transitions` and `case_customer` are published through the contract gate. **Several defaults need your confirmation: see [`consumer_views.md`](consumer_views.md) §1** (P3: label, history grain, CRM dating; P4: which notes are used and our masking; P2: bucket grain). `semantic_*` views wait for P2 to name the metric shapes.
+`gold.promises_enriched`, `customer_safeguards`, `decisioning_customer` (point-in-time history), `customer_timeline`, `bucket_transitions` and `case_customer` are published through the contract gate. **Several defaults need your confirmation: see [`consumer_views.md`](consumer_views.md) §1** (P3: label, history grain, CRM dating; P4: which notes are used and our masking; P2: bucket grain). `semantic_*` (P2's six Ask tables) are built and published too since 4 Oct ([`semantic_views.md`](semantic_views.md)).
 
 ## 5c. Not started (Layer 1, owned by P1)
 

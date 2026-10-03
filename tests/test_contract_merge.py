@@ -7,7 +7,7 @@ from trustissues.factory.quality import contract_checks
 def test_published_contract_default_and_explicit_paths_agree():
     default = contract_checks.load_contract()
     assert default == contract_checks.load_contract(contract_checks.CONTRACT)
-    assert {rule['id'] for rule in default['rules']} == {f'Q{i}' for i in range(11)}
+    assert {rule['id'] for rule in default['rules']} == {f'Q{i}' for i in range(12)}
 
 
 def test_explicit_contract_path_remains_supported_and_validated(tmp_path):

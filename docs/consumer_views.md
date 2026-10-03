@@ -29,7 +29,7 @@ These were open in [`interfaces.md`](interfaces.md) or the plan. Each is a worki
 | K | Consent column names (open question 3) | `consent_phone` = CRM `consent_call`, `consent_mail` = CRM `consent_letter`; `consent_push` and `consent_autodialer` added as extras | Keeps the agreed stub names | All | `build_c360` |
 | L | Data quality tool | Plain SQL rules in the contract YAML, not Great Expectations | The rules are SQL already; one fewer dependency | P2 | `quality/contract_checks.py` |
 
-`semantic_*` views are **not built**: P2 has not said which metric shapes it needs (open question 1).
+`semantic_*`: built since 4 Oct (P2 merge), see the six rows at the end of section 2. Shapes are P2's (`ask/data/semantic.py`); who a row belongs to is P1's (case → `case_customer`, promise and contact → their case's person else their CRM ID, account and snapshot → holder in `c360_account`).
 
 ## 2. The views
 
@@ -41,6 +41,14 @@ These were open in [`interfaces.md`](interfaces.md) or the plan. Each is a worki
 | `gold.customer_timeline` | 4,808,959 | P4 RAG, agent screen | Contacts 2.69M, notes 710k, promises 239k, payments 1.11M, offers 40k, transcripts 24,914. Events up to AS_OF_DATE only. `text` holds only eligible, masked text; `summary` describes the event |
 | `gold.bucket_transitions` | 10,933,834 | P2 roll rate | One row per account per quarter-to-quarter step |
 | `gold.case_customer` | 367,229 | everyone joining cases | See default I |
+| `gold.semantic_cases` | 367,229 | P2 Ask | One row per case. 12 cases have no person (no owner in `case_customer`) |
+| `gold.semantic_promises` | 238,815 | P2 Ask | 19 promises have no person (as in `promises_enriched`) |
+| `gold.semantic_contacts` | 2,688,337 | P2 Ask | `channel` = `channel_resolved`. 1,204 contacts have no person |
+| `gold.semantic_accounts` | 1,064,500 | P2 Ask | Cards and loans, one row per account; all have a person |
+| `gold.semantic_snapshots` | 12,569,692 | P2 Ask (roll rate) | Account snapshots on 11 dates (`account_monthly_snapshot`); all have a person |
+| `gold.semantic_payroll` | 579,994 | P2 Ask | One row per (person, snapshot date) with a deposit account |
+
+The six `semantic_*` tables have exactly the columns and types in P2's `SCHEMAS` (cast on build; contract rule Q11 blocks publishing otherwise). Built in 6 s, 17,508,567 rows.
 
 ## 3. The publish gate
 
@@ -58,5 +66,7 @@ The contract is [`contracts/c360_customer.yaml`](../contracts/c360_customer.yaml
 | Q7 balances ≥ 0, totals = sum of accounts | warn | 18: cards with a credit balance (the customer overpaid) |
 | Q8 bureau score within model range | warn | pass. Both bureau tables score 300–850 (the design assumed 300–900 for one) |
 | Q9 source no more than 24 h behind AS_OF_DATE | warn | pass |
+| Q10 the gold build no more than 24 h old when checked (from P2, 4 Oct) | warn | pass |
+| Q11 every `semantic_*` table has exactly P2's columns and types (4 Oct) | yes | pass (6 tables) |
 
 If a blocking rule fails, or cannot run, nothing is copied and `gold` keeps the last good publish. Every attempt is logged in `gold._publish_log`; rule results are in `gold._contract_results`.

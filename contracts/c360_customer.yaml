@@ -101,6 +101,10 @@ rules:
     blocking: true
     title: every gold table has the agreed interface shape (contracts/interfaces/stubs.sql)
     kind: interface_shape
+  - id: Q11
+    blocking: true
+    title: every semantic_* table has exactly the columns and types P2's Ask layer expects (ask/data/semantic.py)
+    kind: semantic_shape   # added with the semantic views (4 Oct): Ask's validator allows exactly these columns
 
   # ---------------------------------------------------------------- warnings: reported, do not block
   - id: Q6

@@ -1,5 +1,7 @@
 # P2 semantic view contracts (proposed for P1/Claude review)
 
+> **Built in the warehouse since 4 Oct (P2 merge).** `factory/gold/views.py` `semantic_views()` builds all six into `gold_stage` and the publish gate copies them to `gold` (contract rule Q11 checks the shapes below exactly). Same column definitions as `semantic_adapters.py`; the person on each row comes from P1's identity, not the CRM ID in the xref: cases from `gold.case_customer`, promises and contacts from their case's person (else their own CRM ID), accounts, snapshots and payroll from `gold.c360_account`. Rows: cases 367,229, promises 238,815, contacts 2,688,337, accounts 1,064,500, snapshots 12,569,692, payroll 579,994. On the published warehouse every certified-metric answer in the benchmark is the same as on the dev database (`run_e.csv`). The dev adapter still works for a separate `*_ask_dev.duckdb` copy; a definition change must go into both. Run the benchmark on the warehouse: `python scripts/run_benchmark.py --database warehouse/trustissues.duckdb`.
+
 These are fixture-tested contracts, not certified real-data products. Exact columns and DuckDB types live in `src/trustissues/ask/data/semantic.py`. P2 owns definitions; P1 supplies identity and publish-gate integration. No worker database is opened by fixture creation.
 
 | View | Grain | Columns / purpose | Metrics |

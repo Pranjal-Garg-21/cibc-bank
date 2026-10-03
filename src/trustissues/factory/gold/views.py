@@ -5,10 +5,12 @@
     decisioning_customer  P3       allow-list history table, the only source the feature store reads
     customer_timeline     P4       contacts, promises, notes, transcripts, offers, payments in time order
     bucket_transitions    P2       each account's bucket at the start and end of each quarter (roll rate)
+    semantic_*            P2       the six tables Ask's certified metrics and SQL fallback read (cases, promises,
+                                   contacts, accounts, snapshots, payroll); shapes from ask/data/semantic.py
 
 They are materialised as tables (millions of rows, read many times). Shapes follow contracts/interfaces/stubs.sql;
-extra columns are allowed. Defaults chosen where the team had not decided are marked DEFAULT and listed in
-docs/consumer_views.md.
+extra columns are allowed, except in semantic_*, which have exactly P2's columns and types (contract rule Q11).
+Defaults chosen where the team had not decided are marked DEFAULT and listed in docs/consumer_views.md.
 """
 from __future__ import annotations
 
@@ -252,7 +254,72 @@ def bucket_transitions(con) -> int:
     return con.execute("SELECT count(*) FROM gold_stage.bucket_transitions").fetchone()[0]
 
 
-BUILDERS = [promises_enriched, customer_safeguards, decisioning_customer, customer_timeline, bucket_transitions]
+# ------------------------------------------------------------------ P2's semantic views (Ask layer)
+# Shapes, grain and column definitions are P2's (ask/data/semantic.py SCHEMAS, docs/semantic_views.md); the SQL
+# follows P2's dev adapter (ask/data/semantic_adapters.py) column for column. What differs is who a row belongs to:
+# P1's identity instead of the CRM ID in the xref. A case belongs to gold_stage.case_customer (the account holder when
+# the case's CRM ID disagrees), a promise or contact to its case's customer else its own CRM ID (as every view above),
+# an account or snapshot to its holder in gold_stage.c360_account. Change a definition in both places.
+
+def _semantic_sql() -> dict[str, str]:
+    from trustissues.ask.data.semantic import bucket_sql
+
+    return {
+        "cases": f"""SELECT c.case_id, cc.golden_customer_id, c.case_open_date, c.primary_product, c.queue,
+            c.province_code AS province, c.assigned_agent_id, c.current_dpd, c.current_bucket AS reported_bucket,
+            {bucket_sql('c.current_dpd')} AS canonical_bucket, c.outcome, c.outcome_date, c.cure_date,
+            c.hardship_flag, c.insolvency_hold_flag, c.deceased_hold_flag, c.assignment_method, c.test_cell
+            FROM curated.collections_cases c LEFT JOIN gold_stage.case_customer cc USING (case_id)""",
+        "promises": f"""SELECT p.ptp_id, p.case_id, {_owner('p')} AS golden_customer_id, p.account_id, p.product,
+            coalesce(a.site, 'self_serve') AS agent_site, c.queue, c.test_cell, c.assignment_method,
+            p.ptp_created_ts, p.ptp_due_date, p.prior_broken_ptp_count, p.ptp_status, p.status_ts, p.paid_date,
+            p.amount_paid_against
+            FROM curated.promises_to_pay p {_owner_joins('p')}
+            LEFT JOIN gold_stage.semantic_cases c ON c.case_id = p.case_id
+            LEFT JOIN curated.agents a ON a.agent_id = p.agent_id""",
+        "contacts": f"""SELECT h.contact_id, h.case_id, {_owner('h')} AS golden_customer_id,
+            h.channel_resolved AS channel, h.direction, h.contact_ts_local, h.contact_hour_local, h.rpc_flag,
+            h.ptp_made_flag, h.contact_cost_cad, h.within_permitted_hours_flag, h.dispute_raised_flag,
+            c.province, coalesce(h.agent_site, 'self_serve') AS agent_site
+            FROM curated.contact_history h {_owner_joins('h')}
+            LEFT JOIN gold_stage.semantic_cases c ON c.case_id = h.case_id""",
+        "accounts": f"""SELECT a.card_account_id AS account_id, x.golden_customer_id, a.snapshot_date, 'card' AS product,
+            a.product_code, a.account_status, a.dpd, a.dpd_bucket AS reported_bucket,
+            {bucket_sql('a.dpd')} AS canonical_bucket, a.current_balance AS balance, a.past_due_amount AS overdue_amount,
+            a.chargeoff_date, a.chargeoff_amount
+            FROM curated.card_accounts a LEFT JOIN gold_stage.c360_account x ON x.account_id = a.card_account_id
+            UNION ALL
+            SELECT a.loan_id, x.golden_customer_id, a.snapshot_date, a.product_type, a.product_code,
+            CASE WHEN a.chargeoff_flag THEN 'charged_off' ELSE 'unknown' END, a.dpd, a.dpd_bucket, {bucket_sql('a.dpd')},
+            a.total_outstanding, a.past_due_amount, a.chargeoff_date, a.chargeoff_amount
+            FROM curated.loan_accounts a LEFT JOIN gold_stage.c360_account x ON x.account_id = a.loan_id""",
+        "snapshots": f"""SELECT s.account_id, x.golden_customer_id, s.month_end_date AS snapshot_date,
+            s.product_type AS product, s.account_status, s.dpd, s.dpd_bucket AS reported_bucket,
+            {bucket_sql('s.dpd')} AS canonical_bucket
+            FROM curated.account_monthly_snapshot s LEFT JOIN gold_stage.c360_account x USING (account_id)""",
+        "payroll": """SELECT x.golden_customer_id, a.snapshot_date, bool_or(a.payroll_deposit_flag) AS payroll_deposit_flag,
+            max(a.payroll_delay_days) FILTER (WHERE a.payroll_deposit_flag) AS payroll_delay_days
+            FROM curated.deposit_accounts a JOIN gold_stage.c360_account x ON x.account_id = a.deposit_account_id
+            WHERE x.golden_customer_id IS NOT NULL GROUP BY x.golden_customer_id, a.snapshot_date""",
+    }
+
+
+def semantic_views(con) -> int:
+    """gold_stage.semantic_* (6 tables), each cast to exactly the columns and types in P2's SCHEMAS. -> total rows."""
+    from trustissues.ask.data.semantic import SCHEMAS
+
+    total = 0
+    for name, sql in _semantic_sql().items():
+        table = f"semantic_{name}"
+        cols = SCHEMAS[f"gold.{table}"]
+        select = ", ".join(f'CAST("{c}" AS {t}) AS "{c}"' for c, t in cols.items())
+        con.execute(f"CREATE OR REPLACE TABLE gold_stage.{table} AS SELECT {select} FROM ({sql})")
+        total += con.execute(f"SELECT count(*) FROM gold_stage.{table}").fetchone()[0]
+    return total
+
+
+BUILDERS = [promises_enriched, customer_safeguards, decisioning_customer, customer_timeline, bucket_transitions,
+            semantic_views]
 
 
 def build(con) -> dict:
