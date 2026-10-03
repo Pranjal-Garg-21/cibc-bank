@@ -11,6 +11,7 @@ from datetime import date, timedelta
 
 from .asof import Period, days_before, parse_periods
 from .data.metric_templates import DIMENSIONS, FAMILIES
+from .requested_shape import requests_entity_count
 
 # (metric_id, trigger regex). First match wins, so more specific phrases come first.
 TRIGGERS: list[tuple[str, str]] = [
@@ -80,15 +81,56 @@ def match_metric(question: str):
 
 def _dimensions(question: str, metric_id: str) -> tuple[tuple[str, ...], str | None]:
     q = question.lower()
+    # Coordinate axes inherit 'by': 'by product and queue' requests both.
+    # Expand that syntax before checking the same dimension allow-list.
+    for _ in range(3):
+        insertions = set()
+        for rx, _dim in DIM_WORDS:
+            for match in re.finditer(rx, q):
+                if not match[0].startswith("by "):
+                    continue
+                following = re.match(r"\s*(?:,\s*(?:and\s+)?|and\s+)(?P<axis>[a-z][\w-]*)\b", q[match.end():])
+                if following and following['axis'] not in {
+                        "by", "for", "in", "from", "to", "with", "without", "compared", "show", "report"}:
+                    insertions.add(match.end() + following.start('axis'))
+        if not insertions:
+            break
+        for position in sorted(insertions, reverse=True):
+            q = q[:position] + "by " + q[position:]
     allowed = DIMENSIONS[FAMILIES[metric_id]]
     dims: list[str] = []
+    recognised = []
     for rx, dim in DIM_WORDS:
-        if re.search(rx, q) and dim not in dims:
+        matches = list(re.finditer(rx, q))
+        recognised.extend(m.span() for m in matches)
+        if matches and dim not in dims:
             if dim == "product" and "product_code" in dims:
                 continue
             if dim not in allowed:
                 return (), f"Grouping by '{dim}' is not approved for {metric_id.replace('_', ' ')}."
             dims.append(dim)
+    # Recognising only approved words must not silently discard another grain.
+    # Individual-entity rankings imply a breakdown even without the word 'by'.
+    entity = r"(?:customers?|borrowers?|agents?|accounts?|cases?)"
+    if re.search(rf"\b(?:individual|named|specific)\s+{entity}\b|"
+                 rf"\b(?:which|rank|list)\s+(?:individual\s+)?{entity}\b", q):
+        return (), "Individual-entity results are not an approved breakdown for this certified metric."
+    for grouping in re.finditer(r"\b(?:by|per|for each|for every|on each)\s+(?:[a-z][\w-]*|\d+)\b", q):
+        if any(start <= grouping.start() and grouping.end() <= end for start, end in recognised):
+            continue
+        tail = q[grouping.start():]
+        # 'By the end of June' is a date boundary, not a grouping request.
+        if re.match(r"by\s+(?:(?:the\s+)?(?:end|start|beginning)\b|\d|"
+                    r"january\b|february\b|march\b|april\b|may\b|june\b|july\b|"
+                    r"august\b|september\b|october\b|november\b|december\b|today\b|tomorrow\b)", tail):
+            continue
+        # These units are denominators already represented by the named metric.
+        units = {"contact_attempts_per_case": r"per\s+(?:open\s+)?cases?\b",
+                 "cost_per_contact": r"per\s+(?:contacts?|calls?|attempts?|dials?)\b",
+                 "cost_per_rpc": r"per\s+(?:rpc|right[- ]party(?:\s+contact)?)\b"}
+        if metric_id in units and re.match(units[metric_id], tail):
+            continue
+        return (), f"The requested breakdown '{grouping[0]}' is not approved for {metric_id.replace('_', ' ')}."
     return tuple(dims), None
 
 
@@ -99,6 +141,8 @@ def _clamp(p: Period, as_of: date) -> tuple[date, date]:
 
 def build_call(question: str, metric_id: str, as_of: date) -> MetricCall | Unsupported:
     q = question.lower()
+    if metric_id == "average_dpd" and requests_entity_count(question):
+        return Unsupported("A count of cases or accounts cannot be answered with average days past due.")
     periods = parse_periods(question, as_of)
     dims, bad = _dimensions(question, metric_id)
     if bad:

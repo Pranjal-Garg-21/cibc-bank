@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 
 from .catalog import detect_metric, match_metric
-from .requested_shape import requested_shape
+from .requested_shape import requested_shape, requests_entity_count
 
 CASE_ID = re.compile(r"\bCS-\d{4}-\d{5,7}\b", re.I)
 POLICY_WORDS = (
@@ -49,9 +49,15 @@ def route(question: str) -> Route:
     volume = re.search(r"(?:call|contact|outbound)\s+(?:volume|numbers?)|number of (?:calls|contacts)", q, re.I)
     if shape == "population" and not driver:
         return Route("sql", why="population count or distribution without a catalogue statistic")
+    entity_count = requests_entity_count(q)
+    if entity_count and not driver and metric == "average_dpd":
+        return Route("sql", why="explicit entity count cannot be inferred as a mean")
     if metric is None and not (driver and volume) and re.search(COUNT_WORDS, q, re.I):
         match = match_metric(q)
         if match is not None:
+            if entity_count and not driver and (match.metric_id == "average_dpd" or (
+                    match.metric_id is None and match.candidates and match.candidates[0].metric_id == "average_dpd")):
+                return Route("sql", why="explicit entity count cannot be inferred as a mean")
             if match.metric_id is None:
                 return Route("cannot_answer", why="uncertain catalogue match", clarification=match.clarification)
             metric = match.metric_id

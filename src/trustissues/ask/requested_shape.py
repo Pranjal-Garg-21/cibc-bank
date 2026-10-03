@@ -30,6 +30,26 @@ QUALIFIED = (
 )
 
 
+def requests_entity_count(question: str) -> bool:
+    """An explicit count of cases/accounts cannot be answered by an inferred mean.
+
+    Descriptors may name a queue or state. Relative clauses describe filters;
+    they do not turn the requested quantity into a rate or an average.
+    """
+    count = re.search(
+        r"\b(?:how many|number of|count(?: of)?|total(?: number of)?)\s+"
+        r"(?:[a-z][\w-]*\s+){0,8}(?:cases?|accounts?)\b", question, re.I)
+    if not count:
+        return False
+    if re.search(r"\b(?:days?|hours?|minutes?|weeks?|months?|years?)\b", count[0], re.I):
+        return False  # counts of time units describe an age/duration, not entities
+    # A mean number of units and contacts per case request a statistic. A count
+    # of cases *with* an average-DPD field still requests a population count.
+    return not (re.search(STATISTIC, question[:count.start()], re.I)
+                or re.search(r"\bon (?:the )?average\b|" + UNIT_RATIO, question, re.I)
+                or re.search(COST, question, re.I))
+
+
 def requested_shape(question: str) -> str | None:
     """Return only shapes that can resolve topic/quantity conflicts explicitly."""
     unit = re.search(COST_UNIT, question, re.I)
