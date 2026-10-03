@@ -23,6 +23,14 @@ duckdb:
   threads: 4
   preserve_insertion_order: false   # lets a big CREATE TABLE AS stream and spill instead of buffering the whole result
 
+text_controls:
+  # Which note redaction statuses may reach an LLM. `none` is 94.5% of notes. Measured on the real notes (a 13-19 digit
+  # run, i.e. a card number): needs_review 52%, none 0.26%, auto_redacted 0.29%. So `none` is no dirtier than
+  # `auto_redacted`, and NEITHER is clean: the scrubber below is what makes either safe to send out.
+  # TEAM DECISION PENDING: remove `none` here to be strict. `needs_review` stays out until a human has looked.
+  note_redaction_statuses: [auto_redacted, none]
+  scrub_pii: true      # regex-scrub phones, emails, card and account numbers from every text before it leaves the machine
+
 llm:
   # Every LLM call goes through common/llm.py. Provider, endpoint and models are set here and nowhere else.
   provider: openai_compatible                   # openai_compatible (OpenRouter, NVIDIA, a local server) | anthropic
