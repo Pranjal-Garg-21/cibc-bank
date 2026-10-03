@@ -39,6 +39,50 @@ duckdb:
   threads: 4
   preserve_insertion_order: false   # lets a big CREATE TABLE AS stream and spill instead of buffering the whole result
 
+text_controls:
+  # Which note redaction statuses may reach an LLM. `none` is 94.5% of notes. Measured on the real notes (a 13-19 digit
+  # run, i.e. a card number): needs_review 52%, none 0.26%, auto_redacted 0.29%. So `none` is no dirtier than
+  # `auto_redacted`, and NEITHER is clean: the scrubber below is what makes either safe to send out.
+  # TEAM DECISION PENDING: remove `none` here to be strict. `needs_review` stays out until a human has looked.
+  note_redaction_statuses: [auto_redacted, none]
+  scrub_pii: true      # regex-scrub phones, emails, card and account numbers from every text before it leaves the machine
+
+policy_rag:
+  # How policy questions find their sources (ask/rag/retrievers.py). Compared on the dev questions by
+  # scripts/compare_policy_modes.py; see docs/p4_policy_rag_build.md section 8.
+  mode: whole_corpus           # bm25 | hybrid | hybrid_rerank | whole_corpus. whole_corpus won on answers: 16/16 vs 13/16
+  embedding_model: intfloat/multilingual-e5-small            # local, EN + FR
+  reranker_model: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1  # local, multilingual
+  n_candidates: 20
+  top_k: 5
+
+customer_path:
+  # Long context, no vector search (design D1). One customer's history is small: median 11 timeline events, 99th
+  # percentile 73, largest 149; a transcript is ~1,000 characters. So the budget is rarely reached.
+  token_budget: 20000          # D15: filled newest-first (the asked-about case first); the answer states the period covered
+  chars_per_token: 3.5         # rough estimate without a tokenizer; on the safe side for French and transcripts
+  # Which timeline events are given to the model. Notes and transcripts carry text; the others carry a one-line summary
+  # (e.g. "inbound | Promise to pay | promise made"), which is how an answer can say a payment arrived or a cease was asked.
+  event_types: [note, transcript, contact, promise, payment, offer]
+
+llm:
+  # Every LLM call goes through common/llm.py. Provider, endpoint and models are set here and nowhere else.
+  provider: openai_compatible                   # openai_compatible (OpenRouter, NVIDIA, a local server) | anthropic
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY               # name of the environment variable (or .env entry) holding the key
+  models:
+    # NVIDIA Nemotron 3 Super on OpenRouter. ":free" is the free variant (rate-limited); drop it for the paid one.
+    answer: nvidia/nemotron-3-super-120b-a12b:free   # answers a user reads (policy / customer answers)
+    bulk: nvidia/nemotron-3-super-120b-a12b:free   # bulk jobs (per-note text features); a smaller model can go here later
+  # Nemotron Super "thinks" before it answers. With thinking on, answers took 40-120 s and often ran out of tokens
+  # (broken JSON). With it off the same answer took ~10 s. Measured 2026-10-03; "effort: low" was worse.
+  extra_body:
+    reasoning: {enabled: false}
+  max_tokens_cap: 8000                          # a reply cut off at the limit is retried with a doubled limit up to this
+  timeout_secs: 120
+  max_retries: 3
+  cache_file: cache/llm_cache.sqlite            # relative to the warehouse folder; keyed by a hash of the whole request
+
 p3:
   # P3 outputs (training sets, features, models) live here as Parquet, never in the shared DuckDB.
   output_dir: warehouse/p3

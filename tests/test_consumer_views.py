@@ -1,8 +1,9 @@
-"""Governance guarantees of the consumer layer: the decisioning allow-list, text masking, and the publish gate."""
+"""Governance guarantees of the consumer layer: the decisioning allow-list and the publish gate.
+
+Text masking is tested with the scrubber in tests/test_text_controls.py."""
 import duckdb
 import pytest
 
-from trustissues.factory.curate.text_controls import mask_sql
 from trustissues.factory.gold import publish
 from trustissues.factory.gold.views import DECISIONING_COLUMNS
 from trustissues.factory.quality import contract_checks
@@ -23,18 +24,6 @@ def test_forbidden_list_covers_the_protected_attributes_and_proxies():
                 "ccb_deposit_flag", "customer_accent_region", "interpreter_used_flag", "first_name", "date_of_birth",
                 "national_id_hash", "geo_lat", "age", "fsa"]:
         assert col in f, col
-
-
-@pytest.mark.parametrize("text,expected", [
-    ("card 4520 4670 9041 8711. sent pmt link", "card [CARD]. sent pmt link"),
-    ("call us at 416-555-0199 today", "call us at [PHONE] today"),
-    ("DOB 1996-04-19 refer to hardship", "DOB [DOB] refer to hardship"),
-    ("SIN 123 456 789 on file", "SIN [SIN] on file"),
-    ("email jo@example.ca", "email [EMAIL]"),
-    ("promised $1305 on Sep 17; due 2026-10-01", "promised $1305 on Sep 17; due 2026-10-01"),  # amounts and dates stay
-])
-def test_masking(text, expected):
-    assert duckdb.connect().execute(f"SELECT {mask_sql('?')}", [text]).fetchone()[0] == expected
 
 
 def stage_db(decisioning_cols):
