@@ -5,15 +5,18 @@
 
 For each open case on AS_OF_DATE:
 1. rules (nba/rules.py): which actions are allowed, and the rule that blocked each other one
-2. risk: the break-risk model on the case's open promise, scored as of when it was made (how the model
-   was trained); NULL when the case has no open promise
-3. value (nba/actions.py): expected extra payment minus contact cost for every allowed action
-4. hardship (nba/hardship.py): never harsher than without the signal, route to a certified agent
-5. card (nba/explain.py): top reasons, why the action beat the runner-up, blocked actions, summary
-6. approval: vulnerability, hardship, high balance, or the daily digital-reminder batch
+2. risk: the case model's chance the case is NOT paid up within 30 days (every open case), from data before
+   the as-of date. Cases with an open promise also get the promise model's break risk on the card.
+3. value (nba/actions.py): the randomised test's effect per contact x the case's risk x its reach on the
+   channel x amount overdue, minus the channel's unit cost
+4. hardship (nba/hardship.py): never harsher than without the signal; route to a certified agent
+5. capacity (nba/allocate.py): most valuable cases first into the day's channel and agent capacity;
+   an action that does not fit falls back to the case's next best
+6. card (nba/explain.py) and approval: vulnerability, hardship, high balance, or the daily digital batch
 
---write-gold needs the warehouse write lock, so run it as a stage after the Layer 1 pipeline, never
-alongside it. golden_customer_id holds crm_customer_id until identity resolution publishes golden IDs.
+risk_score holds the case model's risk. --write-gold needs the warehouse write lock, so run it as a stage
+after the Layer 1 pipeline, never alongside it. golden_customer_id holds crm_customer_id until identity
+resolution publishes golden IDs.
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ from trustissues.common import config
 from trustissues.common.db import connect
 from trustissues.common.interfaces import BlockedAction, DecisionCard, Reason
 from trustissues.features import compute, sources
-from trustissues.nba import actions, explain, hardship, rules
+from trustissues.nba import actions, allocate, explain, hardship, rules
 
 DECISIONS_FILE = "nba_decisions.parquet"
 COLUMNS = ["recommendation_id", "golden_customer_id", "case_id", "agent_id", "as_of_date", "action", "channel",
@@ -42,22 +45,34 @@ class CaseInput:
     customer_id: str
     assigned_agent_id: str | None
     agent_certified: bool
-    bucket: str | None
-    amount: float  # open promise amount, else total overdue
+    amount: float  # total overdue
     flags: rules.CaseFlags
     signal: hardship.HardshipSignal
-    risk: float | None = None  # break risk of the open promise
+    risk: float  # case model: chance of NOT being paid up within 30 days
     reasons: list[Reason] = field(default_factory=list)
+    reach: dict[str, float] = field(default_factory=dict)
+    promise_risk: float | None = None  # promise model, when the case has an open promise
+    team: str | None = None
 
 
 @dataclass
 class Context:
     as_of: object
-    rates: dict
     costs: dict
+    effect: float  # extra cure chance per contact for an average case (randomised test)
+    base_risk: float  # average not-cured rate in that test
     high_balance: float
     model_version: str
     snapshot_id: str | None
+
+
+@dataclass
+class Plan:
+    case: CaseInput
+    allowed: rules.RuleResult
+    candidates: dict[str, float]  # what may be chosen (after hardship), with values
+    order: list[str]  # candidates worth more than waiting, best first, then wait
+    route_to_certified: bool
 
 
 def approval_reason(c: CaseInput, action: str, high_balance: float) -> str | None:
@@ -71,116 +86,167 @@ def approval_reason(c: CaseInput, action: str, high_balance: float) -> str | Non
     return None
 
 
-def decide_case(c: CaseInput, ctx: Context) -> dict:
+def plan_case(c: CaseInput, ctx: Context) -> Plan:
     allowed = rules.allowed_actions(c.flags)
-    # without an open promise, the chance of not paying anyway stands in for break risk
-    risk_for_value = c.risk if c.risk is not None else 1 - ctx.rates.get(c.bucket or "", {}).get("wait", 0.0)
-    values = actions.value_actions(allowed.allowed, c.bucket, risk_for_value, c.amount, ctx.rates, ctx.costs)
+    values = actions.value_actions(allowed.allowed, c.risk, c.amount, ctx.costs, ctx.effect, ctx.base_risk, c.reach)
     d = hardship.decide(c.flags, values, c.signal)
     candidates = values
     if c.signal.active:
         cap = min(hardship.MAX_HARSHNESS_IN_HARDSHIP, actions.harshness(d.baseline_action))
         candidates = {a: v for a, v in values.items() if actions.harshness(a) <= cap}
-    runner = explain.runner_up(d.action, candidates)
+    better = [a for a in candidates if a != "wait" and candidates[a] > 0]
+    order = sorted(better, key=lambda a: (-candidates[a], actions.harshness(a))) + ["wait"]
+    return Plan(c, allowed, candidates, order, d.route_to_certified_agent)
 
-    reason = approval_reason(c, d.action, ctx.high_balance)
 
-    agent = c.assigned_agent_id if d.action in AGENT_ACTIONS else None
-    if d.route_to_certified_agent and not c.agent_certified:
-        agent = None  # to be assigned to a certified agent
-    hard_stop = next((r for r in allowed.blocked.values() if r in rules.HARD_STOPS), None)
+def default_agent(plan: Plan, action: str) -> str | None:
+    c = plan.case
+    if action not in AGENT_ACTIONS or (plan.route_to_certified and not c.agent_certified):
+        return None  # batches have no agent; hardship cases go to a certified agent
+    return c.assigned_agent_id
 
+
+def render(plan: Plan, assignment: allocate.Assignment, ctx: Context) -> dict:
+    c, action = plan.case, assignment.action
+    runner = explain.runner_up(action, plan.candidates)
+    reason = approval_reason(c, action, ctx.high_balance)
+    hard_stop = next((r for r in plan.allowed.blocked.values() if r in rules.HARD_STOPS), None)
+    blocked = [BlockedAction(a, r) for a, r in plan.allowed.blocked.items()]
+    blocked += [BlockedAction(a, "no_capacity") for a in assignment.no_capacity]
     card = DecisionCard(
-        recommended_action=d.action,
-        channel=actions.CATALOGUE[d.action].channel,
-        risk_score=None if c.risk is None else round(c.risk, 4),
+        recommended_action=action,
+        channel=actions.CATALOGUE[action].channel,
+        risk_score=round(c.risk, 4),
         top_reasons=c.reasons,
         runner_up_action=runner,
-        why_beat_runner_up=explain.why_beat(d.action, runner, candidates),
-        blocked_actions=[BlockedAction(a, r) for a, r in allowed.blocked.items()],
+        why_beat_runner_up=explain.why_beat(action, runner, plan.candidates, assignment.no_capacity),
+        blocked_actions=blocked,
         evidence=[],  # P4 text features (gold.text_features) fill this once they exist
         requires_approval=reason is not None,
         approval_reason=reason,
-        summary=explain.summary(d.action, c.risk, c.reasons, d.route_to_certified_agent, hard_stop),
+        summary=explain.summary(action, c.risk, c.reasons, plan.route_to_certified, hard_stop,
+                                promise_risk=c.promise_risk, no_capacity=assignment.no_capacity),
     )
     return {
         "recommendation_id": f"REC-{ctx.as_of:%Y%m%d}-{c.case_id}",
         "golden_customer_id": c.customer_id,
         "case_id": c.case_id,
-        "agent_id": agent,
+        "agent_id": assignment.agent_id,
         "as_of_date": ctx.as_of,
-        "action": d.action,
+        "action": action,
         "channel": card.channel,
         "risk_score": card.risk_score,
-        "expected_value": round(values.get(d.action, 0.0), 2),
+        "expected_value": round(plan.candidates.get(action, 0.0), 2),
         "requires_approval": card.requires_approval,
         "approval_reason": reason,
         "decision_card": card.to_json(),
         "model_version": ctx.model_version,
-        "feature_snapshot_id": ctx.snapshot_id if c.risk is not None else None,
+        "feature_snapshot_id": ctx.snapshot_id,
         "created_ts": datetime.combine(ctx.as_of, time(6, 0)),
     }
 
 
-def score_open_promises(con, model, snapshot_dir) -> tuple[dict, dict, str]:
-    """ptp_id -> calibrated risk and top reasons, for open promises that are a case's current promise."""
+def decide_case(c: CaseInput, ctx: Context) -> dict:
+    """One case with unlimited capacity (used by tests and for a single case)."""
+    plan = plan_case(c, ctx)
+    best = plan.order[0]
+    return render(plan, allocate.Assignment(best, default_agent(plan, best), []), ctx)
+
+
+def score_cases(con, snapshot_dir) -> tuple[dict, dict, dict, str]:
+    """case_id -> case risk, top reasons and reach, for every open case, from data before the as-of date."""
+    from trustissues.nba.model import BreakModel
+    from trustissues.nba.train import CASE_MODEL_NAME
+
+    as_of = config.AS_OF_DATE
+    compute.register_case_spine(con, f"""
+        SELECT case_id || '@{as_of}' AS row_id, case_id, TIMESTAMP '{as_of}' AS event_ts
+        FROM src_cases WHERE case_status = 'open'""")
+    cols = compute.compute(con, compute.CASE_GROUPS)
+    df = con.sql(compute.joined_sql(cols, ", s.case_id")).df().set_index("case_id").sort_index()
+    model = BreakModel(CASE_MODEL_NAME)
+    risk = model.predict(df)
+    contrib = model.contributions(df)
+    snapshot_id = f"FS-{as_of:%Y%m%d}-{model.name}"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    df.assign(risk_score=risk).reset_index().to_parquet(snapshot_dir / f"{snapshot_id}.parquet", index=False)
+    values = df.to_dict("index")
+    averages = {f: df[f].mean() for f in actions.REACH_FEATURES.values()}
+    reasons = {c: explain.top_reasons(values[c], row) for c, row in contrib.to_dict("index").items()}
+    reach = {c: actions.reach(values[c], averages) for c in df.index}
+    return dict(zip(df.index, risk.tolist())), reasons, reach, snapshot_id
+
+
+def score_open_promises(con) -> dict[str, float]:
+    """ptp_id -> break risk, for open promises that are an open case's current promise."""
+    from trustissues.nba.model import BreakModel
+
     compute.register_spine(con, """
         SELECT p.ptp_id, p.ptp_created_ts AS event_ts FROM src_promises p
         WHERE p.ptp_status = 'open'
           AND p.ptp_id IN (SELECT current_ptp_id FROM src_cases WHERE case_status = 'open')""")
     cols = compute.compute(con)
-    df = con.sql(compute.joined_sql(cols)).df().set_index("ptp_id").sort_index()
-    risk = model.predict(df)
-    contrib = model.contributions(df)
-    snap = df.assign(risk_score=risk)
-    # one snapshot per as-of date and model: a rerun replaces it, like the gold rows
-    snapshot_id = f"FS-{config.AS_OF_DATE:%Y%m%d}-{model.name}"
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    snap.reset_index().to_parquet(snapshot_dir / f"{snapshot_id}.parquet", index=False)
-    values = df.to_dict("index")
-    reasons = {p: explain.top_reasons(values[p], row) for p, row in contrib.to_dict("index").items()}
-    return dict(zip(df.index, risk.tolist())), reasons, snapshot_id
+    df = con.sql(compute.joined_sql(cols)).df().set_index("row_id").sort_index()
+    return dict(zip(df.index, BreakModel().predict(df).tolist()))
 
 
 def load_cases(con) -> list[dict]:
     rel = con.sql("""
-        SELECT c.case_id, c.crm_customer_id, c.assigned_agent_id, c.current_bucket, c.total_overdue,
-               c.current_ptp_id, p.ptp_amount,
+        SELECT c.case_id, c.crm_customer_id, c.assigned_agent_id, c.assigned_team, c.total_overdue,
+               c.current_ptp_id,
                coalesce(c.hardship_flag, false) AS hardship_flag,
                coalesce(c.vulnerable_customer_flag, false) OR coalesce(f.vulnerability_flag, false) AS vulnerable,
                coalesce(a.vulnerable_customer_certified, false) AND a.status = 'active' AS agent_certified
         FROM src_cases c
         LEFT JOIN src_crm_safety_flags f USING (crm_customer_id)
         LEFT JOIN src_agents a ON a.agent_id = c.assigned_agent_id
-        LEFT JOIN src_promises p ON p.ptp_id = c.current_ptp_id AND p.ptp_status = 'open'
         WHERE c.case_status = 'open'
         ORDER BY c.case_id""")
     return [dict(zip(rel.columns, r)) for r in rel.fetchall()]
 
 
-def build(con) -> tuple[list[dict], dict]:
-    from trustissues.nba.model import BreakModel
+def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
+    from trustissues.nba.train import CASE_MODEL_NAME, MODEL_NAME
 
     sources.register(con)
-    model = BreakModel()
-    risk, reasons, snapshot_id = score_open_promises(con, model, config.p3_dir() / "snapshots")
+    risk, reasons, reach, snapshot_id = score_cases(con, config.p3_dir() / "snapshots")
+    promise_risk = score_open_promises(con)
     cases = load_cases(con)
     flags = rules.load_case_flags(con, [c["case_id"] for c in cases])
-    ctx = Context(as_of=config.AS_OF_DATE, rates=actions.load_payment_rates(), costs=actions.load_unit_costs(con),
-                  high_balance=float(config.settings()["p3"]["high_balance_cad"]),
-                  model_version=model.name, snapshot_id=snapshot_id)
-    rows = []
-    for c in cases:
-        ptp = c["current_ptp_id"] if c["current_ptp_id"] in risk else None
-        rows.append(decide_case(CaseInput(
-            case_id=c["case_id"], customer_id=c["crm_customer_id"], assigned_agent_id=c["assigned_agent_id"],
-            agent_certified=bool(c["agent_certified"]), bucket=c["current_bucket"],
-            amount=float(c["ptp_amount"] if ptp and c["ptp_amount"] is not None else c["total_overdue"] or 0.0),
-            flags=flags[c["case_id"]],
-            signal=hardship.HardshipSignal("possible" if c["hardship_flag"] else "none", bool(c["vulnerable"])),
-            risk=risk.get(ptp) if ptp else None, reasons=reasons.get(ptp, []) if ptp else [],
-        ), ctx))
-    return rows, {"snapshot_id": snapshot_id, "scored_promises": len(risk)}
+    cal = actions.load_calibration()
+    costs = actions.load_unit_costs(con)
+    if config.settings()["p3"].get("call_cost_cad") is not None:
+        costs["phone"] = float(config.settings()["p3"]["call_cost_cad"])
+    ctx = Context(as_of=config.AS_OF_DATE, costs=costs, effect=cal["per_contact"],
+                  base_risk=cal["base_risk"], high_balance=float(config.settings()["p3"]["high_balance_cad"]),
+                  model_version=f"{CASE_MODEL_NAME}+{MODEL_NAME}", snapshot_id=snapshot_id)
+    plans = [plan_case(CaseInput(
+        case_id=c["case_id"], customer_id=c["crm_customer_id"], assigned_agent_id=c["assigned_agent_id"],
+        agent_certified=bool(c["agent_certified"]), amount=float(c["total_overdue"] or 0.0),
+        flags=flags[c["case_id"]],
+        signal=hardship.HardshipSignal("possible" if c["hardship_flag"] else "none", bool(c["vulnerable"])),
+        risk=risk[c["case_id"]], reasons=reasons[c["case_id"]], reach=reach[c["case_id"]],
+        promise_risk=promise_risk.get(c["current_ptp_id"]), team=c["assigned_team"],
+    ), ctx) for c in cases]
+
+    capacity = None
+    if with_capacity:
+        cap = allocate.load_capacity(con, config.AS_OF_DATE)
+        capacity = {"start": {"channel": dict(cap.channel), "agent_calls": sum(cap.agent_calls.values()),
+                              "agents_working": len(cap.agent_calls)}}
+        requests = [allocate.Request(p.order, p.candidates[p.order[0]], p.case.assigned_agent_id, p.case.team,
+                                     p.route_to_certified) for p in plans]
+        assignments = allocate.allocate(requests, cap)
+        # a non-call keeps the routing rules (assigned agent for wait, certified routing for hardship)
+        assignments = [a if a.action == "agent_call" else
+                       allocate.Assignment(a.action, default_agent(p, a.action), a.no_capacity)
+                       for p, a in zip(plans, assignments)]
+        capacity["left"] = {"channel": dict(cap.channel), "agent_calls": sum(cap.agent_calls.values())}
+    else:
+        assignments = [allocate.Assignment(p.order[0], default_agent(p, p.order[0]), []) for p in plans]
+    rows = [render(p, a, ctx) for p, a in zip(plans, assignments)]
+    return rows, {"snapshot_id": snapshot_id, "scored_cases": len(risk), "scored_promises": len(promise_risk),
+                  "calibration": cal, "capacity": capacity, "unconstrained": [p.order[0] for p in plans]}
 
 
 def write_gold(rows_path, as_of) -> int:
@@ -196,7 +262,9 @@ def write_gold(rows_path, as_of) -> int:
     return con.execute("SELECT count(*) FROM gold.nba_decisions WHERE as_of_date = ?", [as_of]).fetchone()[0]
 
 
-def write_report(path, n: int, info: dict, example: dict) -> None:
+def write_report(path, rows: list[dict], info: dict, example: dict) -> None:
+    import collections
+
     import duckdb
 
     from trustissues.nba.evaluate import write_section
@@ -204,36 +272,50 @@ def write_report(path, n: int, info: dict, example: dict) -> None:
     q = duckdb.connect()
     f = f"read_parquet('{path.as_posix()}')"
     by_action = q.execute(f"""
-        SELECT action, count(*), count(risk_score), avg(risk_score), avg(expected_value),
-               count(*) FILTER (WHERE requires_approval)
+        SELECT action, count(*), avg(risk_score), avg(expected_value), count(*) FILTER (WHERE requires_approval)
         FROM {f} GROUP BY 1 ORDER BY 2 DESC""").fetchall()
+    unconstrained = collections.Counter(info["unconstrained"])
     by_reason = q.execute(f"SELECT coalesce(approval_reason, 'none'), count(*) FROM {f} GROUP BY 1 ORDER BY 2 DESC").fetchall()
     rules_hit = q.execute(f"""
         SELECT r, count(DISTINCT case_id) FROM (
             SELECT case_id, unnest(regexp_extract_all(decision_card, '"rule": "([a-z_0-9]+)"', 1)) AS r FROM {f})
         GROUP BY 1 ORDER BY 2 DESC""").fetchall()
-    t1 = "\n".join(f"| `{a}` | {c:,} | {p:,} | {'' if r is None else f'{r:.2f}'} | {v:,.2f} | {ap:,} |"
-                   for a, c, p, r, v, ap in by_action)
+    cap = info["capacity"]
+    t1 = "\n".join(f"| `{a}` | {unconstrained.get(a, 0):,} | {c:,} | {r:.2f} | {v:,.2f} | {ap:,} |"
+                   for a, c, r, v, ap in by_action)
     t2 = "\n".join(f"| {r} | {c:,} |" for r, c in by_reason)
     t3 = "\n".join(f"| `{r}` | {c:,} |" for r, c in rules_hit)
+    start, left = cap["start"]["channel"], cap["left"]["channel"]
+    t4 = "\n".join(f"| {ch} | {start[ch]:,.0f} | {start[ch] - left.get(ch, 0):,.0f} |" for ch in sorted(start))
+    cal = info["calibration"]
     write_section("nba_queue", f"""
 ## Morning NBA queue (`nba/queue.py`)
 
-{n:,} open cases on {config.AS_OF_DATE}, one decision each, in the `gold.nba_decisions` shape
-(`warehouse/p3/nba_decisions.parquet`). {info['scored_promises']:,} cases have an open promise, scored with
-the break-risk model (feature snapshot `{info['snapshot_id']}`); the rest have no risk score. Action value =
-risk x (historical 30-day payment rate after the action - rate when waiting) x amount at stake - unit cost.
-The rates are observational, so the values rank actions; they do not prove uplift.
+{len(rows):,} open cases on {config.AS_OF_DATE}, one decision each, in the `gold.nba_decisions` shape
+(`warehouse/p3/nba_decisions.parquet`). Every case has a risk from the case model (chance of not being paid up
+within 30 days; feature snapshot `{info['snapshot_id']}`); {info['scored_promises']:,} also have an open
+promise scored by the promise model (shown on the card).
 
-| Action | Cases | With open promise | Avg risk | Avg expected value (CAD) | Need approval |
+Value of a contact = {cal['per_contact']:+.2%} cure per contact (the bank's randomised test) x the case's risk /
+{cal['base_risk']:.1%} x its reach on the channel x amount overdue - unit cost. The effect is small and its
+interval includes zero, so cheap channels the customer responds to win, and a call has to earn its cost.
+
+| Action | Best before capacity | Final | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
 {t1}
+
+Capacity on {config.AS_OF_DATE} (`channel_capacity`; {cap['start']['agents_working']} agents on shift with
+{cap['start']['agent_calls']:,} outbound calls between them, {cap['left']['agent_calls']:,} left unused):
+
+| Channel | Capacity | Used |
+|---|---|---|
+{t4}
 
 | Approval reason | Cases |
 |---|---|
 {t2}
 
-Cases where a rule removed at least one action:
+Cases where a rule (or capacity) removed at least one action:
 
 | Rule | Cases |
 |---|---|
@@ -260,17 +342,15 @@ def main() -> int:
     con.close()
     out = config.p3_dir() / DECISIONS_FILE
     pd.DataFrame(rows, columns=COLUMNS).to_parquet(out, index=False)
-    print(f"wrote {len(rows):,} decisions to {out} (scored {info['scored_promises']:,} open promises, "
-          f"feature snapshot {info['snapshot_id']})")
-    summary = duckdb.connect().sql(f"""
-        SELECT action, count(*) AS cases, count(risk_score) AS with_promise, round(avg(risk_score), 3) AS avg_risk,
+    print(f"wrote {len(rows):,} decisions to {out} (case risk for {info['scored_cases']:,} open cases, "
+          f"{info['scored_promises']:,} open promises scored, feature snapshot {info['snapshot_id']})")
+    print(duckdb.connect().sql(f"""
+        SELECT action, count(*) AS cases, round(avg(risk_score), 3) AS avg_risk,
                round(avg(expected_value), 2) AS avg_value, count(*) FILTER (WHERE requires_approval) AS need_approval
-        FROM read_parquet('{out.as_posix()}') GROUP BY 1 ORDER BY 2 DESC""")
-    print(summary)
-    print(duckdb.connect().sql(f"SELECT approval_reason, count(*) FROM read_parquet('{out.as_posix()}') GROUP BY 1 ORDER BY 2 DESC"))
-    example = next((r for r in rows if r["risk_score"] is not None and r["action"] != "wait"), rows[0])
+        FROM read_parquet('{out.as_posix()}') GROUP BY 1 ORDER BY 2 DESC"""))
+    example = next((r for r in rows if r["action"] == "agent_call"), rows[0])
     print("example decision card:\n" + json.dumps(json.loads(example["decision_card"]), indent=2))
-    write_report(out, len(rows), info, json.loads(example["decision_card"]))
+    write_report(out, rows, info, json.loads(example["decision_card"]))
     if args.write_gold:
         n = write_gold(out.as_posix(), config.AS_OF_DATE)
         print(f"gold.nba_decisions now has {n:,} rows for {config.AS_OF_DATE}")

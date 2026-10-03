@@ -1,71 +1,73 @@
-"""Action valuation, explanations and the queue's per-case decision (nba/actions, explain, queue)."""
+"""Action valuation, explanations, capacity allocation and the queue's per-case decision."""
 import json
 from dataclasses import fields
 from datetime import date
 
 import duckdb
+import pytest
 
+from trustissues.common import config
 from trustissues.common.interfaces import DecisionCard, Reason, apply_stubs
-from trustissues.nba import actions, explain, hardship, rules
-from trustissues.nba.queue import COLUMNS, CaseInput, Context, decide_case
+from trustissues.nba import actions, allocate, explain, hardship, rules
+from trustissues.nba.queue import COLUMNS, CaseInput, Context, decide_case, plan_case
 
-RATES = {"31-60": {"wait": 0.14, "push_reminder": 0.15, "email_reminder": 0.22, "sms_reminder": 0.23,
-                   "letter": 0.144, "agent_call": 0.30}}
 COSTS = {"phone": 2.4, "sms": 0.01, "email": 0.001, "push": 0.001, "mail": 1.1}
 ALL_CONSENT = {c: True for c in rules.CHANNELS}
-CTX = Context(as_of=date(2026, 9, 28), rates=RATES, costs=COSTS, high_balance=5000.0, model_version="ptp_break_v0",
-              snapshot_id="FS-test")
+CTX = Context(as_of=date(2026, 9, 28), costs=COSTS, effect=0.01, base_risk=0.5, high_balance=5000.0,
+              model_version="case_nocure_v0+ptp_break_v0", snapshot_id="FS-test")
 
 
 def _case(**kw):
-    base = dict(case_id="CS-1", customer_id="C-1", assigned_agent_id="AG-1", agent_certified=False, bucket="31-60",
-                amount=500.0, flags=rules.CaseFlags(consent=dict(ALL_CONSENT)), signal=hardship.HardshipSignal(),
-                risk=0.8, reasons=[Reason("ptp_to_overdue_ratio", "Promised 40% of the overdue amount", 2.1)])
+    base = dict(case_id="CS-1", customer_id="C-1", assigned_agent_id="AG-1", agent_certified=False, amount=500.0,
+                flags=rules.CaseFlags(consent=dict(ALL_CONSENT)), signal=hardship.HardshipSignal(), risk=0.8,
+                reasons=[Reason("dpd_now", "47 days past due now", 0.4)], team="T1")
     return CaseInput(**{**base, **kw})
 
 
-def test_value_is_risk_times_lift_times_amount_minus_cost():
-    v = actions.value_actions(list(actions.CATALOGUE), "31-60", 0.8, 500.0, RATES, COSTS)
+# ---- valuation -------------------------------------------------------------------------------------------
+
+def test_value_is_effect_times_relative_risk_times_reach_times_amount_minus_cost():
+    v = actions.value_actions(list(actions.CATALOGUE), 0.8, 500.0, COSTS, effect=0.01, base_risk=0.5,
+                              reach={"agent_call": 1.5})
     assert v["wait"] == 0.0
-    assert abs(v["agent_call"] - (0.8 * (0.30 - 0.14) * 500 - 2.4)) < 1e-9
+    assert v["agent_call"] == pytest.approx(0.01 * (0.8 / 0.5) * 1.5 * 500 - 2.4)
+    assert v["letter"] == pytest.approx(0.01 * 1.6 * 500 - 1.1)  # no reach data: average
 
 
-def test_no_risk_means_no_contact():
-    v = actions.value_actions(list(actions.CATALOGUE), "31-60", 0.0, 500.0, RATES, COSTS)
-    assert actions.choose(list(v), v) == "wait"
+def test_no_effect_or_no_risk_means_wait():
+    for effect, risk in ((0.0, 0.9), (0.01, 0.0), (-0.01, 0.9)):
+        v = actions.value_actions(list(actions.CATALOGUE), risk, 500.0, COSTS, effect=effect)
+        assert actions.choose(list(v), v) == "wait"
 
 
-def test_unknown_bucket_or_unrated_action_is_never_chosen():
-    assert actions.value_actions(list(actions.CATALOGUE), "999+", 0.9, 500.0, RATES, COSTS) == {"wait": 0.0}
-    rates = {"31-60": {"wait": 0.14, "email_reminder": 0.22}}
-    v = actions.value_actions(list(actions.CATALOGUE), "31-60", 0.9, 500.0, rates, COSTS)
-    assert set(v) == {"wait", "email_reminder"}
+def test_reach_is_relative_to_average_and_shrunk_halfway():
+    r = actions.reach({"email_open_rate_30d": 0.0, "call_rpc_rate_30d": 1.0, "sms_click_rate_30d": None},
+                      {"email_open_rate_30d": 0.4, "call_rpc_rate_30d": 0.5, "sms_click_rate_30d": 0.1,
+                       "push_open_rate_30d": 0.2})
+    assert r["email_reminder"] == pytest.approx(0.5)   # never opens: half the average effect
+    assert r["agent_call"] == pytest.approx(1.5)       # always answers
+    assert r["sms_reminder"] == 1.0 and r["push_reminder"] == 1.0  # no recent contacts: average
 
 
-def test_payment_rates_fill_wait_with_the_weakest_treatment(tmp_path):
-    path = tmp_path / "av.parquet"
-    duckdb.connect().execute(f"""COPY (SELECT * FROM (VALUES
-        ('outbound_call', 'champion', '31-60', 1000, 10, 0.1, 0.30, 50.0, 1.6),
-        ('letter', 'champion', '31-60', 1000, 10, 0.0, 0.14, 20.0, 1.1),
-        ('push', 'champion', '31-60', 19, 5, 0.0, 0.90, 9.0, 0.0),
-        ('wait', 'no_contact_holdout', '1-30', 600, 600, NULL, 0.17, 40.0, 0.0))
-        v(treatment_code, test_cell, dpd_bucket, contacts, cases, promise_rate, paid_30d_rate, avg_paid_30d,
-          avg_contact_cost_cad)) TO '{path.as_posix()}' (FORMAT PARQUET)""")
-    rates = actions.load_payment_rates(path)
-    assert rates["31-60"] == {"agent_call": 0.30, "letter": 0.14, "wait": 0.14}  # push: too few contacts
-    assert rates["1-30"] == {"wait": 0.17}
+def test_cheapest_channel_wins_at_equal_reach_and_reach_can_justify_a_call():
+    assert decide_case(_case(), CTX)["action"] in ("email_reminder", "push_reminder")
+    phone_person = _case(reach={"email_reminder": 0.5, "push_reminder": 0.5, "sms_reminder": 0.5,
+                                "agent_call": 1.5}, amount=2000.0)
+    assert decide_case(phone_person, CTX)["action"] == "agent_call"
 
+
+# ---- decision card ---------------------------------------------------------------------------------------
 
 def test_card_fits_the_gold_stub_and_the_decision_card_shape():
-    row = decide_case(_case(), CTX)
+    row = decide_case(_case(promise_risk=0.83), CTX)
     con = duckdb.connect()
     apply_stubs(con)
     con.execute(f"INSERT INTO gold.nba_decisions VALUES ({', '.join('?' * len(COLUMNS))})", [row[c] for c in COLUMNS])
-    assert con.execute("SELECT action FROM gold.nba_decisions").fetchone()[0] == "agent_call"
+    assert con.execute("SELECT count(*) FROM gold.nba_decisions").fetchone()[0] == 1
     card = json.loads(row["decision_card"])
     assert set(card) == {f.name for f in fields(DecisionCard)}
-    assert card["runner_up_action"] == "sms_reminder"
-    assert card["summary"].startswith("High risk of breaking (0.80): Promised 40% of the overdue amount.")
+    assert card["summary"].startswith("High risk of not being paid up in 30 days (0.80): 47 days past due now.")
+    assert "Open promise: 0.83 risk of breaking." in card["summary"]
 
 
 def test_hard_stop_case_waits_and_says_why():
@@ -76,50 +78,93 @@ def test_hard_stop_case_waits_and_says_why():
     assert "Contact blocked (cease contact)" in card["summary"]
 
 
+def test_experiment_holdout_cases_are_left_alone():
+    row = decide_case(_case(flags=rules.CaseFlags(consent=dict(ALL_CONSENT), experiment_holdout=True)), CTX)
+    assert row["action"] == "wait"
+    assert {b["rule"] for b in json.loads(row["decision_card"])["blocked_actions"]} == {"experiment_holdout"}
+
+
 def test_hardship_is_gentler_needs_approval_and_leaves_an_uncertified_agent():
-    plain = decide_case(_case(), CTX)
-    hard = decide_case(_case(signal=hardship.HardshipSignal("possible")), CTX)
-    assert actions.harshness(hard["action"]) <= actions.harshness(plain["action"])
+    phone_person = dict(reach={"email_reminder": 0.5, "push_reminder": 0.5, "sms_reminder": 0.5, "agent_call": 1.5},
+                        amount=2000.0)
+    plain = decide_case(_case(**phone_person), CTX)
+    hard = decide_case(_case(signal=hardship.HardshipSignal("possible"), **phone_person), CTX)
+    assert plain["action"] == "agent_call"
+    assert actions.harshness(hard["action"]) <= hardship.MAX_HARSHNESS_IN_HARDSHIP
     assert hard["requires_approval"] and hard["approval_reason"] == "hardship"
-    assert hard["agent_id"] is None  # assigned agent is not certified: route to one who is
+    waiting = decide_case(_case(signal=hardship.HardshipSignal("possible"), flags=rules.CaseFlags(consent={})), CTX)
+    assert waiting["action"] == "wait" and waiting["agent_id"] is None  # uncertified agent: route elsewhere
     certified = decide_case(_case(signal=hardship.HardshipSignal("possible"), agent_certified=True,
-                                  flags=rules.CaseFlags(consent={"phone": True})), CTX)
-    assert certified["action"] == "wait" and certified["agent_id"] == "AG-1"
+                                  flags=rules.CaseFlags(consent={})), CTX)
+    assert certified["agent_id"] == "AG-1"
 
 
 def test_approval_reasons():
     digital = decide_case(_case(flags=rules.CaseFlags(consent={"sms": True})), CTX)
     assert digital["action"] == "sms_reminder" and digital["approval_reason"] == "digital_batch"
     assert digital["agent_id"] is None
-    big = decide_case(_case(amount=20000.0), CTX)
-    assert big["approval_reason"] == "high_balance"
+    assert decide_case(_case(amount=20000.0), CTX)["approval_reason"] == "high_balance"
     vuln = decide_case(_case(signal=hardship.HardshipSignal("possible", vulnerable=True)), CTX)
     assert vuln["approval_reason"] == "vulnerability"
 
 
-def test_case_without_open_promise_has_no_risk_or_snapshot():
-    row = decide_case(_case(risk=None, reasons=[]), CTX)
-    assert row["risk_score"] is None and row["feature_snapshot_id"] is None
-    assert json.loads(row["decision_card"])["summary"].startswith("No open promise.")
-
-
-def test_top_reasons_are_the_largest_risk_increasing_features():
+def test_top_reasons_are_the_largest_risk_increasing_features_and_say_what_missing_means():
     reasons = explain.top_reasons(
-        {"ptp_to_overdue_ratio": 0.4, "broken_ptp_90d": 2, "dpd_at_creation": 47, "card_utilisation": 0.9},
-        {"ptp_to_overdue_ratio": 2.0, "broken_ptp_90d": 0.5, "dpd_at_creation": -0.3, "card_utilisation": 0.1})
-    assert [r.feature for r in reasons] == ["ptp_to_overdue_ratio", "broken_ptp_90d", "card_utilisation"]
-    assert [r.text for r in reasons] == ["Promised 40% of the overdue amount", "2 promises broken in the last 90 days",
-                                         "Card utilisation 90%"]
+        {"dpd_now": 47, "broken_ptp_90d": 2, "open_ptp_to_overdue_ratio": None, "days_to_open_ptp_due": None,
+         "card_utilisation": 0.9},
+        {"dpd_now": 2.0, "broken_ptp_90d": 0.5, "open_ptp_to_overdue_ratio": 0.4, "days_to_open_ptp_due": 0.3,
+         "card_utilisation": 0.1})
+    assert [r.text for r in reasons] == ["47 days past due now", "2 promises broken in the last 90 days",
+                                         "No open promise to pay"]  # the second "no open promise" is dropped
 
 
-def test_every_model_feature_has_a_sentence():
-    import pytest
-
-    from trustissues.common import config
-
-    meta = config.p3_dir() / "models" / "ptp_break_v0.json"
+@pytest.mark.parametrize("model", ["ptp_break_v0", "case_nocure_v0"])
+def test_every_model_feature_has_a_sentence(model):
+    meta = config.p3_dir() / "models" / f"{model}.json"
     if not meta.exists():
         pytest.skip("no trained model")
     feats = json.loads(meta.read_text(encoding="utf-8"))["features"]
     missing = [f for f in feats if f not in explain.TEMPLATES]
     assert not missing, f"no reason template for {missing}"
+
+
+# ---- capacity --------------------------------------------------------------------------------------------
+
+def _cap(channel=None, calls=None, certified=()):
+    calls = calls or {"AG-1": 1, "AG-2": 1, "AG-9": 5}
+    return allocate.Capacity(channel=channel or {"phone": 100, "email": 100, "sms": 100, "push": 100, "mail": 100},
+                             agent_calls=dict(calls), team={"AG-1": "T1", "AG-2": "T1", "AG-9": "T2"},
+                             certified=set(certified))
+
+
+def _req(order, value, agent="AG-1", team="T1", certified=False):
+    return allocate.Request(order=order, value=value, assigned_agent=agent, team=team, needs_certified=certified)
+
+
+def test_most_valuable_cases_get_scarce_capacity_and_the_rest_fall_back():
+    reqs = [_req(["letter", "email_reminder", "wait"], 5.0), _req(["letter", "email_reminder", "wait"], 9.0)]
+    out = allocate.allocate(reqs, _cap(channel={"mail": 1, "email": 0}))
+    assert out[1].action == "letter"
+    assert out[0].action == "wait" and out[0].no_capacity == ["letter", "email_reminder"]
+
+
+def test_calls_go_to_the_assigned_agent_then_the_team_then_anyone():
+    reqs = [_req(["agent_call", "wait"], v) for v in (9, 8, 7, 6)]
+    out = allocate.allocate(reqs, _cap(calls={"AG-1": 1, "AG-2": 1, "AG-9": 1}))
+    assert [o.agent_id for o in out] == ["AG-1", "AG-2", "AG-9", "AG-1"]
+    assert [o.action for o in out] == ["agent_call"] * 3 + ["wait"]
+    assert out[3].no_capacity == ["agent_call"]
+
+
+def test_hardship_calls_only_go_to_certified_agents():
+    out = allocate.allocate([_req(["agent_call", "wait"], 9, certified=True)], _cap(certified={"AG-9"}))
+    assert out[0].action == "agent_call" and out[0].agent_id == "AG-9"
+    out = allocate.allocate([_req(["agent_call", "wait"], 9, certified=True)], _cap(certified=()))
+    assert out[0].action == "wait"
+
+
+def test_capacity_never_makes_a_hardship_case_harsher():
+    flags = rules.CaseFlags(consent=dict(ALL_CONSENT))
+    plan = plan_case(_case(flags=flags, signal=hardship.HardshipSignal("possible"), amount=3000.0,
+                           reach={"agent_call": 2.0}), CTX)
+    assert all(actions.harshness(a) <= hardship.MAX_HARSHNESS_IN_HARDSHIP for a in plan.order)

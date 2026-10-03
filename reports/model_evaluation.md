@@ -119,109 +119,219 @@ Reliability (score deciles):
 <!-- /section:v0 -->
 
 <!-- section:action_values -->
-## Action valuation data (first half of `nba/actions.py`)
+## Action values: what a contact is worth (`nba/actions.py`)
 
-Historical results by treatment, from `contact_history` (and `no_contact_holdout` cases for `wait`).
-Payment within 30 days = a kept / partially kept promise paid in the window, or a payment taken on a
-contact in the window, in the same case. Full table by treatment x test cell x DPD bucket:
-`warehouse/p3/action_values.parquet`. These rates are **observational within a cell**: treatments were
-targeted by the strategy, so a higher rate is not proof that the treatment caused it. Only the
-cell-level comparison below is randomised: it keeps the cases with `assignment_method = random`
-(all of `no_contact_holdout`, about 40% of the other cells).
+**Historical rates by treatment** (`contact_history`; `wait` = the no-contact holdout cases from case open).
+Within 30 days of the contact, same case; only fully observed windows. Full table by treatment x test cell x
+DPD bucket: `warehouse/p3/action_values.parquet`.
 
-| Treatment | Contacts / cases | Promise rate | Paid within 30 days | Avg paid in 30 days (CAD) | Avg contact cost (CAD) |
+| Treatment | Contacts / cases | Promise rate | Paid within 30 days | Cured within 30 days | Avg contact cost (CAD) |
 |---|---|---|---|---|---|
-| `outbound_call` | 784,049 | 13.4% | 26.2% | 120.71 | 1.561 |
-| `payment_link` | 293,762 | 2.0% | 20.4% | 79.35 | 0.010 |
-| `email_reminder` | 310,258 | 0.0% | 19.8% | 74.79 | 0.001 |
-| `push` | 63,858 | 1.9% | 19.8% | 66.41 | 0.001 |
-| `wait` | 7,264 |  | 17.6% | 45.11 | 0.000 |
-| `letter` | 344,394 | 0.0% | 13.5% | 57.95 | 1.100 |
+| `wait` | 6,263 |  | 19.1% | 52.1% | 0.000 |
+| `push` | 53,718 | 1.8% | 21.6% | 51.3% | 0.001 |
+| `email_reminder` | 252,397 | 0.0% | 22.1% | 49.8% | 0.001 |
+| `payment_link` | 234,020 | 2.0% | 23.2% | 49.2% | 0.010 |
+| `outbound_call` | 559,870 | 13.4% | 31.6% | 44.2% | 1.601 |
+| `letter` | 246,389 | 0.0% | 16.4% | 42.1% | 1.100 |
 
-By test cell (randomly assigned cases only, case level, from case open):
+These are **observational** and are **not used to value actions**: the bank chose who got which treatment.
+By cure, every treatment looks worse than waiting, because the bank contacts the cases that are not curing.
 
-| Test cell | Cases | Paid within 30 days | Cured |
-|---|---|---|---|
-| `challenger_A` | 22,041 | 16.0% | 72.5% |
-| `challenger_B` | 21,905 | 16.1% | 72.8% |
-| `champion` | 95,363 | 16.0% | 72.9% |
-| `no_contact_holdout` | 7,264 | 15.2% | 71.5% |
+**The randomised test** (randomly assigned cases only, 30 days from case open):
+
+| Test cell | Cases | Treated contacts per case | Paid within 30 days | Cured within 30 days |
+|---|---|---|---|---|
+| `challenger_A` | 18,913 | 1.95 | 17.7% | 52.5% |
+| `challenger_B` | 18,948 | 1.97 | 17.7% | 52.5% |
+| `champion` | 82,279 | 1.96 | 17.6% | 52.3% |
+| `no_contact_holdout` | 6,263 | 1.50 | 16.7% | 52.1% |
+
+Contacted cells vs `no_contact_holdout`: cure 52.4% vs 52.1%, a
+difference of +0.29% (95% interval -0.98% to
++1.55%). The holdout is not contact-free; it gets
+0.46 fewer treated contacts per case:
+
+| Treatment | Extra contacts per case in the contacted cells |
+|---|---|
+| `email_reminder` | +0.19 |
+| `sms_reminder` | +0.15 |
+| `agent_call` | +0.08 |
+| `push_reminder` | +0.05 |
+| `letter` | -0.00 |
+
+**Effect used to value actions: +0.62% cure per extra contact** (95% interval
+-2.12% to +3.35%), for a case at the average not-cured rate of
+47.6%, scaled by the case's own risk and by its reach on each channel. The interval includes
+zero: the data cannot show that contacting helps at all, only that any effect is small. One experiment cannot
+separate channels, so channels differ only by reach and cost. Caveats: the test covers cases entering at
+1-30 DPD and the bank's contact mix; the same effect is assumed for later stages.
 <!-- /section:action_values -->
 
 <!-- section:nba_queue -->
 ## Morning NBA queue (`nba/queue.py`)
 
 86,059 open cases on 2026-09-28, one decision each, in the `gold.nba_decisions` shape
-(`warehouse/p3/nba_decisions.parquet`). 30,946 cases have an open promise, scored with
-the break-risk model (feature snapshot `FS-20260928-ptp_break_v0`); the rest have no risk score. Action value =
-risk x (historical 30-day payment rate after the action - rate when waiting) x amount at stake - unit cost.
-The rates are observational, so the values rank actions; they do not prove uplift.
+(`warehouse/p3/nba_decisions.parquet`). Every case has a risk from the case model (chance of not being paid up
+within 30 days; feature snapshot `FS-20260928-case_nocure_v0`); 30,946 also have an open
+promise scored by the promise model (shown on the card).
 
-| Action | Cases | With open promise | Avg risk | Avg expected value (CAD) | Need approval |
+Value of a contact = +0.62% cure per contact (the bank's randomised test) x the case's risk /
+47.6% x its reach on the channel x amount overdue - unit cost. The effect is small and its
+interval includes zero, so cheap channels the customer responds to win, and a call has to earn its cost.
+
+| Action | Best before capacity | Final | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
-| `wait` | 28,872 | 11,211 | 0.93 | 0.00 | 18,256 |
-| `agent_call` | 19,814 | 5,709 | 0.89 | 54.91 | 99 |
-| `email_reminder` | 17,823 | 7,693 | 0.89 | 22.93 | 17,823 |
-| `sms_reminder` | 12,983 | 3,947 | 0.85 | 18.61 | 12,983 |
-| `push_reminder` | 5,992 | 2,244 | 0.81 | 5.11 | 5,992 |
-| `letter` | 575 | 142 | 0.98 | 30.13 | 18 |
+| `email_reminder` | 28,882 | 29,119 | 0.65 | 6.64 | 29,119 |
+| `push_reminder` | 24,882 | 24,918 | 0.66 | 6.67 | 24,918 |
+| `wait` | 22,225 | 22,740 | 0.72 | 0.00 | 12,357 |
+| `sms_reminder` | 5,349 | 5,470 | 0.63 | 10.43 | 5,470 |
+| `letter` | 3,999 | 3,000 | 0.71 | 8.94 | 40 |
+| `agent_call` | 722 | 812 | 0.67 | 15.65 | 28 |
+
+Capacity on 2026-09-28 (`channel_capacity`; 720 agents on shift with
+62,028 outbound calls between them, 61,216 left unused):
+
+| Channel | Capacity | Used |
+|---|---|---|
+| email | 60,000 | 29,119 |
+| mail | 3,000 | 3,000 |
+| phone | 68,976 | 812 |
+| push | 30,000 | 24,918 |
+| sms | 40,000 | 5,470 |
 
 | Approval reason | Cases |
 |---|---|
-| none | 30,888 |
+| digital_batch | 35,912 |
 | hardship | 23,513 |
-| digital_batch | 19,245 |
+| none | 14,127 |
 | vulnerability | 12,135 |
-| high_balance | 278 |
+| high_balance | 372 |
 
-Cases where a rule removed at least one action:
+Cases where a rule (or capacity) removed at least one action:
 
 | Rule | Cases |
 |---|---|
-| `consent` | 62,377 |
-| `do_not_call` | 23,323 |
-| `contact_limit` | 4,655 |
-| `represented_by_third_party` | 4,374 |
+| `consent` | 61,081 |
+| `do_not_call` | 22,851 |
+| `contact_limit` | 4,562 |
+| `represented_by_third_party` | 4,288 |
 | `open_dispute` | 2,511 |
 | `cease_contact` | 2,412 |
+| `experiment_holdout` | 1,667 |
+| `no_capacity` | 999 |
 | `insolvency` | 3 |
 
 Example decision card:
 
 ```json
 {
-  "recommended_action": "push_reminder",
-  "channel": "push",
-  "risk_score": 0.8396,
+  "recommended_action": "agent_call",
+  "channel": "phone",
+  "risk_score": 0.8254,
   "top_reasons": [
     {
-      "feature": "ptp_to_overdue_ratio",
-      "text": "Promised 60% of the overdue amount",
-      "contribution": 4.492
-    },
-    {
-      "feature": "ptp_amount",
-      "text": "Promised $105",
-      "contribution": 0.4885
-    },
-    {
-      "feature": "product",
+      "feature": "primary_product",
       "text": "Product: personal_loan",
-      "contribution": 0.1822
+      "contribution": 0.2608
+    },
+    {
+      "feature": "open_ptp_to_overdue_ratio",
+      "text": "No open promise to pay",
+      "contribution": 0.127
+    },
+    {
+      "feature": "balance_to_limit",
+      "text": "Balance at 17% of the limit",
+      "contribution": 0.1172
     }
   ],
-  "runner_up_action": "email_reminder",
-  "why_beat_runner_up": "Expected net $1.91 vs $1.49 for email_reminder ($0.42 more after contact cost)",
+  "runner_up_action": "push_reminder",
+  "why_beat_runner_up": "Expected net $16.61 vs $14.49 for push_reminder ($2.11 more after contact cost)",
   "blocked_actions": [
     {
-      "action": "agent_call",
-      "rule": "do_not_call"
+      "action": "email_reminder",
+      "rule": "consent"
     }
   ],
   "evidence": [],
-  "requires_approval": true,
-  "approval_reason": "hardship",
-  "summary": "High risk of breaking (0.84): Promised 60% of the overdue amount; Promised $105. Send an app push reminder. Hardship or vulnerability sign: route to a certified agent."
+  "requires_approval": false,
+  "approval_reason": null,
+  "summary": "High risk of not being paid up in 30 days (0.83): Product: personal_loan; No open promise to pay. Call the customer."
 }
 ```
 <!-- /section:nba_queue -->
+
+<!-- section:case_v0 -->
+## Case model v0: will an open case cure within 30 days? (vs the bank's `cure_30d`)
+
+Every collections case open at a month-end is a row; label 1 = it was **not** paid up and closed within
+30 days. This gives every open case a risk score, whether or not it has an open promise
+(the promise model only covers cases with one). Trained on 133,921 rows with month-ends before
+2026-04-30, early-stopped and isotonic-calibrated on 34,786 rows up to 2026-06-30,
+tested on the 77,966 rows of the month-ends the bank scored (2026-06-30 onwards).
+53 features: the case so far (`case_state.sql`) plus the promise history, arrears, liquidity,
+payday and contact-response groups shared with the promise model. Same 74,008 case-month rows
+for both models; the bank's score is turned into a risk as 1 - `cure_30d`.
+
+| Metric | Incumbent cure_30d | Case v0 (calibrated) |
+|---|---|---|
+| AUC | 0.7250 | 0.8373 |
+| Brier score | 0.2180 | 0.1278 |
+| Calibration error | 0.2508 | 0.0873 |
+| Caught in riskiest 20% | 23.4% | 24.9% |
+| Promises | 74,008 | 74,008 |
+
+The not-cured rate drifts upward: 41.1% in train, 62.3% in valid,
+80.3% in the holdout, so calibration is fitted on the most recent months.
+
+| Metric | Case v0 (calibrated) |
+|---|---|
+| Promises scored | 77,966 |
+| Broken rate (actual) | 80.3% |
+| Mean score | 0.716 |
+| AUC | **0.8372** |
+| Brier score (lower is better) | 0.1278 |
+| Expected calibration error | 0.0873 |
+| Broken promises caught in riskiest 20% | **24.9%** |
+| Broken rate inside riskiest 20% | 99.9% |
+
+Reliability (score deciles):
+
+| Decile | Promises | Mean score | Actual broken rate |
+|---|---|---|---|
+| 1 | 7,146 | 0.274 | 0.406 |
+| 2 | 8,160 | 0.459 | 0.566 |
+| 3 | 7,717 | 0.548 | 0.656 |
+| 4 | 2,495 | 0.635 | 0.723 |
+| 5 | 11,481 | 0.652 | 0.783 |
+| 6 | 7,331 | 0.748 | 0.870 |
+| 7 | 9,641 | 0.828 | 0.940 |
+| 8 | 6,516 | 0.919 | 0.977 |
+| 9 | 3,047 | 0.977 | 0.996 |
+| 10 | 14,432 | 0.998 | 1.000 |
+
+### SHAP check (mean |SHAP| on a holdout sample, top 20)
+
+| Rank | Feature | Mean abs SHAP (log-odds) |
+|---|---|---|
+| 1 | `card_utilisation` | 0.3855 |
+| 2 | `open_ptp_to_overdue_ratio` | 0.1828 |
+| 3 | `case_age_days` | 0.1377 |
+| 4 | `balance_to_limit` | 0.1200 |
+| 5 | `primary_product` | 0.1108 |
+| 6 | `case_rpc` | 0.0759 |
+| 7 | `overdue_vs_entry` | 0.0714 |
+| 8 | `dpd_now` | 0.0553 |
+| 9 | `days_to_open_ptp_due` | 0.0474 |
+| 10 | `call_rpc_rate_30d` | 0.0268 |
+| 11 | `days_since_last_contact` | 0.0240 |
+| 12 | `case_contacts` | 0.0229 |
+| 13 | `days_since_last_broken` | 0.0224 |
+| 14 | `salary_last` | 0.0217 |
+| 15 | `contacts_30d` | 0.0194 |
+| 16 | `overdue_now` | 0.0186 |
+| 17 | `days_since_case_contact` | 0.0140 |
+| 18 | `entry_overdue` | 0.0106 |
+| 19 | `payment_made_last_snapshot` | 0.0100 |
+| 20 | `dpd_change_since_open` | 0.0089 |
+<!-- /section:case_v0 -->

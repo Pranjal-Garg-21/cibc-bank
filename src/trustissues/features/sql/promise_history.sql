@@ -1,7 +1,7 @@
 -- The customer's earlier promises. A promise counts as broken/kept only once its status was known
 -- (status_ts strictly before the event time); "made" counts use the creation time.
 SELECT
-    s.ptp_id,
+    s.row_id,
     count(q.ptp_id) FILTER (WHERE q.ptp_status IN ('broken', 'partially_kept')
                               AND q.status_ts < s.event_ts
                               AND q.status_ts >= s.event_ts - INTERVAL 90 DAY) AS broken_ptp_90d,
@@ -21,4 +21,4 @@ FROM spine s
 LEFT JOIN src_promises q
        ON q.crm_customer_id = s.crm_customer_id
       AND q.ptp_created_ts < s.event_ts
-GROUP BY s.ptp_id, s.event_ts
+GROUP BY s.row_id, s.event_ts

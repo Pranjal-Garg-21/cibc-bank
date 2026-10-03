@@ -26,6 +26,7 @@ class CaseFlags:
     open_dispute: bool = False
     represented: bool = False  # third-party / legal representative: do not contact the customer directly
     do_not_call: bool = False  # national DNCL or internal do-not-call
+    experiment_holdout: bool = False  # in the bank's randomised no_contact_holdout cell: leave it to the bank
     consent: dict[str, bool] = field(default_factory=dict)  # channel -> consented; missing = no consent
     contacts_last_7d: int = 0
     contact_cap_7d: int = 3
@@ -50,6 +51,8 @@ RULES = [
     ("deceased", lambda f, a: f.deceased),
     ("insolvency", lambda f, a: f.insolvency),
     ("open_dispute", lambda f, a: f.open_dispute),
+    # keep the bank's randomised test clean: NBA does not add contact to its holdout cases
+    ("experiment_holdout", lambda f, a: f.experiment_holdout),
     ("represented_by_third_party", lambda f, a: f.represented),
     ("consent", lambda f, a: not f.consent.get(a.channel, False)),
     ("do_not_call", lambda f, a: f.do_not_call and a.channel == "phone"),
@@ -103,6 +106,7 @@ def load_case_flags(con, case_ids: list[str] | None = None, planned_local_time: 
                coalesce(c.dispute_flag, false) AND coalesce(c.dispute_status, 'open') = 'open' AS open_dispute,
                coalesce(c.third_party_rep_flag, false) OR coalesce(f.legal_representative_flag, false) AS represented,
                coalesce(f.national_dncl_flag, false) OR coalesce(f.internal_do_not_call_flag, false) AS do_not_call,
+               coalesce(c.test_cell = 'no_contact_holdout', false) AS experiment_holdout,
                coalesce(f.consent_call, false), coalesce(f.consent_sms, false), coalesce(f.consent_email, false),
                coalesce(f.consent_push, false), coalesce(f.consent_letter, false),
                coalesce(c.contacts_last_7d, 0), coalesce(c.contact_cap_7d, 3),
@@ -110,11 +114,11 @@ def load_case_flags(con, case_ids: list[str] | None = None, planned_local_time: 
                f.preferred_contact_window_start, f.preferred_contact_window_end
         FROM src_cases c LEFT JOIN src_crm_safety_flags f USING (crm_customer_id) {where}""")
     out = {}
-    for (case_id, cease, dead, insolv, dispute, rep, dnc, c_call, c_sms, c_email, c_push, c_letter, n7, cap,
+    for (case_id, cease, dead, insolv, dispute, rep, dnc, held, c_call, c_sms, c_email, c_push, c_letter, n7, cap,
          pstart, pend, wstart, wend) in rel.fetchall():
         out[case_id] = CaseFlags(
             cease_contact=cease, deceased=dead, insolvency=insolv, open_dispute=dispute, represented=rep,
-            do_not_call=dnc,
+            do_not_call=dnc, experiment_holdout=held,
             consent={"phone": c_call, "sms": c_sms, "email": c_email, "push": c_push, "mail": c_letter},
             contacts_last_7d=n7, contact_cap_7d=cap,
             permitted_call_hours=_window(pstart, pend), preferred_window=_window(wstart, wend),

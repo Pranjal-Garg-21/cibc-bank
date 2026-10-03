@@ -27,7 +27,9 @@ from trustissues.common import config
 SCHEMA = os.environ.get("P3_SOURCE_SCHEMA", config.settings()["p3"].get("source_schema", "curated"))
 
 # Columns that describe the outcome of a promise. Never features (P3 plan §3).
-LEAKAGE_COLUMNS = frozenset({"ptp_status", "status_ts", "amount_paid_against", "paid_date", "broken_reason_agent_coded"})
+LEAKAGE_COLUMNS = frozenset({"ptp_status", "status_ts", "amount_paid_against", "paid_date", "broken_reason_agent_coded",
+                             "cure_date", "case_status", "case_status_date"})
+CASE_DAYS = (7, 14, 21, 30, 45, 60, 90)  # collections_cases.dpd_at_day_<k> / overdue_at_day_<k>
 
 
 @dataclass(frozen=True)
@@ -38,7 +40,7 @@ class Source:
     use: str  # features | label | rules | evaluation | actions
     event_ts: str | None = None  # output column: when the row became known (for as_of)
     where: str | None = None  # filter on source columns
-    # output column -> (output column holding when it became known, value before that)
+    # output column -> (SQL for when it became known, value before that). The SQL may name output columns.
     known_at: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
@@ -63,7 +65,7 @@ SOURCES: dict[str, Source] = {
             # outcome: for the label and for history features "resolved before the event time" only
             "ptp_status": ("ptp_status", "VARCHAR"),
         },
-        known_at={"ptp_status": ("status_ts", "'open'"), "status_ts": ("status_ts", "NULL")},
+        known_at={"ptp_status": ('"status_ts"', "'open'"), "status_ts": ('"status_ts"', "NULL")},
     ),
     "account_snapshots": Source(
         table="account_monthly_snapshot",
@@ -94,13 +96,40 @@ SOURCES: dict[str, Source] = {
             "dpd_at_contact": ("dpd_at_contact", "INTEGER"),
         },
     ),
+    # Case facts known at a point in time, for the case-level model. The day-k arrears are only known k days
+    # after the case opened; the outcome columns are labels only, masked until they happen.
+    "case_history": Source(
+        table="collections_cases",
+        use="features",
+        event_ts="case_open_ts",
+        columns={
+            **_c("case_id", "primary_account_id", "primary_product", "case_open_reason"),
+            "crm_customer_id": ("coll_customer_ref", "VARCHAR"),
+            "case_open_ts": ("case_open_date", "TIMESTAMP"),
+            **_c("entry_dpd", "accounts_in_case_count", "prior_cases_12m", type_="INTEGER"),
+            "entry_overdue": ("entry_overdue", "DOUBLE"),
+            **{f"dpd_at_day_{k}": (f"dpd_at_day_{k}", "INTEGER") for k in CASE_DAYS},
+            **{f"overdue_at_day_{k}": (f"overdue_at_day_{k}", "DOUBLE") for k in CASE_DAYS},
+            # outcome: label only
+            **_c("cure_date", "case_status_date", type_="DATE"),
+            "case_status": ("case_status", "VARCHAR"),
+        },
+        known_at={
+            **{f"{p}_at_day_{k}": (f'"case_open_ts" + INTERVAL {k} DAY', "NULL") for p in ("dpd", "overdue")
+               for k in CASE_DAYS},
+            "cure_date": ('"cure_date"', "NULL"),
+            "case_status": ('"case_status_date"', "'open'"),
+            "case_status_date": ('"case_status_date"', "NULL"),
+        },
+    ),
     "cases": Source(
         table="collections_cases",
         use="rules",
         event_ts="case_open_date",
         columns={
             **_c("case_id", "case_status", "primary_account_id", "primary_product", "test_cell", "strategy_code",
-                 "assignment_method", "dispute_status", "current_bucket", "current_ptp_id", "assigned_agent_id"),
+                 "assignment_method", "dispute_status", "current_bucket", "current_ptp_id", "assigned_agent_id",
+                 "assigned_team"),
             "crm_customer_id": ("coll_customer_ref", "VARCHAR"),
             **_c("case_open_date", "outcome_date", type_="DATE"),
             **_c("entry_dpd", "current_dpd", "contact_cap_7d", "contacts_last_7d", type_="INTEGER"),
@@ -153,8 +182,19 @@ SOURCES: dict[str, Source] = {
         table="agents",
         use="rules",
         columns={
-            **_c("agent_id", "status"),
+            **_c("agent_id", "status", "team_id", "site"),
             "vulnerable_customer_certified": ("vulnerable_customer_certified", "BOOLEAN"),
+        },
+    ),
+    # Who is working on a day, and how many outbound calls each shift can make (nba/allocate.py).
+    "agent_shifts": Source(
+        table="agent_shifts",
+        use="rules",
+        columns={
+            "agent_id": ("agent_id", "VARCHAR"),
+            "shift_date": ("shift_date", "DATE"),
+            "outbound_call_capacity": ("outbound_call_capacity", "INTEGER"),
+            "absence_flag": ("absence_flag", "BOOLEAN"),
         },
     ),
     # Promise outcomes for action valuation (nba/actions.py) only. Never a feature.
@@ -200,8 +240,8 @@ def sql(name: str, as_of: datetime | str | None = None) -> str:
     outs = []
     for out in s.columns:
         if out in s.known_at:
-            known_col, before = s.known_at[out]
-            outs.append(f'CASE WHEN "{known_col}" < {ts} THEN "{out}" ELSE {before} END AS "{out}"')
+            known, before = s.known_at[out]
+            outs.append(f'CASE WHEN {known} < {ts} THEN "{out}" ELSE {before} END AS "{out}"')
         else:
             outs.append(f'"{out}"')
     return f'SELECT {", ".join(outs)} FROM ({inner}) WHERE "{s.event_ts}" < {ts}'
@@ -257,3 +297,11 @@ def promise_outcomes(con):
 
 def agents(con):
     return relation(con, "agents")
+
+
+def case_history(con, as_of=None):
+    return relation(con, "case_history", as_of)
+
+
+def agent_shifts(con):
+    return relation(con, "agent_shifts")

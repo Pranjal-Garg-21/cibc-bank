@@ -40,7 +40,7 @@ def sample(con):
     (its outcome lands after E, which is what a look-ahead would read), half from customers with plenty
     of history, so every feature group has something to read."""
     sources.register(con)
-    return con.execute(f"""
+    rows = con.execute(f"""
         WITH cand AS (
             SELECT p.ptp_id, p.ptp_created_ts - INTERVAL 1 DAY AS event_ts,
                    bool_or(q.status_ts >= p.ptp_created_ts - INTERVAL 1 DAY
@@ -52,11 +52,15 @@ def sample(con):
             WHERE p.ptp_created_ts >= TIMESTAMP '2025-01-01'
             GROUP BY p.ptp_id, p.ptp_created_ts
         )
-        (SELECT ptp_id, event_ts FROM cand WHERE pending_outcome USING SAMPLE {SAMPLE // 2} ROWS (reservoir, 7))
+        -- filter first, then sample (DuckDB samples a FROM clause before applying its WHERE)
+        (SELECT * FROM (SELECT ptp_id, event_ts FROM cand WHERE pending_outcome)
+         USING SAMPLE {SAMPLE // 2} ROWS (reservoir, 7))
         UNION ALL
-        (SELECT ptp_id, event_ts FROM cand WHERE NOT pending_outcome AND history >= 2
+        (SELECT * FROM (SELECT ptp_id, event_ts FROM cand WHERE NOT pending_outcome AND history >= 2)
          USING SAMPLE {SAMPLE - SAMPLE // 2} ROWS (reservoir, 7))
         ORDER BY ptp_id""").fetchall()
+    assert len(rows) == SAMPLE
+    return rows
 
 
 def _features(con, rows, as_of=None) -> dict:
@@ -93,3 +97,47 @@ def test_sample_exercises_the_features(con, sample):
     assert any(f["contacts_30d"] for f in full.values())
     assert any(f["resolved_ptp_all"] for f in full.values())
     assert any(f["snapshots_observed_12m"] for f in full.values())
+
+
+@pytest.fixture(scope="module")
+def case_sample(con):
+    """Case-months right on the day-k boundaries (event time = k days after opening, so day-k arrears become
+    known exactly then), in cases with promises and contacts around the event time."""
+    sources.register(con)
+    rows = []
+    for k in (7, 14, 30, 45):
+        rows += con.execute(f"""
+            SELECT * FROM (
+                SELECT c.case_id || '@{k}', c.case_id, c.case_open_ts + INTERVAL {k} DAY AS event_ts
+                FROM src_case_history c
+                WHERE c.case_open_ts >= TIMESTAMP '2025-06-01' AND c.dpd_at_day_45 IS NOT NULL
+                  AND c.case_id IN (SELECT case_id FROM src_promises))
+            USING SAMPLE {SAMPLE // 4} ROWS (reservoir, 11)""").fetchall()
+    return rows
+
+
+def _case_features(con, rows, as_of=None) -> dict:
+    sources.register(con, as_of=as_of)
+    values = ", ".join(f"('{r}-{i}', '{c}', TIMESTAMP '{e}')" for i, (r, c, e) in enumerate(rows))
+    compute.register_case_spine(con, f"SELECT * FROM (VALUES {values}) v(row_id, case_id, event_ts)")
+    cols = compute.compute(con, compute.CASE_GROUPS)
+    rel = con.sql(compute.joined_sql(cols))
+    return {r[0]: dict(zip(rel.columns[1:], r[1:])) for r in rel.fetchall()}
+
+
+def test_case_features_ignore_events_at_or_after_the_event_time(con, case_sample):
+    full = _case_features(con, case_sample)
+    diffs = []
+    for i, (r, c, e) in enumerate(case_sample):
+        truncated = _case_features(con, [(r, c, e)], as_of=e)[f"{r}-0"]
+        diffs += [f"{c} @ {e} {k}: full={full[f'{r}-{i}'][k]} truncated={v}"
+                  for k, v in truncated.items() if not _same(full[f"{r}-{i}"][k], v)]
+    sources.register(con)
+    assert not diffs, "\n".join(diffs[:30])
+
+
+def test_case_sample_exercises_the_features(con, case_sample):
+    full = _case_features(con, case_sample)
+    assert any(f["case_age_days"] > 30 and f["dpd_now"] is not None for f in full.values())
+    assert any(f["case_contacts"] for f in full.values())
+    assert any(f["case_promises"] for f in full.values())

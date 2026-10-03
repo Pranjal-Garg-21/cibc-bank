@@ -49,14 +49,12 @@ def test_customers_is_read_only_for_rules():
 
 
 def test_feature_sources_carry_no_outcome_columns_except_the_label():
-    """Feature sources: outcome columns only on promises (for the label), masked by as_of until known.
+    """Feature sources may carry outcome columns only for the label, masked by as_of until they happen.
     Outcomes for action valuation live in a separate non-feature source."""
     for name, s in sources.SOURCES.items():
         outcome = set(s.columns) & sources.LEAKAGE_COLUMNS
-        if name == "promises":
-            assert outcome <= set(s.known_at), "promise outcome columns must be masked until known"
-        elif s.use == "features":
-            assert not outcome, f"{name} selects {outcome}"
+        if s.use == "features":
+            assert outcome <= set(s.known_at), f"{name}: outcome columns {outcome - set(s.known_at)} not masked"
 
 
 @pytest.fixture

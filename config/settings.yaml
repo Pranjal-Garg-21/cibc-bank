@@ -26,5 +26,17 @@ p3:
   incumbent_model: ptp_break
   # Schema features/sources.py reads: curated (typed, dates recovered) until gold exists.
   source_schema: curated
+  # Case-level model: will an open case cure (be paid up and closed) within horizon_days of a month-end?
+  # Rows = every case open at a month-end from first_as_of. Holdout month-ends match the bank's cure_30d scores.
+  case_model:
+    first_as_of: "2024-01-31"
+    valid_start: "2026-04-30"
+    holdout_start: "2026-06-30"
+    horizon_days: 30
+    incumbent_model: cure_30d
   # NBA: cases owing at least this much (CAD) need a team lead's approval.
   high_balance_cad: 5000
+  # Cost of one outbound call in the NBA value. null = channel_capacity.unit_cost_cad (2.40), which prices agent
+  # time per call. If time on shift is already paid for, set the true extra cost (e.g. telephony only) and
+  # calls will fill agent capacity for the customers who answer the phone.
+  call_cost_cad: null

@@ -3,9 +3,19 @@
     python -m trustissues.nba.actions      # writes warehouse/p3/action_values.parquet + report section
 
 Harshness orders actions by collections pressure: hardship may only move a case towards lower
-harshness (nba/hardship.py). Each allowed action is valued as expected extra payment minus its unit
-cost (`value_actions`), from historical payment rates by treatment and DPD bucket (`action_values.parquet`,
-built from contact_history and the test cells) and channel_capacity.unit_cost_cad.
+harshness (nba/hardship.py). Each allowed action is valued as the extra chance of the case curing (paid
+up and closed) within 30 days that the contact buys, times the amount overdue, minus its unit cost
+(`value_actions`).
+
+Where the effect comes from (`calibrate`, saved to action_calibration.json):
+- The size of a contact's effect comes from the bank's randomised test: randomly assigned cases in
+  no_contact_holdout get fewer treated contacts; the cure difference per extra contact is the effect.
+- The historical rates after each treatment (`action_values.parquet`) are NOT used as effects: the bank
+  chose who got which treatment, and by cure every treatment looks worse than waiting (the bank contacts
+  the cases that are not curing). They are reported, not acted on.
+- One experiment cannot separate channels, so every channel gets the same effect, scaled by `reach`: how
+  well this customer responds on that channel (answered calls, opened emails, clicked SMS links, opened
+  pushes in the last 30 days) relative to the average customer. Cost then decides between channels.
 """
 from __future__ import annotations
 
@@ -51,33 +61,11 @@ def choose(allowed: list[str], values: dict[str, float]) -> str:
 
 
 ACTION_VALUES_FILE = "action_values.parquet"
+CALIBRATION_FILE = "action_calibration.json"
 CAPACITY_CHANNEL = {"call": "phone", "letter": "mail"}  # channel_capacity names -> team channel names
-MIN_CONTACTS = 500  # below this, a treatment x bucket payment rate is too noisy to act on
-
-
-def load_payment_rates(path=None) -> dict[str, dict[str, float]]:
-    """dpd bucket -> action -> share of contacts followed by a payment within 30 days (all test cells pooled).
-
-    `wait` is measured only where the no-contact holdout exists (bucket 1-30, where it pays at the rate of
-    the least effective treatment: 17.6% vs letter 17.5%). Elsewhere `wait` is estimated as the least
-    effective treatment with enough contacts in that bucket.
-    """
-    import duckdb
-
-    path = path or config.p3_dir() / ACTION_VALUES_FILE
-    by_code = {a.treatment_code: name for name, a in CATALOGUE.items() if a.treatment_code}
-    by_code["wait"] = "wait"
-    rows = duckdb.connect().execute(f"""
-        SELECT dpd_bucket, treatment_code, sum(contacts), sum(contacts * paid_30d_rate) / sum(contacts)
-        FROM read_parquet('{path.as_posix()}') WHERE dpd_bucket IS NOT NULL GROUP BY ALL""").fetchall()
-    rates: dict[str, dict[str, float]] = {}
-    for bucket, code, n, rate in rows:
-        if code in by_code and n >= MIN_CONTACTS:
-            rates.setdefault(bucket, {})[by_code[code]] = rate
-    for r in rates.values():
-        if "wait" not in r and r:
-            r["wait"] = min(r.values())
-    return rates
+HORIZON = 30
+# Outcomes are recorded with a lag: only 30-day windows that end by the last recorded cure are used.
+CUTOFF = "(SELECT max(cure_date) FROM src_case_history)"
 
 
 def load_unit_costs(con) -> dict[str, float]:
@@ -88,27 +76,39 @@ def load_unit_costs(con) -> dict[str, float]:
     return {CAPACITY_CHANNEL.get(ch, ch): cost for ch, cost in rows}
 
 
-def value_actions(allowed: list[str], bucket: str | None, risk: float, amount: float,
-                  rates: dict[str, dict[str, float]], costs: dict[str, float]) -> dict[str, float]:
+def value_actions(allowed: list[str], risk: float, amount: float, costs: dict[str, float], effect: float,
+                  base_risk: float = 1.0, reach: dict[str, float] | None = None) -> dict[str, float]:
     """Expected net value in CAD of each allowed action, relative to waiting.
 
-    value = risk x (payment rate after the action - payment rate when waiting) x amount at stake - unit cost
+    value = effect x (risk / base_risk) x reach[action] x amount - unit cost
 
-    risk scales the benefit: contacting someone who would pay anyway adds little. Payment rates are
-    historical and observational (treatments were targeted), so this ranks actions; it does not prove
-    uplift. Actions with no reliable rate for the bucket get no value and are never chosen over wait.
+    effect: extra chance of curing per contact for the average case (randomised test).
+    risk / base_risk: a case that would cure anyway gains little; one at high risk gains more.
+    reach: this customer's response on the action's channel relative to the average customer (1 = average).
     """
-    r = rates.get(bucket or "", {})
-    base = r.get("wait")
+    reach = reach or {}
     values = {"wait": 0.0}
-    if base is None:
-        return values
     for a in allowed:
-        spec = CATALOGUE[a]
-        if a == "wait" or a not in r:
+        if a == "wait":
             continue
-        values[a] = risk * (r[a] - base) * amount - costs.get(spec.channel, 0.0)
+        gain = effect * (risk / base_risk) * reach.get(a, 1.0)
+        values[a] = gain * amount - costs.get(CATALOGUE[a].channel, 0.0)
     return values
+
+
+# action -> the case feature measuring how this customer responds on that channel (last 30 days)
+REACH_FEATURES = {"agent_call": "call_rpc_rate_30d", "email_reminder": "email_open_rate_30d",
+                  "sms_reminder": "sms_click_rate_30d", "push_reminder": "push_open_rate_30d"}
+
+
+def reach(features: dict, averages: dict[str, float]) -> dict[str, float]:
+    """Response on each channel relative to the average customer, shrunk halfway to average (1.0).
+    No recent contacts on a channel = average. Letters have no response data: average."""
+    out = {}
+    for a, f in REACH_FEATURES.items():
+        v, avg = features.get(f), averages.get(f)
+        out[a] = 1.0 if v is None or v != v or not avg else (v + avg) / (2 * avg)
+    return out
 
 
 BUCKETS = """CASE WHEN {d} IS NULL THEN NULL WHEN {d} <= 0 THEN 'current' WHEN {d} <= 30 THEN '1-30'
@@ -117,12 +117,12 @@ BUCKETS = """CASE WHEN {d} IS NULL THEN NULL WHEN {d} <= 0 THEN 'current' WHEN {
 
 
 def action_values_sql() -> str:
-    """Per treatment_code x test_cell x dpd bucket: contacts, promise rate, payment within 30 days, cost.
+    """Per treatment_code x test_cell x dpd bucket: contacts, promise rate, payment and cure within 30 days, cost.
 
-    Payment within 30 days of a contact, in the same case: a kept / partially kept promise paid in that
-    window, or a contact in that window where a payment was taken. Amount = the larger of the two sums
-    (they can describe the same payment). `wait` = cases in the no_contact_holdout cell, measured from
-    case open over the same 30 days.
+    Within 30 days of a contact, in the same case: paid = a kept / partially kept promise paid, or a payment
+    taken on a contact (amount = the larger of the two sums, they can describe the same payment); cured = the
+    case was paid up and closed. `wait` = cases in no_contact_holdout, measured from case open. Only contacts
+    whose 30-day window is fully observed are counted.
     """
     return f"""
     WITH paid AS (
@@ -133,44 +133,50 @@ def action_values_sql() -> str:
         SELECT case_id, CAST(contact_ts AS DATE) AS paid_date, payment_amount AS amount FROM src_contacts
         WHERE payment_taken_flag
     ),
+    cures AS (SELECT case_id, cure_date FROM src_case_history WHERE cure_date IS NOT NULL),
     treated AS (
         SELECT c.contact_id, c.case_id, c.treatment_code, c.test_cell, c.bucket_at_contact AS dpd_bucket,
                CAST(c.contact_ts AS DATE) AS d0, coalesce(c.ptp_made_flag, false) AS ptp_made,
                coalesce(c.contact_cost_cad, 0) AS cost
         FROM src_contacts c
         WHERE c.treatment_code IS NOT NULL AND c.test_cell IS NOT NULL AND c.case_id IS NOT NULL
+          AND CAST(c.contact_ts AS DATE) + {HORIZON} <= {CUTOFF}
     ),
     outcome AS (
         SELECT t.contact_id,
                greatest((SELECT coalesce(sum(p.amount), 0) FROM paid p
-                         WHERE p.case_id = t.case_id AND p.paid_date BETWEEN t.d0 AND t.d0 + 30),
+                         WHERE p.case_id = t.case_id AND p.paid_date BETWEEN t.d0 AND t.d0 + {HORIZON}),
                         (SELECT coalesce(sum(k.amount), 0) FROM taken k
-                         WHERE k.case_id = t.case_id AND k.paid_date BETWEEN t.d0 AND t.d0 + 30)) AS paid_30d
+                         WHERE k.case_id = t.case_id AND k.paid_date BETWEEN t.d0 AND t.d0 + {HORIZON})) AS paid_30d,
+               EXISTS (SELECT 1 FROM cures u WHERE u.case_id = t.case_id
+                       AND u.cure_date BETWEEN t.d0 AND t.d0 + {HORIZON}) AS cured_30d
         FROM treated t
     ),
     contacts AS (
         SELECT t.treatment_code, t.test_cell, t.dpd_bucket, count(*) AS contacts,
                count(DISTINCT t.case_id) AS cases, avg(CAST(t.ptp_made AS INTEGER)) AS promise_rate,
                avg(CAST(o.paid_30d > 0 AS INTEGER)) AS paid_30d_rate, avg(o.paid_30d) AS avg_paid_30d,
-               avg(t.cost) AS avg_contact_cost_cad
+               avg(CAST(o.cured_30d AS INTEGER)) AS cure_30d_rate, avg(t.cost) AS avg_contact_cost_cad
         FROM treated t JOIN outcome o USING (contact_id)
         GROUP BY ALL
     ),
     holdout AS (
         SELECT c.case_id, {BUCKETS.format(d="c.entry_dpd")} AS dpd_bucket, c.case_open_date AS d0
-        FROM src_cases c WHERE c.test_cell = 'no_contact_holdout'
+        FROM src_cases c WHERE c.test_cell = 'no_contact_holdout' AND c.case_open_date + {HORIZON} <= {CUTOFF}
     ),
     wait AS (
         SELECT 'wait' AS treatment_code, 'no_contact_holdout' AS test_cell, h.dpd_bucket,
                count(*) AS contacts, count(*) AS cases, NULL::DOUBLE AS promise_rate,
                avg(CAST(o.paid_30d > 0 AS INTEGER)) AS paid_30d_rate, avg(o.paid_30d) AS avg_paid_30d,
-               0.0 AS avg_contact_cost_cad
+               avg(CAST(o.cured_30d AS INTEGER)) AS cure_30d_rate, 0.0 AS avg_contact_cost_cad
         FROM holdout h JOIN (
             SELECT h.case_id,
                    greatest((SELECT coalesce(sum(p.amount), 0) FROM paid p
-                             WHERE p.case_id = h.case_id AND p.paid_date BETWEEN h.d0 AND h.d0 + 30),
+                             WHERE p.case_id = h.case_id AND p.paid_date BETWEEN h.d0 AND h.d0 + {HORIZON}),
                             (SELECT coalesce(sum(k.amount), 0) FROM taken k
-                             WHERE k.case_id = h.case_id AND k.paid_date BETWEEN h.d0 AND h.d0 + 30)) AS paid_30d
+                             WHERE k.case_id = h.case_id AND k.paid_date BETWEEN h.d0 AND h.d0 + {HORIZON})) AS paid_30d,
+                   EXISTS (SELECT 1 FROM cures u WHERE u.case_id = h.case_id
+                           AND u.cure_date BETWEEN h.d0 AND h.d0 + {HORIZON}) AS cured_30d
             FROM holdout h) o USING (case_id)
         GROUP BY ALL
     )
@@ -180,25 +186,89 @@ def action_values_sql() -> str:
 
 
 def cell_summary_sql() -> str:
-    """Case-level 30-day payment rate by test cell (the plan's §11 question: do the challengers beat champion?).
+    """Case level, randomly assigned cases only, 30 days from case open: contacts, payment and cure by test cell.
 
-    Randomly assigned cases only (assignment_method = 'random'): about 60% of champion / challenger cases
-    were assigned by rule, which would confound the comparison."""
-    return """
+    About 60% of champion / challenger cases were assigned by rule, which would confound the comparison."""
+    return f"""
     WITH paid AS (
-        SELECT case_id, paid_date, amount_paid_against AS amount FROM src_promise_outcomes
+        SELECT case_id, paid_date FROM src_promise_outcomes
         WHERE ptp_status IN ('kept', 'partially_kept') AND paid_date IS NOT NULL
+    ),
+    c AS (
+        SELECT c.case_id, c.test_cell, c.case_open_date AS d0, h.cure_date
+        FROM src_cases c JOIN src_case_history h USING (case_id)
+        WHERE c.assignment_method = 'random' AND c.case_open_date + {HORIZON} <= {CUTOFF}
+    ),
+    n AS (
+        SELECT c.case_id, count(x.contact_id) AS treated
+        FROM c LEFT JOIN src_contacts x ON x.case_id = c.case_id AND x.treatment_code IS NOT NULL
+         AND CAST(x.contact_ts AS DATE) BETWEEN c.d0 AND c.d0 + {HORIZON}
+        GROUP BY 1
     )
-    SELECT c.test_cell, count(*) AS cases,
+    SELECT c.test_cell, count(*) AS cases, avg(n.treated) AS treated_contacts,
            avg(CAST(EXISTS (SELECT 1 FROM paid p WHERE p.case_id = c.case_id
-                            AND p.paid_date BETWEEN c.case_open_date AND c.case_open_date + 30) AS INTEGER)) AS paid_30d_rate,
-           avg(CAST(c.cure_flag AS INTEGER)) AS cure_rate
-    FROM src_cases c WHERE c.test_cell IS NOT NULL AND c.assignment_method = 'random'
+                            AND p.paid_date BETWEEN c.d0 AND c.d0 + {HORIZON}) AS INTEGER)) AS paid_30d_rate,
+           avg(CAST(coalesce(c.cure_date BETWEEN c.d0 AND c.d0 + {HORIZON}, false) AS INTEGER)) AS cure_30d_rate
+    FROM c JOIN n USING (case_id)
     GROUP BY 1 ORDER BY 1
     """
 
 
+def calibrate(con) -> dict:
+    """Effect of one extra treated contact on curing within 30 days, from the randomised test.
+
+    Randomly assigned cases, first 30 days from open: contacted cells vs no_contact_holdout. The holdout gets
+    fewer treated contacts (`contrast`, per treatment); the cure difference divided by the total extra
+    contacts is the per-contact effect, with its 95% interval.
+    """
+    import math
+
+    rows = con.execute(f"""
+        WITH c AS (
+            SELECT c.case_id, c.test_cell = 'no_contact_holdout' AS held, c.case_open_date AS d0, h.cure_date
+            FROM src_cases c JOIN src_case_history h USING (case_id)
+            WHERE c.assignment_method = 'random' AND c.case_open_date + {HORIZON} <= {CUTOFF}
+        )
+        SELECT held, count(*), avg(CAST(coalesce(cure_date BETWEEN d0 AND d0 + {HORIZON}, false) AS INTEGER))
+        FROM c GROUP BY 1""").fetchall()
+    stats = {held: (n, rate) for held, n, rate in rows}
+    (n1, p1), (n0, p0) = stats[False], stats[True]
+    effect = p1 - p0
+    se = math.sqrt(p1 * (1 - p1) / n1 + p0 * (1 - p0) / n0)
+    per_case = con.execute(f"""
+        WITH c AS (
+            SELECT case_id, test_cell = 'no_contact_holdout' AS held, case_open_date AS d0 FROM src_cases
+            WHERE assignment_method = 'random' AND case_open_date + {HORIZON} <= {CUTOFF}
+        ),
+        k AS (SELECT held, count(*) AS cases FROM c GROUP BY 1)
+        SELECT x.treatment_code, c.held, count(*) / any_value(k.cases)
+        FROM c JOIN k USING (held)
+        JOIN src_contacts x ON x.case_id = c.case_id AND x.treatment_code IS NOT NULL
+         AND CAST(x.contact_ts AS DATE) BETWEEN c.d0 AND c.d0 + {HORIZON}
+        GROUP BY 1, 2""").fetchall()
+    by_code = {a.treatment_code: name for name, a in CATALOGUE.items() if a.treatment_code}
+    contrast: dict[str, float] = {}
+    for code, held, per in per_case:
+        a = by_code.get(code)
+        if a:
+            contrast[a] = contrast.get(a, 0.0) + (-per if held else per)
+    extra = sum(contrast.values())
+    return {"cases_contacted": n1, "cases_holdout": n0, "cure_contacted": p1, "cure_holdout": p0,
+            "effect": effect, "effect_se": se, "contrast": contrast, "extra_contacts": extra,
+            "per_contact": effect / extra, "per_contact_lo": (effect - 1.96 * se) / extra,
+            "per_contact_hi": (effect + 1.96 * se) / extra, "base_risk": 1 - p1}
+
+
+def load_calibration(path=None) -> dict:
+    import json
+
+    path = path or config.p3_dir() / CALIBRATION_FILE
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def main() -> int:
+    import json
+
     from trustissues.features import sources
     from trustissues.nba.evaluate import write_section
 
@@ -207,43 +277,60 @@ def main() -> int:
     out = config.p3_dir() / ACTION_VALUES_FILE
     con.execute(f"COPY ({action_values_sql()}) TO '{out.as_posix()}' (FORMAT PARQUET)")
     print(f"wrote {out}")
+    cal = calibrate(con)
+    (config.p3_dir() / CALIBRATION_FILE).write_text(json.dumps(cal, indent=2), encoding="utf-8")
+    print("calibration:", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in cal.items()})
     by_treatment = con.execute(f"""
         SELECT treatment_code, sum(contacts), sum(contacts * promise_rate) / sum(contacts),
-               sum(contacts * paid_30d_rate) / sum(contacts), sum(contacts * avg_paid_30d) / sum(contacts),
+               sum(contacts * paid_30d_rate) / sum(contacts), sum(contacts * cure_30d_rate) / sum(contacts),
                sum(contacts * avg_contact_cost_cad) / sum(contacts)
-        FROM read_parquet('{out.as_posix()}') GROUP BY 1 ORDER BY 4 DESC""").fetchall()
+        FROM read_parquet('{out.as_posix()}') GROUP BY 1 ORDER BY 5 DESC""").fetchall()
     cells = con.execute(cell_summary_sql()).fetchall()
-    for r in by_treatment:
-        print(r)
-    for r in cells:
-        print(r)
+    for row in by_treatment + cells:
+        print(row)
 
     def pct(v):
         return "" if v is None else f"{v:.1%}"
 
-    t1 = "\n".join(f"| `{t}` | {n:,} | {pct(pr)} | {pct(pd)} | {amt:,.2f} | {cost:.3f} |"
-                   for t, n, pr, pd, amt, cost in by_treatment)
-    t2 = "\n".join(f"| `{c}` | {n:,} | {pct(pd)} | {pct(cr)} |" for c, n, pd, cr in cells)
+    t1 = "\n".join(f"| `{t}` | {n:,} | {pct(pr)} | {pct(pd)} | {pct(cu)} | {cost:.3f} |"
+                   for t, n, pr, pd, cu, cost in by_treatment)
+    t2 = "\n".join(f"| `{c}` | {n:,} | {tc:.2f} | {pct(pd)} | {pct(cu)} |" for c, n, tc, pd, cu in cells)
+    t3 = "\n".join(f"| `{a}` | {d:+.2f} |" for a, d in sorted(cal["contrast"].items(), key=lambda t: -t[1]))
     write_section("action_values", f"""
-## Action valuation data (first half of `nba/actions.py`)
+## Action values: what a contact is worth (`nba/actions.py`)
 
-Historical results by treatment, from `contact_history` (and `no_contact_holdout` cases for `wait`).
-Payment within 30 days = a kept / partially kept promise paid in the window, or a payment taken on a
-contact in the window, in the same case. Full table by treatment x test cell x DPD bucket:
-`warehouse/p3/action_values.parquet`. These rates are **observational within a cell**: treatments were
-targeted by the strategy, so a higher rate is not proof that the treatment caused it. Only the
-cell-level comparison below is randomised: it keeps the cases with `assignment_method = random`
-(all of `no_contact_holdout`, about 40% of the other cells).
+**Historical rates by treatment** (`contact_history`; `wait` = the no-contact holdout cases from case open).
+Within 30 days of the contact, same case; only fully observed windows. Full table by treatment x test cell x
+DPD bucket: `warehouse/p3/action_values.parquet`.
 
-| Treatment | Contacts / cases | Promise rate | Paid within 30 days | Avg paid in 30 days (CAD) | Avg contact cost (CAD) |
+| Treatment | Contacts / cases | Promise rate | Paid within 30 days | Cured within 30 days | Avg contact cost (CAD) |
 |---|---|---|---|---|---|
 {t1}
 
-By test cell (randomly assigned cases only, case level, from case open):
+These are **observational** and are **not used to value actions**: the bank chose who got which treatment.
+By cure, every treatment looks worse than waiting, because the bank contacts the cases that are not curing.
 
-| Test cell | Cases | Paid within 30 days | Cured |
-|---|---|---|---|
+**The randomised test** (randomly assigned cases only, 30 days from case open):
+
+| Test cell | Cases | Treated contacts per case | Paid within 30 days | Cured within 30 days |
+|---|---|---|---|---|
 {t2}
+
+Contacted cells vs `no_contact_holdout`: cure {cal['cure_contacted']:.1%} vs {cal['cure_holdout']:.1%}, a
+difference of {cal['effect']:+.2%} (95% interval {cal['effect'] - 1.96 * cal['effect_se']:+.2%} to
+{cal['effect'] + 1.96 * cal['effect_se']:+.2%}). The holdout is not contact-free; it gets
+{cal['extra_contacts']:.2f} fewer treated contacts per case:
+
+| Treatment | Extra contacts per case in the contacted cells |
+|---|---|
+{t3}
+
+**Effect used to value actions: {cal['per_contact']:+.2%} cure per extra contact** (95% interval
+{cal['per_contact_lo']:+.2%} to {cal['per_contact_hi']:+.2%}), for a case at the average not-cured rate of
+{cal['base_risk']:.1%}, scaled by the case's own risk and by its reach on each channel. The interval includes
+zero: the data cannot show that contacting helps at all, only that any effect is small. One experiment cannot
+separate channels, so channels differ only by reach and cost. Caveats: the test covers cases entering at
+1-30 DPD and the bank's contact mix; the same effect is assumed for later stages.
 """)
     return 0
 

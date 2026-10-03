@@ -143,7 +143,9 @@ python -m trustissues.nba.evaluate                  # step 2: incumbent
 python -m trustissues.features.compute              # step 3
 python -m trustissues.nba.train                     # step 4
 docker compose up -d redis && (cd feature_repo && feast apply) && python -m trustissues.features.materialize   # step 5
-python -m trustissues.nba.actions                   # step 7
+python -m trustissues.features.build_case_training_set && python -m trustissues.features.compute --case
+python -m trustissues.nba.train --case              # case model vs the bank's cure_30d
+python -m trustissues.nba.actions                   # step 7 + calibration from the randomised test
 python -m trustissues.nba.queue                     # NBA: one decision per open case (add --write-gold to write gold.nba_decisions)
 python -m pytest tests -q
 ```
@@ -157,7 +159,8 @@ python -m pytest tests -q
 | 5 Feast | `feast apply` + Redis materialize work; offline = online for 20 promises × 6 views |
 | 6 Rules, hardship | Pure logic with tests (hard stops, consent default-deny, contact cap, hours; hardship never harsher, programme eligibility) |
 | 7 Action data | `warehouse/p3/action_values.parquet` + report section |
-| NBA queue | `nba/actions.py` (values), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`. 30,946 have an open promise and a risk score. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
+| NBA queue | `nba/actions.py` (values), `nba/allocate.py` (capacity), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`; every case has a case-model risk. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
+| Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.837 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):
 
@@ -169,22 +172,35 @@ New facts from the data (add to §2):
 | Only ~40% of champion/challenger cases have `assignment_method = random` | Cell comparison uses random cases only. Result: champion and both challengers are within 0.1 pt (16.0–16.1% paid in 30 days), no-contact 15.2% |
 | `prior_broken_ptp_count` = earlier broken promises in the same case, all resolved before creation | Safe to use as-is |
 
-### NBA decision logic (v0)
+### NBA decision logic (v1)
 
-For each open case: rules → break risk of its open promise (NULL if none) → value each allowed action →
-hardship adjustment → card → approval.
+For each open case: rules → case risk → value each allowed action → hardship adjustment → capacity → card → approval.
 
-- **Value** = risk × (30-day payment rate after the action − rate when waiting) × amount at stake − unit cost.
-  Rates by treatment and DPD bucket from `action_values.parquet` (≥ 500 contacts), costs from
-  `channel_capacity.unit_cost_cad`. The no-contact holdout exists only in bucket 1-30, where it pays like the
-  weakest treatment, so elsewhere "wait" = the weakest treatment. Rates are observational: they rank actions,
-  they don't prove uplift.
+- **Risk (every case)**: the case model `case_nocure_v0`, the chance an open case is *not* paid up and closed
+  within 30 days. Rows = every case open at a month-end since Jan 2024 (246,673); features = `case_state.sql`
+  plus the shared promise-history, arrears, liquidity, payday and contact groups. Holdout AUC **0.837 vs 0.725**
+  for the bank's `cure_30d` on the same case-months, better calibrated too. Point-in-time tested (incl. the
+  day-k arrears, which are only used once known). The promise model still scores open promises; its break
+  risk is shown on the card.
+- **Value** = effect × (risk / average risk) × reach × amount overdue − unit cost.
+  - *effect*: +0.62 points of cure per extra contact (95% interval −2.1 to +3.4), from the bank's randomised
+    test (random cases: contacted cells vs `no_contact_holdout`, which gets 0.46 fewer treated contacts per
+    case). Historical "rate after treatment" numbers are **not** used: by cure, every treatment looks worse
+    than waiting, because the bank contacts the cases that are not curing.
+  - *reach*: the customer's own response on that channel in the last 30 days (answered calls, opened emails,
+    clicked SMS links, opened pushes) relative to the average, shrunk halfway to average.
+  - *cost*: `channel_capacity.unit_cost_cad`, or `call_cost_cad` in settings for calls.
+- **Capacity** (`nba/allocate.py`): most valuable cases first into the day's channel capacity and each
+  working agent's outbound calls (assigned agent → same team → anyone; certified agents only for hardship);
+  a case whose best action is full gets its next best and the card says so (`no_capacity`).
+- **Experiment**: cases in the bank's `no_contact_holdout` cell are left to the bank (rule `experiment_holdout`).
 - **Approval** (first that applies): vulnerability, hardship, balance ≥ `high_balance_cad` (5,000), digital batch.
-- **Agent**: calls and waits stay with the assigned agent; digital and letters go to batches; hardship/vulnerable
-  cases with an uncertified agent get `agent_id` NULL (to be routed to a certified agent).
 - **Placeholders until gold**: `golden_customer_id` holds `crm_customer_id`; `evidence` is empty until P4's
   `gold.text_features`; hardship level is `possible` from the case flag only.
 - **Names** follow the team's sample card: actions `agent_call`, `sms_reminder`, `email_reminder`, `push_reminder`,
   `letter`, `wait`; channels `phone`, `sms`, `email`, `mail`, `push`; rules include `consent` and `contact_limit`.
-- **Open with the team**: `reason_code` list for overrides; capacity (≈19.8k calls recommended for ~790 active agents) is the stretch
-  `allocate.py`.
+- **Open with the team**:
+  - `risk_score` in `gold.nba_decisions` now holds the case risk (stub comment says "probability promise breaks").
+  - Call cost: at $2.40 per call only ~800 calls are worth making and ~61k agent calls on shift go unused.
+    If agent time on shift is already paid, set `call_cost_cad` to the true extra cost.
+  - `reason_code` list for overrides.
