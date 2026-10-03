@@ -501,3 +501,29 @@ rest are already blocked by other rules).
 cease-communication request. The `letter` action is a payment-reminder letter, not a required one, so it stays blocked;
 required letters and statements are sent outside NBA. Recorded in the `nba/rules.py` docstring.
 
+
+### Golden records, Step 0: checks before switching (3 Oct)
+
+Runbook: [`p3_golden_runbook.md`](p3_golden_runbook.md). `main` merged into `p3/features-model` (P1's identity, gold and
+publish gate), warehouse rebuilt with the full pipeline (`verify_warehouse.py` all pass, publish gate passed with two
+warnings Q6/Q7). Building it OOM-killed the laptop once: DuckDB is now capped (`settings.yaml` `duckdb:`) and
+`make pipeline` / `make nightly` run in a 16 GB systemd scope (`requirements.md` troubleshooting).
+
+| Check | Result | Verdict |
+|---|---|---|
+| Gold objects | all present; `text_features` exists but is **empty** (P4 not run) | text waits (Steps 4 and 5) |
+| Promises with a golden ID (CRM key) | 231,517 of 238,815 (96.9%) | ok, rest are orphans |
+| Open cases with a golden ID | 83,477 of 86,059 by the CRM key; **86,050 through `gold.case_customer`** (account holder). Of the 2,582 orphans, 2,573 now have a person; 9 do not | use `case_customer`, not the CRM key, for cases |
+| Merges | at most 2 CRM records per person (19,911 people); 0 disagree on date of birth or national-ID hash; 20 spot-checked, 3 with two surnames and one ID hash (name change) | sane |
+| Linked share | deposit 100% (580,000), bureau 99.0%, card 99.5%, loan 99.7% | Step 5 payday, liquidity and bureau features are worth trying |
+| Label | **7,549 mismatches** = exactly the `partially_kept` promises: P1's `label_broken` follows the certified `broken_promise_rate` (partially kept is not broken), P3's label follows the certified `promise_kept_rate` (partially kept is not kept). Both are bank metrics; P1's docs (`consumer_views.md` A) expect P3 to build its own | **P3 keeps its label**, from `promises_enriched.ptp_status`; never reads `label_broken`. To tell P1 |
+| Outcome columns split | `tests/test_interface_stubs.py` 13 passed | ok |
+| `decisioning_customer` grain | 0 duplicate rows, 0 known before true; latest `available_from` 2026-09-29 06:00 = the 28 Sep snapshot (one row per customer), available the next morning by P1's rule (month end + 30 h) | point-in-time is right; a 28 Sep queue cannot use that last snapshot (Step 5 only) |
+| Sensitivity of gold columns | `sensitivity.yaml` labels source tables only; regenerating it changed nothing | Step 1: each gold column P3 reads is labelled by the curated column it comes from, and the test enforces it |
+
+**Interface gaps (Step 0b).** `gold.customer_safeguards` has every consent and hours column except `represented`
+(derived here from `third_party_representation`, `power_of_attorney`, `legal_representative`), the preferred contact
+window and `time_zone`: those three stay read from `curated.customers` through `customer_xref`. Consents are `'true'` /
+`'false'` text, NULL for the 15,182 people with no CRM record (treated as no consent). `gold.promises_enriched` keeps
+`crm_customer_id` but has no `reminder_scheduled_flag`: read from curated by `ptp_id`. `gold.text_features` has the
+agreed columns, no rows.
