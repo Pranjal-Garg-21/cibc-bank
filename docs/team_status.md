@@ -19,7 +19,13 @@ What the code does: [`documentation.md`](documentation.md). How to build on your
 
 Nothing else is running. The warehouse file is **not shared**: it lives only on Anushka's machine and is gitignored. Each teammate builds their own.
 
-**Estimate: unknown, probably 1 to 2 more hours**, mostly `external` and `loan_accounts` (wide identity tables, 30+ minutes each like `customers` and `deposit_accounts`). `curated.promises_to_pay` should appear within the first few minutes of the resumed run. Check the log, not this file, for the true state.
+**Built so far in the resumed run (all with 0 duplicates, 0 failed casts):** `geo_reference`, `hardship_programs`, `loan_instalments`, `metric_definitions`, `model_scores`, `offers`, `ops_events`, `promises_to_pay`, `qa_checklist`, `reference_documents`. In progress or waiting: `salary_credit_history`, `transactions`, `voice_samples`, then `external` and `loan_accounts` (the wide identity tables, 30+ minutes each).
+
+**P3: `curated.promises_to_pay` now exists in Anushka's warehouse** (238,815 rows, built in 2 seconds). On your own machine it takes seconds too: `python -m trustissues.factory.curate.build_curated --only promises_to_pay`.
+
+**Remaining estimate: roughly 1 more hour**, almost all of it `external` and `loan_accounts`. Check the log, not this file, for the true state.
+
+---
 
 ## 2. Already done: please do not repeat
 
