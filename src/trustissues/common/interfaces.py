@@ -1,6 +1,6 @@
 """Interface I6: Ask router <-> RAG. Plain dataclasses so P2 and P4 build against one shape.
 
-in:  question, question_type, golden_customer_id?, user_role, user_id, as_of_date
+in:  question, question_type, golden_customer_id?, case_id?, user_role, user_id, as_of_date
 out: answer, evidence[], citations[], confidence, not_found, coverage
 Also: apply_stubs(con) creates the empty gold.* stub tables from contracts/interfaces/stubs.sql and
 checks any table that already exists against them. DecisionCard is the JSON shape stored in
@@ -26,6 +26,7 @@ class RagRequest:
     user_id: str  # agent id / lead id: the router authorises, RAG re-checks the customer against this user
     as_of_date: date
     golden_customer_id: str | None = None  # required for rag_customer
+    case_id: str | None = None  # set when the question names a case: answer from that case's calls and notes only
 
 
 @dataclass

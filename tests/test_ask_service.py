@@ -61,6 +61,7 @@ def test_customer_rag_checks_assignment():
     ok = ask(q.format("CS-2026-100001"), AGENT, as_of_date=AS_OF, rag=rag, resolver=resolver)
     assert ok.path == "rag_customer" and ok.sources == ["transcript:T1"]
     assert seen[0].golden_customer_id == "G1" and seen[0].user_id == "agent1"
+    assert seen[0].case_id == "CS-2026-100001"
     no = ask(q.format("CS-2026-100002"), AGENT, as_of_date=AS_OF, rag=rag, resolver=resolver)
     missing = ask(q.format("CS-2026-999999"), AGENT, as_of_date=AS_OF, rag=rag, resolver=resolver)
     assert no.refused and missing.refused and no.answer == missing.answer

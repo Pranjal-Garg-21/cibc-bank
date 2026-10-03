@@ -81,7 +81,7 @@ def test_outcome_columns_exist_and_follow_the_marker(con):
 
 def test_rag_dataclasses_carry_user_id_and_i6_fields():
     assert {f.name for f in dataclasses.fields(RagRequest)} == {
-        "question", "question_type", "user_role", "user_id", "as_of_date", "golden_customer_id"}
+        "question", "question_type", "user_role", "user_id", "as_of_date", "golden_customer_id", "case_id"}
     assert {f.name for f in dataclasses.fields(RagResponse)} == {
         "answer", "evidence", "citations", "confidence", "not_found", "coverage"}
     RagRequest("q", "rag_corpus", "analyst", "U1", date(2026, 9, 28))
