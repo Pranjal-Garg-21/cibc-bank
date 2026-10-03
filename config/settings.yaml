@@ -26,3 +26,5 @@ p3:
   incumbent_model: ptp_break
   # Schema features/sources.py reads: curated (typed, dates recovered) until gold exists.
   source_schema: curated
+  # NBA: cases owing at least this much (CAD) need a team lead's approval.
+  high_balance_cad: 5000

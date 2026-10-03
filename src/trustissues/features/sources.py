@@ -100,7 +100,7 @@ SOURCES: dict[str, Source] = {
         event_ts="case_open_date",
         columns={
             **_c("case_id", "case_status", "primary_account_id", "primary_product", "test_cell", "strategy_code",
-                 "assignment_method", "dispute_status", "current_bucket"),
+                 "assignment_method", "dispute_status", "current_bucket", "current_ptp_id", "assigned_agent_id"),
             "crm_customer_id": ("coll_customer_ref", "VARCHAR"),
             **_c("case_open_date", "outcome_date", type_="DATE"),
             **_c("entry_dpd", "current_dpd", "contact_cap_7d", "contacts_last_7d", type_="INTEGER"),
@@ -146,6 +146,15 @@ SOURCES: dict[str, Source] = {
                  type_="BOOLEAN"),
             **_c("preferred_contact_window_start", "preferred_contact_window_end", "permitted_call_start_local",
                  "permitted_call_end_local"),
+        },
+    ),
+    # Who may take a hardship / vulnerable case (nba/queue.py routing).
+    "agents": Source(
+        table="agents",
+        use="rules",
+        columns={
+            **_c("agent_id", "status"),
+            "vulnerable_customer_certified": ("vulnerable_customer_certified", "BOOLEAN"),
         },
     ),
     # Promise outcomes for action valuation (nba/actions.py) only. Never a feature.
@@ -244,3 +253,7 @@ def channel_capacity(con):
 def promise_outcomes(con):
     """Action valuation only (nba/actions.py). Never a feature."""
     return relation(con, "promise_outcomes")
+
+
+def agents(con):
+    return relation(con, "agents")

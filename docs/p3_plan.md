@@ -144,6 +144,7 @@ python -m trustissues.features.compute              # step 3
 python -m trustissues.nba.train                     # step 4
 docker compose up -d redis && (cd feature_repo && feast apply) && python -m trustissues.features.materialize   # step 5
 python -m trustissues.nba.actions                   # step 7
+python -m trustissues.nba.queue                     # NBA: one decision per open case (add --write-gold to write gold.nba_decisions)
 python -m pytest tests -q
 ```
 
@@ -156,6 +157,7 @@ python -m pytest tests -q
 | 5 Feast | `feast apply` + Redis materialize work; offline = online for 20 promises × 6 views |
 | 6 Rules, hardship | Pure logic with tests (hard stops, consent default-deny, contact cap, hours; hardship never harsher, programme eligibility) |
 | 7 Action data | `warehouse/p3/action_values.parquet` + report section |
+| NBA queue | `nba/actions.py` (values), `nba/explain.py` (reasons, summary), `nba/model.py` (scoring), `nba/queue.py`: 86,059 open cases → one `gold.nba_decisions` row each, with a `DecisionCard`. 30,946 have an open promise and a risk score. `--write-gold` tested on a scratch DuckDB, not yet run on the shared warehouse |
 
 New facts from the data (add to §2):
 
@@ -166,3 +168,22 @@ New facts from the data (add to §2):
 | `ptp_to_overdue_ratio` nearly determines the outcome (full-amount promises rarely break) and dominates v0 | Checked it is creation-time, not back-filled: `overdue_at_creation` matches the creating contact ~91% in every status, broken promises also have ratio 1, and the full-amount share falls across fully resolved months (49% → 15%, May–Aug 2026). The drift also explains the jump in break rate since May 2026. Treat v0's 0.95 as a property of this synthetic data; the ablation (0.690) is the measure of the other features |
 | Only ~40% of champion/challenger cases have `assignment_method = random` | Cell comparison uses random cases only. Result: champion and both challengers are within 0.1 pt (16.0–16.1% paid in 30 days), no-contact 15.2% |
 | `prior_broken_ptp_count` = earlier broken promises in the same case, all resolved before creation | Safe to use as-is |
+
+### NBA decision logic (v0)
+
+For each open case: rules → break risk of its open promise (NULL if none) → value each allowed action →
+hardship adjustment → card → approval.
+
+- **Value** = risk × (30-day payment rate after the action − rate when waiting) × amount at stake − unit cost.
+  Rates by treatment and DPD bucket from `action_values.parquet` (≥ 500 contacts), costs from
+  `channel_capacity.unit_cost_cad`. The no-contact holdout exists only in bucket 1-30, where it pays like the
+  weakest treatment, so elsewhere "wait" = the weakest treatment. Rates are observational: they rank actions,
+  they don't prove uplift.
+- **Approval** (first that applies): vulnerability, hardship, balance ≥ `high_balance_cad` (5,000), digital batch.
+- **Agent**: calls and waits stay with the assigned agent; digital and letters go to batches; hardship/vulnerable
+  cases with an uncertified agent get `agent_id` NULL (to be routed to a certified agent).
+- **Placeholders until gold**: `golden_customer_id` holds `crm_customer_id`; `evidence` is empty until P4's
+  `gold.text_features`; hardship level is `possible` from the case flag only.
+- **Open with the team**: action names (fixture uses `agent_call`/`phone`, P3 uses `outbound_call`/`call`);
+  `reason_code` list for overrides; capacity (≈19.8k calls recommended for ~790 active agents) is the stretch
+  `allocate.py`.

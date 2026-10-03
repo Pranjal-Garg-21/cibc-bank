@@ -1,10 +1,11 @@
-"""Action catalogue, choosing an action, and (first half of step 7) the data to value actions with.
+"""Action catalogue, valuing and choosing an action, and the historical data the values come from.
 
     python -m trustissues.nba.actions      # writes warehouse/p3/action_values.parquet + report section
 
 Harshness orders actions by collections pressure: hardship may only move a case towards lower
-harshness (nba/hardship.py). Valuing an action as expected payment minus contact cost comes later
-(hours 20-28); here we build the historical table it will use, from contact_history and the test cells.
+harshness (nba/hardship.py). Each allowed action is valued as expected extra payment minus its unit
+cost (`value_actions`), from historical payment rates by treatment and DPD bucket (`action_values.parquet`,
+built from contact_history and the test cells) and channel_capacity.unit_cost_cad.
 """
 from __future__ import annotations
 
@@ -48,6 +49,62 @@ def choose(allowed: list[str], values: dict[str, float]) -> str:
 
 
 ACTION_VALUES_FILE = "action_values.parquet"
+MIN_CONTACTS = 500  # below this, a treatment x bucket payment rate is too noisy to act on
+
+
+def load_payment_rates(path=None) -> dict[str, dict[str, float]]:
+    """dpd bucket -> action -> share of contacts followed by a payment within 30 days (all test cells pooled).
+
+    `wait` is measured only where the no-contact holdout exists (bucket 1-30, where it pays at the rate of
+    the least effective treatment: 17.6% vs letter 17.5%). Elsewhere `wait` is estimated as the least
+    effective treatment with enough contacts in that bucket.
+    """
+    import duckdb
+
+    path = path or config.p3_dir() / ACTION_VALUES_FILE
+    by_code = {a.treatment_code: name for name, a in CATALOGUE.items() if a.treatment_code}
+    by_code["wait"] = "wait"
+    rows = duckdb.connect().execute(f"""
+        SELECT dpd_bucket, treatment_code, sum(contacts), sum(contacts * paid_30d_rate) / sum(contacts)
+        FROM read_parquet('{path.as_posix()}') WHERE dpd_bucket IS NOT NULL GROUP BY ALL""").fetchall()
+    rates: dict[str, dict[str, float]] = {}
+    for bucket, code, n, rate in rows:
+        if code in by_code and n >= MIN_CONTACTS:
+            rates.setdefault(bucket, {})[by_code[code]] = rate
+    for r in rates.values():
+        if "wait" not in r and r:
+            r["wait"] = min(r.values())
+    return rates
+
+
+def load_unit_costs(con) -> dict[str, float]:
+    """channel -> average unit cost in CAD (channel_capacity.unit_cost_cad)."""
+    from trustissues.features import sources
+
+    return dict(sources.channel_capacity(con).aggregate("channel, avg(unit_cost_cad)").fetchall())
+
+
+def value_actions(allowed: list[str], bucket: str | None, risk: float, amount: float,
+                  rates: dict[str, dict[str, float]], costs: dict[str, float]) -> dict[str, float]:
+    """Expected net value in CAD of each allowed action, relative to waiting.
+
+    value = risk x (payment rate after the action - payment rate when waiting) x amount at stake - unit cost
+
+    risk scales the benefit: contacting someone who would pay anyway adds little. Payment rates are
+    historical and observational (treatments were targeted), so this ranks actions; it does not prove
+    uplift. Actions with no reliable rate for the bucket get no value and are never chosen over wait.
+    """
+    r = rates.get(bucket or "", {})
+    base = r.get("wait")
+    values = {"wait": 0.0}
+    if base is None:
+        return values
+    for a in allowed:
+        spec = CATALOGUE[a]
+        if a == "wait" or a not in r:
+            continue
+        values[a] = risk * (r[a] - base) * amount - costs.get(spec.channel, 0.0)
+    return values
 BUCKETS = """CASE WHEN {d} IS NULL THEN NULL WHEN {d} <= 0 THEN 'current' WHEN {d} <= 30 THEN '1-30'
                   WHEN {d} <= 60 THEN '31-60' WHEN {d} <= 90 THEN '61-90' WHEN {d} <= 120 THEN '91-120'
                   WHEN {d} <= 150 THEN '121-150' WHEN {d} <= 180 THEN '151-180' ELSE '180+' END"""
