@@ -410,3 +410,13 @@ cases (e.g. support calls 12,357 → 12,359).
 - Override rate, identity reviews (P1) and text-feature accuracy (P4) show "not available yet" until
   `gold.nba_overrides` has decisions, `gold.identity_review_queue` exists and `reports/text_feature_eval.md` is written.
 
+### Channel fix (3 Oct)
+
+`contact_history.channel` is empty from 26 Sep 2026 (upstream rename to `channel_v2`, DQ check K1); the curated
+layer adds `channel_resolved` = coalesce of the two, and the DQ report says to use it. `features/sources.py` read
+`channel`, so the contact features scored today lost the channel of the last two days of contacts (19,462 contacts,
+10,462 of them calls). The contacts source now reads `channel_resolved` (output name unchanged, so no feature SQL
+changed; it exists only in curated, not raw). Training rows are unaffected (the case month-ends end on 31 Jul and the
+promise model trained on promises before 30 Jun), so the models were not retrained. On the 28 Sep queue: calls in
+the last 30 days 2.08 → 2.20 per case on average, cases with a call-response rate 64.4% → 67.2%, 588 decisions changed.
+

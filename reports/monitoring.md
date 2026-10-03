@@ -38,7 +38,7 @@ Top features by SHAP, today against the reference:
 
 ## Model `case_nocure_v0` (the bank's equivalent: `cure_30d`): **watch**
 
-Holdout 77,966 rows: AUC 0.838, calibration gap -0.087. Today: 86,059 rows scored, mean score 0.716 against 0.717 in the reference (77,966 rows); score PSI 0.042 (ok). Latest judged period 2026-07: accuracy ok, calibration watch.
+Holdout 77,966 rows: AUC 0.838, calibration gap -0.087. Today: 86,059 rows scored, mean score 0.716 against 0.717 in the reference (77,966 rows); score PSI 0.041 (ok). Latest judged period 2026-07: accuracy ok, calibration watch.
 
 | Period | Rows | Actual | AUC ours | AUC bank | Gap ours | Gap bank |
 |---|---|---|---|---|---|---|
@@ -77,7 +77,7 @@ What the bank itself records: the AUC it states at validation and the monthly PS
 
 ## Queue and review
 
-Queue for 2026-09-28: 86,059 cases. Actions: wait 33,701, email_reminder 16,056, push_reminder 14,045, support_call 12,359, sms_reminder 5,382, letter 3,000, agent_call 1,516. Needing approval: digital_batch 35,309, hardship 6,841, vulnerability 5,518, high_balance 255.
+Queue for 2026-09-28: 86,059 cases. Actions: wait 33,702, email_reminder 16,103, push_reminder 13,943, support_call 12,359, sms_reminder 5,455, letter 3,000, agent_call 1,497. Needing approval: digital_batch 35,328, hardship 6,841, vulnerability 5,518, high_balance 255.
 
 No review decisions recorded yet (`gold.nba_overrides` is empty or not built): override rate not available.
 

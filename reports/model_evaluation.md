@@ -181,29 +181,29 @@ interval includes zero, so cheap channels the customer responds to win, and a ca
 
 | Action | Best before capacity | Final | Avg risk | Avg expected value (CAD) | Need approval |
 |---|---|---|---|---|---|
-| `wait` | 33,242 | 33,701 | 0.74 | 0.00 | 0 |
-| `email_reminder` | 15,862 | 16,056 | 0.67 | 5.80 | 16,056 |
-| `push_reminder` | 14,023 | 14,045 | 0.68 | 5.55 | 14,045 |
+| `wait` | 33,244 | 33,702 | 0.74 | 0.00 | 0 |
+| `email_reminder` | 15,884 | 16,103 | 0.67 | 5.79 | 16,103 |
+| `push_reminder` | 13,918 | 13,943 | 0.68 | 5.57 | 13,943 |
 | `support_call` | 12,359 | 12,359 | 0.75 | 0.00 | 12,359 |
-| `sms_reminder` | 5,278 | 5,382 | 0.67 | 11.06 | 5,382 |
-| `letter` | 3,873 | 3,000 | 0.74 | 8.82 | 39 |
-| `agent_call` | 1,422 | 1,516 | 0.74 | 16.66 | 42 |
+| `sms_reminder` | 5,340 | 5,455 | 0.67 | 11.08 | 5,455 |
+| `letter` | 3,920 | 3,000 | 0.74 | 8.82 | 39 |
+| `agent_call` | 1,394 | 1,497 | 0.74 | 16.73 | 43 |
 
 Capacity on 2026-09-28 (`channel_capacity`; 720 agents on shift with
-62,028 outbound calls between them, 48,153 left unused):
+62,028 outbound calls between them, 48,172 left unused):
 
 | Channel | Capacity | Used |
 |---|---|---|
-| email | 60,000 | 16,056 |
+| email | 60,000 | 16,103 |
 | mail | 3,000 | 3,000 |
-| phone | 68,976 | 13,875 |
-| push | 30,000 | 14,045 |
-| sms | 40,000 | 5,382 |
+| phone | 68,976 | 13,856 |
+| push | 30,000 | 13,943 |
+| sms | 40,000 | 5,455 |
 
 | Approval reason | Cases |
 |---|---|
-| none | 38,136 |
-| digital_batch | 35,309 |
+| none | 38,117 |
+| digital_batch | 35,328 |
 | hardship | 6,841 |
 | vulnerability | 5,518 |
 | high_balance | 255 |
@@ -248,7 +248,7 @@ Cases where a rule (or capacity) removed at least one action:
 | `cease_contact` | 2,412 |
 | `experiment_holdout` | 1,667 |
 | `do_not_call` | 950 |
-| `no_capacity` | 873 |
+| `no_capacity` | 920 |
 | `insolvency` | 3 |
 
 Example decision card:
@@ -257,36 +257,44 @@ Example decision card:
 {
   "recommended_action": "agent_call",
   "channel": "phone",
-  "risk_score": 0.7864,
+  "risk_score": 0.6004,
   "top_reasons": [
-    {
-      "feature": "primary_product",
-      "text": "Product: personal_loan",
-      "contribution": 0.2444
-    },
     {
       "feature": "open_ptp_to_overdue_ratio",
       "text": "No open promise to pay",
-      "contribution": 0.1598
+      "contribution": 0.1554
     },
     {
-      "feature": "balance_to_limit",
-      "text": "Balance at 17% of the limit",
-      "contribution": 0.0879
+      "feature": "primary_product",
+      "text": "Product: personal_loan",
+      "contribution": 0.1481
+    },
+    {
+      "feature": "dpd_now",
+      "text": "46 days past due now",
+      "contribution": 0.0709
     }
   ],
-  "runner_up_action": "push_reminder",
-  "why_beat_runner_up": "Expected net $15.71 vs $13.81 for push_reminder ($1.90 more after contact cost)",
+  "runner_up_action": "letter",
+  "why_beat_runner_up": "Expected net $11.00 vs $9.24 for letter ($1.76 more after contact cost)",
   "blocked_actions": [
     {
+      "action": "push_reminder",
+      "rule": "consent"
+    },
+    {
       "action": "email_reminder",
+      "rule": "consent"
+    },
+    {
+      "action": "sms_reminder",
       "rule": "consent"
     }
   ],
   "evidence": [],
   "requires_approval": false,
   "approval_reason": null,
-  "summary": "High risk of not being paid up in 30 days (0.79): Product: personal_loan; No open promise to pay. Call the customer.",
+  "summary": "High risk of not being paid up in 30 days (0.60): No open promise to pay; Product: personal_loan. Call the customer.",
   "support_reason": null,
   "hardship_options": []
 }

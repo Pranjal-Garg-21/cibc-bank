@@ -87,8 +87,11 @@ SOURCES: dict[str, Source] = {
         use="features",
         event_ts="contact_ts",
         columns={
-            **_c("contact_id", "case_id", "crm_customer_id", "account_id", "channel", "direction", "treatment_code",
+            **_c("contact_id", "case_id", "crm_customer_id", "account_id", "direction", "treatment_code",
                  "test_cell", "bucket_at_contact"),
+            # channel_resolved = coalesce(channel_v2, channel): `channel` is empty from 26 Sep 2026 (REL-0926, data
+            # quality check K1). Derived in curated by factory/quality/dq_report.py, so not available on raw.
+            "channel": ("channel_resolved", "VARCHAR"),
             # local time: ptp_created_ts is recorded in customer-local time too
             "contact_ts": ("contact_ts_local", "TIMESTAMP"),
             **_c("rpc_flag", "ptp_made_flag", "email_delivered_flag", "email_opened_flag", "email_clicked_flag",
