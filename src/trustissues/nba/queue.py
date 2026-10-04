@@ -23,7 +23,9 @@ For each open case on AS_OF_DATE:
 
 risk_score holds the case model's risk. --write-gold needs the warehouse write lock, so run it as a stage
 after the Layer 1 pipeline, never alongside it. golden_customer_id is the case's person from gold.case_customer
-(P1's identity resolution); the 9 open cases it could not tie to anyone keep their CRM ID there.
+(P1's identity resolution). The few open cases it could not tie to anyone (8 on 28 Sep) are still grouped by their CRM
+ID inside the queue (one contact a day, hardship history), but get golden_customer_id NULL in gold.nba_decisions: a CRM
+ID there pointed at no row of gold.c360_customer (tests_integration/test_data_layer.py).
 """
 from __future__ import annotations
 
@@ -49,7 +51,7 @@ AGENT_ACTIONS = ("agent_call", "support_call", "wait")  # stay with an agent; th
 @dataclass
 class CaseInput:
     case_id: str
-    customer_id: str
+    customer_id: str  # the person: golden customer, or the CRM ID when identity tied the case to nobody
     assigned_agent_id: str | None
     agent_certified: bool
     amount: float  # total overdue
@@ -58,6 +60,7 @@ class CaseInput:
     risk: float  # case model: chance of NOT being paid up within 30 days
     reasons: list[Reason] = field(default_factory=list)
     reach: dict[str, float] = field(default_factory=dict)
+    person_resolved: bool = True  # False: customer_id is a CRM ID, written as golden_customer_id NULL
     promise_risk: float | None = None  # promise model, when the case has an open promise
     team: str | None = None
     history: hardship.HardshipHistory = field(default_factory=hardship.HardshipHistory)
@@ -204,7 +207,7 @@ def render(plan: Plan, assignment: allocate.Assignment, ctx: Context) -> dict:
     )
     return {
         "recommendation_id": f"REC-{ctx.as_of:%Y%m%d}-{c.case_id}",
-        "golden_customer_id": c.customer_id,
+        "golden_customer_id": c.customer_id if c.person_resolved else None,
         "case_id": c.case_id,
         "agent_id": assignment.agent_id,
         "as_of_date": ctx.as_of,
@@ -353,7 +356,8 @@ def case_input(c: dict, flags: rules.CaseFlags, programs: list[dict], uses: dict
         signal=hardship.HardshipSignal(level, vulnerable), team=c["assigned_team"],
         history=hardship.HardshipHistory(c["plan_end"], bool(c["ever_offered"]), c["last_offer_ts"]),
         options=hardship.options(programs, as_of, ctx, level), evidence=list(text.evidence),
-        text_flagged=text.active and case_level == "none" and not c["vulnerable"], **model)
+        text_flagged=text.active and case_level == "none" and not c["vulnerable"],
+        person_resolved=c["golden_customer_id"] is not None, **model)
 
 
 def build(con, with_capacity: bool = True) -> tuple[list[dict], dict]:
