@@ -571,7 +571,11 @@ does not exist). Feature SQL: `promise_history`, `channel_response`, and the cus
 `liquidity` and `payday` join on the golden ID. Source columns may now be an SQL expression with declared lineage.
 `train.py` `NON_FEATURES` and the Feast `KEYS` exclude the new key; the Feast customer entity is
 `golden_customer_id`. `nba/queue.py` writes the case's golden ID to `gold.nba_decisions` (the 9 open cases with no
-person keep their CRM ID).
+person keep their CRM ID). **Changed 4 Oct:** those cases (8 after the 4 Oct rebuild) get `golden_customer_id` NULL in
+`gold.nba_decisions`; the CRM ID pointed at no row of `gold.c360_customer`, which P2's new
+`tests_integration/test_data_layer.py::test_non_null_person_ids_resolve` caught. Inside the queue they are still grouped
+by their CRM ID (`CaseInput.person_resolved`). Queue rerun: 86,059 rows, 8 NULL; fairness and monitoring reports
+unchanged; `tests_integration` 80 passed.
 
 Identity is today's resolution applied to history: a merge found now is used for promises made before it. Accepted
 (the links are facts about people, not outcomes), and noted here.

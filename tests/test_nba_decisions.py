@@ -71,6 +71,12 @@ def test_card_fits_the_gold_stub_and_the_decision_card_shape():
     assert "Open promise: 0.83 risk of breaking." in card["summary"]
 
 
+def test_a_case_identity_could_not_tie_to_a_person_has_no_golden_customer_id():
+    """The queue groups it by its CRM ID, but gold.nba_decisions.golden_customer_id must be a person or NULL."""
+    assert decide_case(_case(), CTX)["golden_customer_id"] == "C-1"
+    assert decide_case(_case(customer_id="JEB-8300", person_resolved=False), CTX)["golden_customer_id"] is None
+
+
 def test_hard_stop_case_waits_and_says_why():
     row = decide_case(_case(flags=rules.CaseFlags(consent=dict(ALL_CONSENT), cease_contact=True)), CTX)
     card = json.loads(row["decision_card"])
