@@ -1,6 +1,6 @@
 # P2 Design Sections: For Final System Design PDF
 
-All numbers were measured on the development data (`warehouse/ask_dev`, 3 October 2026, one machine, warm and sequential unless stated). The development data holds 367,229 cases, 2,688,337 contacts, 238,815 promises, 1,064,500 account rows and 12,569,692 month-end snapshot rows. Two things are empty in the development data: `gold.customer_xref` and `gold.semantic_payroll` have no rows, and no development case carries a golden customer ID. Anything that needs identity or payroll (the payroll-delay metric, customer-level joins) cannot be shown on this data. Design intent is marked as such.
+Latency figures were measured on the development copy (`warehouse/ask_dev`, 3 October 2026, one machine, warm and sequential unless stated). Quality figures were re-measured on 4 October 2026 on the published warehouse (`warehouse/trustissues.duckdb`, rebuilt with the final identity: 1,011,960 people), opened read-only. The semantic views hold the same row counts in both: 367,229 cases (367,218 with a golden customer ID), 2,688,337 contacts, 238,815 promises, 1,064,500 account rows, 12,569,692 month-end snapshot rows and 579,994 payroll rows; the identity cross-reference holds 3,487,885 source records. Design intent is marked as such.
 
 ## Heading: Layer 2: Insight and NLP Platform (Structured)
 
@@ -32,9 +32,9 @@ A question goes through these stages in order. The two model-backed stages (3, a
 
 What reaches the model: the safety screen and the router fallback see the question text and metric definitions only. The SQL prompt carries schema text and the question. Policy answers carry policy chunks, which include hardship-programme records. A repair message can carry label values the user is allowed to see, and error text with numbers removed.
 
-### 2. What the Answer Card Contains (the screen is not built)
+### 2. What the Answer Card Contains
 
-The record holds what a screen needs: parsed parameters, the executed SQL, the sources, the certified flag and the notes ("uncertified", "one repair", "period after the as-of date"). The editable parameter chips, the working drawer and the suggested follow-up questions are design intent. No Ask screen exists.
+The record holds what a screen needs: parsed parameters, the executed SQL, the sources, the certified flag and the notes ("uncertified", "one repair", "period after the as-of date"). The editable parameter chips, the working drawer and the suggested follow-up questions are design intent. The Ask screen is the team's UI (`ui/`), which calls this function; the UI integration was still being merged when this was written.
 
 ### 3. Evidence of Quality
 
@@ -43,12 +43,15 @@ The record holds what a screen needs: parsed parameters, the executed SQL, the s
 | Released questions with a development grade (21 of the 35), full pipeline with `--llm` | 14 pass, 6 text answers marked for human review, 1 fail. The other 14 released questions have no grade, and "review" means a person has not yet confirmed the answer. The 5 expected refusals are refused and none of the other 30 is. |
 | The one failure (BQ-017, roll rate) | The reference answer's date parser drops month-first dates; an independent calculation from the raw files with the corrected parser matches our curated result (auto loan 8.1545% on 466, against the reference's 7.4419% on 430). The team is handling it. |
 | Reproducibility | Five full runs of the 35 questions (`eval/repro_runs/`). The two runs after the ordering fix that bypassed the cache, and one cached run, give identical numeric answers. Policy text answers vary in wording across runs (BQ-001, BQ-019) while the facts match. Two earlier runs differed only in the order of grouped rows, which is now fixed. |
-| Router paraphrase sets (current scores, with the model fallback and safety screen) | 100% on the 72-case set the rules were tuned on; 94.5% on a 55-case held-out set; 94.9% on a 39-case fresh set; 95.2%, 95.8% and 95.5% on three later safety-focused sets. Cached model responses were used, so these reproduce earlier model outputs. The later sets were used to diagnose misses, so they overstate unseen accuracy. |
+| Router paraphrase sets (current scores, with the model fallback and safety screen, 4 October) | 100% on the 72-case set the rules were tuned on; 94.5% on a 55-case held-out set; 97.4% on a 39-case fresh set; 90.5%, 95.8% and 95.5% on three later safety-focused sets. Cached model responses were used, so these reproduce earlier model outputs. The later sets were used to diagnose misses, so they overstate unseen accuracy. |
 | First scores on unseen wording | Rules only: 47.2% on the original set, 47.3% on the held-out set. With the model fallback added: 80.0% on the held-out set and 84.6% on the fresh set. On refusals, 4 of 16 on the first safety set with rules only, then 16 of 16 once the model screen was added. A final 22-case set scored once with the screen on: 12 of 12 refusals and 6 of 6 look-alike questions passed; one policy question about elderly customers was wrongly refused. |
-| Optional packages (router scores by configuration) | With everything installed: 100 / 94.5 / 94.9 / 95.2 / 95.8 / 95.5%. Without `pyahocorasick`: identical. Without FastEmbed (embedding matcher) and with `--llm`: 66.7 / 63.6 / 56.4 / 85.7 / 91.7 / 95.5%. Without FastEmbed and without a model: 66.7 / 49.1 / 41.0 / 85.7 / 41.7 / 68.2%. FastEmbed and its model files are needed to reproduce the full scores (`requirements-router.txt`, `scripts/setup_router.py`). |
+| Optional packages (router scores by configuration) | With everything installed: 100 / 94.5 / 97.4 / 90.5 / 95.8 / 95.5%. Without `pyahocorasick`: identical. Without FastEmbed (embedding matcher) and with `--llm`: 66.7 / 63.6 / 56.4 / 85.7 / 91.7 / 95.5%. Without FastEmbed and without a model: 66.7 / 49.1 / 41.0 / 85.7 / 41.7 / 68.2%. FastEmbed and its model files are needed to reproduce the full scores (`requirements-router.txt`, `scripts/setup_router.py`). |
 | Generated SQL | 30 unseen questions, each checked against a reference query written independently (`eval/sql_stress/`). After the fixes, all 30 return correct values under a defensible reading. Five differ from the reference in layout, units or a definition choice (cure date versus cure outcome). Before the fixes, one question counted all outbound contacts as calls; that class is now blocked for wording the check knows. |
 | Adversarial probes | `DELETE`, `UPDATE` and `DROP TABLE` text never ran. Bulk identity pulls were refused or rejected by the validator. A filter on a label that does not exist (`reported_bucket = 'default'`) returned a confident 0 before the label check; it now says the value does not exist. |
-| Automated tests | 655 |
+| Unseen end-to-end set | 26 new questions over the published warehouse (8 metric, 2 drivers, 4 generated SQL, 3 policy, 3 customer-call, 4 refusal, 2 unsupported), each with a reference written before Ask ran and a numeric tolerance of 0.5%: 26 of 26 pass, uncached and replayed from cache, with the model on the free tier and no rate-limit responses (`eval/e2e_unseen_report.md`). Earlier versions of this set exposed the drivers headline understating totals (calls with no site or province were left out of the headline) and several catalogue boundary cases; both were fixed and the set was run again on the final build. A small sample, not a guarantee. |
+| Data-layer and role checks | `tests_integration/`: 95 checks written independently of the application code. Data layer: row counts from raw to curated to gold to semantic tables, key uniqueness, orphan keys, identity totals, as-of dates, sensitivity of the semantic columns, and the seven blocking contract rules (all pass). Roles: 12 questions asked as agent, team lead and analyst, including a missing and a hidden case (same wording), refusals returning no rows, and a scan of answer text for email, phone, date of birth and card patterns. The checks documented one open item: 26,864 of 2,688,337 contacts (0.9993%) name a case that is not in the case table. |
+| Model reply repair | The free model sometimes returned a policy answer as JSON whose `answer` value had no quotes and ended in a stray brace; the answer failed as "unavailable" in 3 of 4 runs of one question. The wrapper now repairs that shape; the supporting quotations are still checked against the sources. |
+| Automated tests | 1,035 pass, 6 skipped (unit and service tests), plus the 95 integration checks above (80 run without a model). |
 
 ### 4. Known Limits
 
@@ -57,10 +60,10 @@ The record holds what a screen needs: parsed parameters, the executed SQL, the s
 - **Generated SQL is tested on 30 questions**, mostly single-table or simple joins, and every answer is uncertified. The channel, direction and label checks are heuristics: a query can satisfy them and still use the wrong definition. "Late stage" can be read as the late-stage queue or the last two delinquency buckets; the model is asked to state how it read an ambiguous word, and the card shows it as an "Interpretation" note, but the note is the model's own sentence and is not checked. The 500-row cap limits returned rows, not rows scanned.
 - **Reads outside the validator.** The case resolver and the policy retrieval query their tables directly.
 - **Certified history scans.** The roll-rate template joins the 12.6 million-row snapshot view twice.
-- **Concurrency is unmeasured.** Execution is serialised by a lock. The latency figures are single-user.
-- **Customer-call questions** wait for P4's function. One metric variant (BQ-014) is unsupported.
+- **Concurrency is unmeasured.** Execution is serialised by a lock. The latency figures are single-user. The UI must pass the case resolver and the warehouse connection into Ask, answer text is not masked by the UI's row masking, and policy answers need the model switched on (`UI_ASK_LLM=1`); these are in the UI hand-off.
+- **Customer-call answers** depend on P4's function, now connected. Their detail (for example a customer's name or health notes in a summary) is P4's to set; the policy answer to BQ-019 leaves out the instruction to acknowledge and record the hardship. One metric variant (BQ-014) is unsupported, and the reference answer to BQ-017 is wrong, not ours.
 - **Model-backed stages need the provider key at run time** (the configured model is the free tier of Nemotron 3 Super on OpenRouter, which is rate-limited), and the embedding matcher needs its model files (`fastembed` is in the main requirements; run `scripts/setup_router.py` once to download them).
-- **Not built:** the Ask screens, small-group disclosure limits for tiny breakdowns, the DeBERTa classifier, a compressed Radix Trie and a learned schema pruner that earlier drafts described.
+- **Not built:** the DeBERTa classifier, a compressed Radix Trie and a learned schema pruner that earlier drafts described.
 
 Small-group disclosure, listed above, is now implemented for grouped metric, drivers and SQL cards with usable count columns. `config/disclosure.yaml` defaults to a note for counts below five; optional suppression nulls numeric cells in affected rows. Single-row totals and results without counts are not checked, and check failures leave answers unchanged. Note mode warns; it does not prevent disclosure.
 
@@ -68,7 +71,7 @@ Small-group disclosure, listed above, is now implemented for grouped metric, dri
 
 ## Heading: Scalability, Part 2: Real-Time / Query Serving (merge with P1's part under one "Scalability" heading)
 
-### 1. Measured Latency (development data, one machine, single user)
+### 1. Measured Latency (development copy, one machine, single user)
 
 Where two measurements exist, both are shown.
 
