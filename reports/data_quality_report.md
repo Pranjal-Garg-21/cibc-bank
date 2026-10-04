@@ -520,7 +520,7 @@ Columns that hold a code from a published list (`curated.code_lookups`) were che
 
 **Affected:** 6 of 6 (100.0%) · **Tables:** `agent_notes`, `collections_cases`, `contact_history`, `deposit_accounts`, `loan_accounts` · **Severity:** low
 
-*Evidence:* loan_accounts.product_code (14 codes), deposit_accounts.product_code (8 codes), contact_history.letter_template_id (14 codes), contact_history.push_template_id (1 codes), agent_notes.template_id (16 codes), collections_cases.queue (6 codes).
+*Evidence:* agent_notes.template_id (16 codes), collections_cases.queue (6 codes), contact_history.letter_template_id (14 codes), contact_history.push_template_id (1 codes), deposit_accounts.product_code (8 codes), loan_accounts.product_code (14 codes).
 
 **Handling (documented).** These columns hold codes (loan and deposit product codes, letter and push templates, note templates, case queues) that `code_lookups` does not list, so they cannot be validated. Each column is internally consistent (no case or spelling variants, F17). The reference list should gain them.
 
@@ -618,7 +618,7 @@ Every day of the last year, per series (contacts by channel, cases by product, p
 
 **Affected:** 58 of 516 (11.2%) · **Tables:** `contact_history`, `collections_cases`, `external` · **Severity:** info
 
-*Evidence:* REL-0926, INC-0914, INC-0923, ECO-0715.
+*Evidence:* ECO-0715, INC-0914, INC-0923, REL-0926.
 
 **Handling (context, not a defect).** Detected automatically and matched to the operations log: the event lists the table and its dates overlap the episode (one day of lag allowed). Long events (layoffs, a policy) explain volume changes only. Section A checks each logged event directly.
 

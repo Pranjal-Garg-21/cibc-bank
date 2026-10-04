@@ -371,7 +371,7 @@ checks:
     severity: medium
     status: documented
     sql: "select count(*) filter (where language = 'FR' and not exists (select 1 from curated.reference_documents e where e.language = 'EN' and e.doc_id || '-FR' = d.doc_id)), count(*) filter (where language = 'FR') from curated.reference_documents d"
-    evidence: "select string_agg(doc_id || ' (' || title || '; applies to provinces ' || applies_to_provinces || ')', '; ') from curated.reference_documents d where language = 'FR' and not exists (select 1 from curated.reference_documents e where e.language = 'EN' and e.doc_id || '-FR' = d.doc_id)"
+    evidence: "select string_agg(doc_id || ' (' || title || '; applies to provinces ' || applies_to_provinces || ')', '; ' order by doc_id) from curated.reference_documents d where language = 'FR' and not exists (select 1 from curated.reference_documents e where e.language = 'EN' and e.doc_id || '-FR' = d.doc_id)"
     how: "Of the 3 French documents, two are summaries of an English document (POL-COLL-001 and POL-COLL-004). The Quebec annex is not: it holds rules that no English document states (no collection calls on Sundays in Quebec, while the English contact policy allows Sunday calls from 13:00 to 17:00 where Sunday contact is permitted, and French service by default). English is the reference language for answers, but this document is kept searchable and is always included when a question or a customer is in Quebec (province QC). Its quotes stay in French. An English version, or confirmation of the Quebec rule, should be requested from the organisers."
 
   # ------------------------------------------------------------------ D. missing values
@@ -601,7 +601,7 @@ checks:
     severity: medium
     status: documented
     sql: "select count(*) filter (where ptp_status = 'open' and ptp_due_date + cast(coalesce(grace_days, 0) as integer) < date '{as_of}'), count(*) filter (where ptp_status = 'open') from curated.promises_to_pay"
-    evidence: "select 'last case cure recorded on ' || (select max(cure_date) from curated.collections_cases) || ', while other case statuses run to ' || (select max(case_status_date) from curated.collections_cases) || ' and the snapshot is {as_of}; the open promises past their grace period were made in ' || (select string_agg(distinct strftime(ptp_created_ts, '%b %Y'), ', ') from curated.promises_to_pay where ptp_status = 'open' and ptp_due_date + cast(coalesce(grace_days, 0) as integer) < date '{as_of}')"
+    evidence: "select 'last case cure recorded on ' || (select max(cure_date) from curated.collections_cases) || ', while other case statuses run to ' || (select max(case_status_date) from curated.collections_cases) || ' and the snapshot is {as_of}; the open promises past their grace period were made in ' || (select string_agg(m, ', ' order by ym) from (select distinct strftime(ptp_created_ts, '%Y-%m') ym, strftime(ptp_created_ts, '%b %Y') m from curated.promises_to_pay where ptp_status = 'open' and ptp_due_date + cast(coalesce(grace_days, 0) as integer) < date '{as_of}'))"
     how: "Not changed. Use the last fully recorded outcome date (the latest cure date), not the snapshot date, as the end of any outcome window: a case or promise whose window ends after it is unlabelled, not a failure. The P3 training sets already cut their labels there (`features/build_case_training_set.py`, `nba/actions.py`). Affected column counts open promises whose due date plus grace days is before the snapshot date."
   - id: T4
     area: shift
@@ -723,7 +723,7 @@ checks:
     severity: info
     status: context
     sql: "select (select count(*) from curated._anomaly_episodes where status = 'explained'), (select count(*) from curated._anomaly_episodes)"
-    evidence: "select string_agg(distinct split_part(explained_by, ' (', 1), ', ') from curated._anomaly_episodes where status = 'explained'"
+    evidence: "select string_agg(distinct split_part(explained_by, ' (', 1), ', ' order by split_part(explained_by, ' (', 1)) from curated._anomaly_episodes where status = 'explained'"
     how: "Detected automatically and matched to the operations log: the event lists the table and its dates overlap the episode (one day of lag allowed). Long events (layoffs, a policy) explain volume changes only. Section A checks each logged event directly."
   - id: A3
     area: anomaly

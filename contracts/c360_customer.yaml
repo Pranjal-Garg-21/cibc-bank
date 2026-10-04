@@ -4,7 +4,7 @@
 # In rule SQL, {g} is the schema being checked (gold_stage before publishing) and {as_of} is AS_OF_DATE.
 
 product: gold.c360_customer
-version: "1.1"   # 1.1 (4 Oct): the ten columns added after 1.0 are described; known exceptions recorded; no rule changed
+version: "1.1.1"   # 1.1 (4 Oct): the ten columns added after 1.0 are described; known exceptions recorded; no rule changed. 1.1.1 (4 Oct): Q6 cause breakdown corrected; no rule changed
 id: DC-C360-001
 domain: retail collections and recovery
 business_owner: Head of Collections Data
@@ -76,8 +76,9 @@ known_exceptions:   # warnings that fail on the published 4 Oct build, and why; 
     cause: >-
       Every one has no date of birth on file; none has an impossible age (none under 18, over 110 or in the future).
       8,784 are people known only from the bureau file, not linked to any bank customer record, and the bureau
-      file carries a date for almost none of them (54 of 8,845 bureau-linked people with no date); about 240 more
-      are loan-only or CRM-only people whose source field is blank.
+      file carries a date for almost none of them (54 of 8,845 bureau-linked people with no date). The other 243
+      have a blank date in every linked record: 182 are loan-only (125) or CRM-only (57), and 53 have a bureau
+      record plus a bank record.
     handling: the value is left NULL and date_of_birth_source says so; nothing is imputed, and age-based logic must treat NULL as unknown
   - id: Q7
     records: 18

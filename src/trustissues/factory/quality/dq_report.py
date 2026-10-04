@@ -198,7 +198,7 @@ def expand_code_checks(cfg: dict) -> list[dict]:
             "status": "documented",
             "title": "Code column with no published reference list (count of columns)",
             "sql": f"SELECT count(*), count(*) FROM ({counts})",
-            "evidence": f"SELECT string_agg(col || ' (' || d || ' codes)', ', ') FROM ({counts})",
+            "evidence": f"SELECT string_agg(col || ' (' || d || ' codes)', ', ' ORDER BY col) FROM ({counts})",
             "how": "These columns hold codes (loan and deposit product codes, letter and push templates, note "
                    "templates, case queues) that `code_lookups` does not list, so they cannot be validated. Each "
                    "column is internally consistent (no case or spelling variants, F17). The reference list should "
