@@ -1,5 +1,9 @@
 # Requirements and Setup: build the warehouse on your own machine
 
+**Short version for teammates:** [`docs/teammate_setup.md`](docs/teammate_setup.md) lists every command from `git pull`
+to a working console (identity verdicts, models, the nightly run with the shared text features, sign-in), with the
+numbers to expect. This file has the detail behind each step.
+
 This gets you from nothing to a populated `warehouse/trustissues.duckdb` (raw, curated, identity and gold schemas) using only the original dataset. Nothing here depends on another person's database file: every teammate builds their own from the source data, and `scripts/verify_warehouse.py` proves it came out the same.
 
 For what the code does and why, see [`docs/documentation.md`](docs/documentation.md) and, for the curated layer's results on the real data, [`docs/curation.md`](docs/curation.md). For what is running on P1's machine and what is already done, see [`docs/team_status.md`](docs/team_status.md).
