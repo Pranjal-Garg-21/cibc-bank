@@ -102,6 +102,48 @@ def match_metric(question: str):
     return match(question)
 
 
+def requests_record_set(question: str) -> bool:
+    """Entity intersections and absence ratios need SQL, not a topic-based rate.
+
+    Bind the counted entity first. Counts of promises or calls, and statistics
+    about their outcomes, keep their existing certified-metric interpretation.
+    """
+    q = question.lower()
+    entity = r"(?:cases?|customers?|borrowers?|accounts?)"
+    counted = re.search(
+        r"\b(?:how many|number of|count(?: of)?|total(?: number of)?)\s+"
+        r"(?:(?:distinct|unique|open|active|closed|collections|current|all)\s+){0,4}"
+        + entity + r"\b", q)
+    ratio = re.search(r"\b(?:fraction|share|percentage|percent|proportion|ratio)\s+"
+                      r"(?:of\s+)?(?:(?:all|the|open|active|closed|current)\s+){0,3}"
+                      + entity + r"\b", q)
+    subject = counted or ratio
+    if not subject or requests_contact_quantity(q):
+        return False
+    tail = q[subject.end():]
+    # A related record is a different population from the requested entity.
+    related = r"\b(?:promises?|contacts?|calls?|disputes?|payments?|cases?|accounts?)\b"
+    records = re.search(related, tail)
+    if not records:
+        return False
+    if counted and not re.search(r"\b(?:average|mean|median|per)\b", q[:counted.start()]):
+        return bool(re.search(r"\b(?:with|that|which|who|where|also|both|have|has|had)\b", tail))
+    if ratio:
+        absence = r"\b(?:never\s+(?:had|have|has|received|made|logged)|no|without|zero)\b"
+        return bool(re.search(absence + r"[^.;?]{0,60}" + related, tail))
+    return False
+
+
+def plausible_metric_quantity(question: str, metric_id: str) -> bool:
+    """Do not offer unlike units as alternatives for an explicit ratio."""
+    if re.search(r"\b(?:fraction|share|percentage|percent|proportion|ratio)\b", question, re.I):
+        return metric_id not in {
+            "average_dpd", "contact_attempts_per_case", "cost_per_contact",
+            "cost_per_rpc", "collected_amount", "dispute_count",
+        }
+    return True
+
+
 def _dimensions(question: str, metric_id: str) -> tuple[tuple[str, ...], str | None]:
     q = question.lower()
     # Coordinate axes inherit 'by': 'by product and queue' requests both.
@@ -113,9 +155,19 @@ def _dimensions(question: str, metric_id: str) -> tuple[tuple[str, ...], str | N
                 if not match[0].startswith("by "):
                     continue
                 following = re.match(r"\s*(?:,\s*(?:and\s+)?|and\s+)(?P<axis>[a-z][\w-]*)\b", q[match.end():])
-                if following and following['axis'] not in {
+                if not following:
+                    continue
+                tail = q[match.end() + following.start('axis'):]
+                if following['axis'] in {
                         "by", "for", "in", "from", "to", "with", "without", "compared", "show", "report"}:
+                    continue
+                # Adjuncts are explanations, not an inherited grouping keyword.
+                if re.match(r"(?:while\s+)?(?:keeping|including|leaving)\b", tail):
+                    continue
+                if any(re.match(rx, "by " + tail) for rx, _ in DIM_WORDS):
                     insertions.add(match.end() + following.start('axis'))
+                elif re.match(r"[a-z][\w-]*\s*(?:$|[,?;.]|\band\b|\b(?:for|in|from)\b)", tail):
+                    return (), f"The requested coordinated axis '{following['axis']}' is not approved for {metric_id.replace('_', ' ')}."
         if not insertions:
             break
         for position in sorted(insertions, reverse=True):

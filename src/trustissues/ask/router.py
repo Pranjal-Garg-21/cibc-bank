@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .catalog import detect_metric, match_metric
+from .catalog import detect_metric, match_metric, plausible_metric_quantity, requests_record_set
 from .requested_shape import requested_shape, requests_entity_count
 
 CASE_ID = re.compile(r"\bCS-\d{4}-\d{5,7}\b", re.I)
@@ -47,6 +47,8 @@ def route(question: str) -> Route:
         return Route("rag_corpus", why="policy wording")
     driver = re.search(DRIVER_WORDS, q, re.I)
     volume = re.search(r"(?:call|contact|outbound)\s+(?:volume|numbers?)|number of (?:calls|contacts)", q, re.I)
+    if not driver and requests_record_set(q):
+        return Route("sql", why="entity intersection or absence ratio requires its own population")
     if shape == "population" and not driver:
         return Route("sql", why="population count or distribution without a catalogue statistic")
     entity_count = requests_entity_count(q)
@@ -59,6 +61,8 @@ def route(question: str) -> Route:
                     match.metric_id is None and match.candidates and match.candidates[0].metric_id == "average_dpd")):
                 return Route("sql", why="explicit entity count cannot be inferred as a mean")
             if match.metric_id is None:
+                if any(not plausible_metric_quantity(q, candidate.metric_id) for candidate in match.candidates[:2]):
+                    return Route("cannot_answer", why="catalogue alternatives do not measure the requested quantity")
                 return Route("cannot_answer", why="uncertain catalogue match", clarification=match.clarification)
             metric = match.metric_id
     if re.search(DRIVER_WORDS, q, re.I):
