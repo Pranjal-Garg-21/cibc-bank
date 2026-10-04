@@ -13,7 +13,8 @@ help:
 	@echo "make queue       today's NBA queue into gold.nba_decisions"
 	@echo "make fairness    reports/fairness_report.md"
 	@echo "make monitoring  reports/monitoring.md"
-	@echo "make nightly     pipeline, policy index, text features, queue, fairness, monitoring (scripts/nightly.py)"
+	@echo "make nightly     pipeline, policy index, shared text features, queue, fairness, monitoring (scripts/nightly.py;"
+	@echo "                 no language model unless NIGHTLY_FLAGS=--with-text-features)"
 	@echo "make ui-build    build the web app (ui/web -> ui/web/dist; needs Node 20+)"
 	@echo "make app         the web console: FastAPI + React on http://127.0.0.1:8000 (ui/README.md); APP_FLAGS=--demo"
 	@echo "make test        the test suite (tests/ and the UI's tests_ui/)"
@@ -44,7 +45,7 @@ monitoring:
 	$(PY) -m trustissues.governance.monitoring
 
 nightly:
-	$(CAP) $(PY) scripts/nightly.py
+	$(CAP) $(PY) scripts/nightly.py $(NIGHTLY_FLAGS)
 
 ui-build:
 	cd ui/web && npm ci && npm run build

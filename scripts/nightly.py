@@ -9,8 +9,11 @@ Stages, in order (each runs as its own process, so connections and memory do not
     pipeline       Layer 1: raw -> curated -> quality (factory/pipeline.py, P1)
     policy_index   P4's policy chunks for the Ask page (ask/rag/policy_ingest.py -> warehouse/rag/policy_chunks.jsonl,
                    seconds); reads the warehouse read-only
-    text_features  P4's LLM text features for open-case customers, newest 20,000 not yet extracted
-                   (features/text_extract.py --scope open_cases). Without an LLM key it stops itself at once
+    shared_text_features  the hand-labelled text features committed in data/review/text_features/ (no text in git, no
+                   model call), rebuilt into gold.text_features from this warehouse's own notes
+                   (features/text_shared.py); nothing to do when the folder is empty
+    text_features  off unless --with-text-features: P4's LLM text features for open-case customers, newest 20,000
+                   not yet extracted (features/text_extract.py --scope open_cases). Without an LLM key it stops itself at once
                    and the run goes on; the queue then works from the features already in gold.text_features
     queue          score every open case as of AS_OF_DATE and write gold.nba_decisions (nba/queue.py --write-gold)
     fairness       reports/fairness_report.md (nba/fairness.py)
@@ -35,15 +38,21 @@ from trustissues.common import config
 STAGES = [
     ("pipeline", ["trustissues.factory.pipeline"]),
     ("policy_index", ["trustissues.ask.rag.policy_ingest"]),
+    ("shared_text_features", ["trustissues.features.text_shared", "import"]),
     ("text_features", ["trustissues.features.text_extract", "--scope", "open_cases", "--limit", "20000"]),
     ("queue", ["trustissues.nba.queue", "--write-gold"]),
     ("fairness", ["trustissues.nba.fairness"]),
     ("monitoring", ["trustissues.governance.monitoring"]),
 ]
 OPTIONAL = {"text_features"}  # skipped if the module is missing (a checkout without P4's work)
+# Stages that send text to an outside language model: off unless asked for (--with-text-features, or --only it). Since
+# 4 Oct the open-case backlog is 265,474 texts, so each run would send another 20,000; labels shared through git
+# (shared_text_features) need no model.
+PAID = {"text_features"}
 
 
-def plan(start: str | None = None, only: str | None = None, skip_pipeline: bool = False) -> list[tuple[str, list[str]]]:
+def plan(start: str | None = None, only: str | None = None, skip_pipeline: bool = False,
+         with_text_features: bool = False) -> list[tuple[str, list[str]]]:
     names = [n for n, _ in STAGES]
     todo = []
     for name, cmd in STAGES:
@@ -52,6 +61,9 @@ def plan(start: str | None = None, only: str | None = None, skip_pipeline: bool 
         if start and names.index(name) < names.index(start):
             continue
         if skip_pipeline and name == "pipeline":
+            continue
+        if name in PAID and not (with_text_features or only == name):
+            print(f"skip {name}: calls a language model for up to 20,000 texts; add --with-text-features to run it")
             continue
         if name in OPTIONAL and importlib.util.find_spec(cmd[0]) is None:
             print(f"skip {name}: {cmd[0]} not built yet")
@@ -66,9 +78,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--from", dest="start", choices=names)
     ap.add_argument("--only", choices=names)
     ap.add_argument("--skip-pipeline", action="store_true")
+    ap.add_argument("--with-text-features", action="store_true",
+                    help="also run text_features, which sends up to 20,000 texts to the configured language model")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
-    todo = plan(a.start, a.only, a.skip_pipeline)
+    todo = plan(a.start, a.only, a.skip_pipeline, a.with_text_features)
     if a.dry_run:
         for name, cmd in todo:
             print(f"{name}: {' '.join(cmd[1:])}")

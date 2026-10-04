@@ -83,6 +83,12 @@ python -m trustissues.factory.pipeline --from text_controls   # text controls, i
 
 Resume points for the later stages: `--from identity`, `--from gold`, `--from publish`. Identity needs `splink` and `scipy`; its optional LLM step and the mapping assistant need API keys (`docs/identity.md`, `docs/documentation.md`).
 
+**Text features without a language model.** The 20,000 hand-labelled text features (Luna, 4 Oct) are committed in
+`data/review/text_features/` as labels plus the position of each evidence sentence, never the text. `make nightly`
+rebuilds them into `gold.text_features` from your own warehouse's notes (stage `shared_text_features`, about 5 s;
+`python -m trustissues.features.text_shared import --dry-run` reports how many match). It never calls a model: the
+`text_features` stage, which sends notes to the configured provider, runs only with `--with-text-features`.
+
 Useful options: `python -m trustissues.factory.pipeline --from curate` (resume), `--only ingest`, `load_raw --only customers agents` (a subset).
 
 The build is **re-runnable**. Running ingest again reads only new or changed files and skips unchanged ones, so a second run takes seconds.
