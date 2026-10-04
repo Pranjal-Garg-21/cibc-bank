@@ -12,7 +12,8 @@ from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from ..deps import AS_OF, current_user, require_reauthentication, require_role, warehouse
+from .. import rbac
+from ..deps import AS_OF, current_user, require_reauthentication, warehouse
 from ..errors import ApiError, not_connected
 from ..security import MASK, sensitive_columns
 from ..serialize import jsonable
@@ -20,7 +21,6 @@ from ..serialize import jsonable
 router = APIRouter(prefix="/api", tags=["queue"])
 
 REC_ID = r"^[A-Za-z0-9_\-:.]{1,80}$"
-APPROVER_ROLES = ("team_lead", "hardship_specialist")
 
 
 def _nba():
@@ -62,6 +62,7 @@ def my_queue(request: Request):
     sources, agent_view, _ = _nba()
     with warehouse(request.app.state.settings) as con:
         user = current_user(request, con)
+        rbac.require(user, "my_queue")
         sources.register(con)
         q = agent_view.agent_queue(con, user.agent_id, AS_OF)
     return _scrub({"as_of_date": AS_OF, "queue": q})
@@ -72,10 +73,17 @@ def digest(request: Request):
     sources, agent_view, _ = _nba()
     with warehouse(request.app.state.settings) as con:
         user = current_user(request, con)
-        require_role(user, agent_view.SUPERVISORS)
+        rbac.require(user, "approvals")
         sources.register(con)
         d = agent_view.lead_digest(con, AS_OF)
-    return _scrub({"as_of_date": AS_OF, **d})
+    kinds = rbac.approval_kinds(user.role)
+    pending = d["pending"]
+    if len(pending):  # a role sees only the kinds of approval it may give
+        pending = pending[pending["approval_reason"].isin(kinds)]
+    d = {**d, "pending": pending}
+    if not rbac.has(user.role, "approve_batch"):  # the batch and the bank-wide counts are the team lead's
+        d = {**d, "states": {}, "batch_pending": 0, "batch_total": 0}
+    return _scrub({"as_of_date": AS_OF, "approval_kinds": list(kinds), **d})
 
 
 @router.get("/cases/{rec_id}")
@@ -85,13 +93,18 @@ def case(rec_id: str, request: Request):
         raise ApiError(404, "not_found", "No such recommendation.")
     with warehouse(request.app.state.settings) as con:
         user = current_user(request, con)
+        rbac.require(user, "case_view")
         sources.register(con)
         try:
             rec = agent_view.card(con, rec_id, user.as_staff())
         except KeyError:
             raise ApiError(404, "not_found", "No such recommendation.")
-        except agent_view.AccessDenied:
-            raise ApiError(403, "forbidden", "This recommendation is not assigned to you.")
+        except agent_view.AccessDenied:  # same answer as a recommendation that does not exist: no existence oracle
+            raise ApiError(404, "not_found", "No such recommendation.")
+        if user.role == "hardship_specialist" and not (
+                rec.get("approval_reason") in rbac.SUPPORT_APPROVALS or rec.get("action") == "support_call"):
+            # outside the specialist's remit: same answer as a recommendation that does not exist
+            raise ApiError(404, "not_found", "No such recommendation.")
         ctx = agent_view.case_context(con, rec["case_id"], AS_OF)
     request.app.state.access_log.record(action="open_case", user_id=user.agent_id, role=user.role, object_id=rec_id,
                                         request_id=request.state.request_id)
@@ -109,7 +122,8 @@ def case(rec_id: str, request: Request):
 def reasons(request: Request):
     _, _, review = _nba()
     with warehouse(request.app.state.settings) as con:
-        current_user(request, con)
+        user = current_user(request, con)
+        rbac.require(user, "case_view")
     return {"reasons": [{"code": k, "label": v} for k, v in review.REASON_CODES.items()],
             "safeguard_reasons": list(review.SAFEGUARD_REASONS)}
 
@@ -128,8 +142,8 @@ def decide(rec_id: str, body: DecisionIn, request: Request):
         raise ApiError(422, "invalid_input", "Unknown reason code.")
     with warehouse(request.app.state.settings, write=True) as con:
         user = current_user(request, con)
+        rbac.require(user, "approvals" if body.decision in ("approved", "rejected") else "decide")
         if body.decision in ("approved", "rejected"):
-            require_role(user, APPROVER_ROLES)
             require_reauthentication(request)
         _limit(request, user.agent_id)
         try:
@@ -156,7 +170,7 @@ def approve_batch(body: BatchIn, request: Request):
             raise ApiError(422, "invalid_input", "Each pulled-out case needs a known reason code.")
     with warehouse(request.app.state.settings, write=True) as con:
         user = current_user(request, con)
-        require_role(user, review.APPROVERS["digital_batch"])
+        rbac.require(user, "approve_batch")
         require_reauthentication(request)
         _limit(request, user.agent_id)
         try:
@@ -174,6 +188,6 @@ def summary(request: Request, days: int = Query(7, ge=1, le=92)):
     _, agent_view, review = _nba()
     with warehouse(request.app.state.settings) as con:
         user = current_user(request, con)
-        require_role(user, agent_view.SUPERVISORS)
+        rbac.require(user, "decision_review")
         s = review.summary(con, AS_OF - timedelta(days=days - 1), AS_OF)
     return _scrub({"from": AS_OF - timedelta(days=days - 1), "to": AS_OF, **s})

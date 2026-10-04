@@ -1,10 +1,12 @@
+import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, LogOut, ShieldCheck, Clock3 } from 'lucide-react'
 import { Suspense, useState, type ReactNode } from 'react'
 import { Tabs } from 'radix-ui'
 import { NavLink, Outlet } from 'react-router-dom'
-import type { Me } from '@/api/types'
+import { api } from '@/api/client'
+import type { Freshness, Me } from '@/api/types'
 import { useAuth, useIdleLock, useMe } from '@/auth'
-import { Loading } from '@/components/app'
+import { Loading, Notice } from '@/components/app'
 import { SecurityPanel } from '@/components/SecurityPanel'
 import { Wordmark } from '@/components/Wordmark'
 import { Button } from '@/components/ui/button'
@@ -31,26 +33,37 @@ import { dateTime, isoDate } from '@/lib/format'
 import { EMPLOYMENT_LABEL, ROLE_DUTY, ROLE_LABEL, label, languages } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 
+function askLabel(me: Me): string {
+  return me.can.ask_portfolio ? 'Policy & portfolio questions' : 'Policy & case questions'
+}
+
 function navFor(me: Me) {
   return [
+    { to: '/overview', label: 'Overview', show: me.can.overview },
     { to: '/queue', label: 'My work queue', show: me.can.my_queue },
-    { to: '/next-action', label: 'Next best action', show: true },
-    { to: '/approvals', label: 'Team & approvals', show: me.can.approvals },
+    { to: '/next-action', label: 'Next best action', show: me.can.next_action },
+    { to: '/approvals', label: me.can.approve_batch ? 'Team & approvals' : 'Hardship approvals', show: me.can.approvals },
+    { to: '/decision-review', label: 'Decision review', show: me.can.decision_review },
     { to: '/team', label: 'Agent accounts', show: me.can.manage_agents },
-    { to: '/ask', label: 'Ask', show: me.can.ask },
     { to: '/identity', label: 'Identity review', show: me.can.identity_review },
+    { to: '/ask', label: askLabel(me), show: me.can.ask },
     { to: '/status', label: 'Data quality', show: me.can.status },
-    { to: '/tables', label: 'Tables', show: me.demo && me.can.manage_agents },
+    { to: '/audit', label: 'Audit log', show: me.can.audit_log },
+    { to: '/tables', label: 'Tables', show: me.can.tables },
   ].filter((n) => n.show)
 }
 
 function accessList(me: Me): string[] {
   const a: string[] = []
-  if (me.can.my_queue) a.push('Own case queue')
-  if (me.can.approvals) a.push('Approvals')
+  if (me.can.my_queue) a.push('Own case queue and decisions')
+  if (me.can.next_action) a.push(me.role === 'hardship_specialist' ? 'Next best action: hardship and vulnerability customers' : me.can.my_queue ? 'Next best action: your own customers' : 'Next best action: all customers')
+  if (me.can.approvals) a.push(me.can.approve_batch ? 'Approvals: all types, including the digital batch' : 'Approvals: hardship and vulnerability only')
+  if (me.can.decision_review) a.push(me.can.audit_log ? 'Decision review: whole bank' : 'Decision review: your team')
   if (me.can.manage_agents) a.push("Agent accounts: set your agents' passwords")
   if (me.can.identity_review) a.push('Identity review')
-  a.push('Ask', 'Data quality')
+  a.push(askLabel(me))
+  if (me.can.status) a.push('Data quality')
+  if (me.can.audit_log) a.push('Audit log')
   return a
 }
 
@@ -134,6 +147,7 @@ export function Shell() {
           <button type="button" className="flex min-h-8 flex-wrap items-center gap-2 text-left hover:text-brand" onClick={() => { setProfileTab('security'); setProfileOpen(true) }}><ShieldCheck className="size-4" strokeWidth={1.5} aria-hidden="true" />{me.mfa ? 'Multi-factor authentication verified' : 'Demo access: MFA disabled'}<span className="ml-2 text-brand underline underline-offset-4">Session & security</span></button>
           <span className="flex items-center gap-2 tabular-nums"><Clock3 className="size-4" strokeWidth={1.5} aria-hidden="true" />{secondsLeft === null ? 'Automatic session expiry is off for this demo' : `Session expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`}</span>
         </div>
+        {!me.can.status && <DataWarning />}
         <Suspense fallback={<Loading />}>
           <Outlet />
         </Suspense>
@@ -167,6 +181,17 @@ export function Shell() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  )
+}
+
+/** For staff without the Data quality page: a notice only when today's data should not be trusted. */
+function DataWarning() {
+  const q = useQuery({ queryKey: ['freshness'], queryFn: () => api.get<Freshness>('/api/status/freshness'), staleTime: 5 * 60 * 1000 })
+  if (!q.data || q.data.ok) return null
+  return (
+    <div className="mb-6">
+      <Notice tone="warn" title="Today's data may be out of date">{q.data.message}</Notice>
     </div>
   )
 }

@@ -13,6 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
+from .. import rbac
 from ..deps import AS_OF, PORTALS, current_user, lookup_staff, require_reauthentication, require_session, warehouse
 from ..errors import ApiError
 from ..security import SESSION_COOKIE
@@ -47,7 +48,7 @@ def options(request: Request):
 
 
 class Login(BaseModel):
-    role: Literal["team_lead", "agent"]  # the tab chosen on the sign-in page
+    role: Literal["team_lead", "agent", "hardship_specialist", "qa_analyst"]  # the tab chosen on the sign-in page
     staff_id: str = Field(pattern=STAFF_ID)
     password: str = Field(min_length=1, max_length=128)
     verification_code: str = Field(default="", max_length=32)
@@ -122,14 +123,8 @@ def me(request: Request):
         "mfa": sess.mfa,
         "shared_access": s.demo_password is not None,
         "transport_secure": request.url.scheme == "https",
-        "can": {
-            "ask": True,
-            "my_queue": not user.is_supervisor,
-            "approvals": user.role in ("team_lead", "hardship_specialist"),
-            "manage_agents": user.role == "team_lead",
-            "identity_review": user.role in s.identity_reviewer_roles,
-            "status": True,
-        },
+        "can": rbac.can_map(user, s),
+        "approval_kinds": list(rbac.approval_kinds(user.role)),
     }
 
 

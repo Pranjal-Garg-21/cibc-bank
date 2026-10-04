@@ -24,7 +24,7 @@ export function DecisionCard() {
   return (
     <>
       <p className="mb-3 text-sm">
-        <Link to={me.can.my_queue ? '/queue' : '/approvals'}>‹ Back to the queue</Link>
+        <Link to={me.can.my_queue ? '/queue' : me.can.approvals ? '/approvals' : '/next-action'}>‹ {me.can.my_queue ? 'Back to the queue' : me.can.approvals ? 'Back to approvals' : 'Back'}</Link>
       </p>
       {!me.features.queue && <NotConnected feature="Decision cards" owner="P3" />}
       {q.isLoading && <Loading />}

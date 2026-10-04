@@ -144,6 +144,7 @@ class RateLimiter:
     limits: dict[str, list[Limit]] = field(default_factory=lambda: {
         "ask": [Limit(10, 60), Limit(200, 86400)],
         "write": [Limit(60, 60)],
+        "read": [Limit(120, 60)],
         "login": [Limit(5, 60)],
         "reauth": [Limit(5, 60)],
     })

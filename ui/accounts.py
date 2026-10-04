@@ -1,4 +1,5 @@
-"""Manage team lead sign-in accounts (administrators only; run on the server machine).
+"""Manage sign-in accounts for team leads, hardship specialists and QA analysts (administrators only; run on the
+server machine).
 
     python ui/accounts.py add AG-1399              # prompts for the password twice (not echoed)
     python ui/accounts.py add AG-1399 --generate   # creates a random password and prints it once
@@ -6,8 +7,8 @@
     python ui/accounts.py list
     python ui/accounts.py enroll-mfa AG-1399      # service-desk provisioning; confirms a code before saving
 
-Only active team leads get accounts here. Agents' passwords are set by their own team lead in the app
-(Agent accounts page). Passwords are stored only as scrypt hashes, in warehouse/ui_accounts.json (outside git).
+Only active team leads, hardship specialists and QA analysts get accounts here. Agents' passwords are set by
+their own team lead in the app (Agent accounts page). Passwords are stored only as scrypt hashes, in warehouse/ui_accounts.json (outside git).
 Share a generated password with its owner privately.
 """
 from __future__ import annotations
@@ -18,6 +19,9 @@ import secrets
 import string
 import sys
 from pathlib import Path
+
+
+ADMIN_MANAGED = ("team_lead", "hardship_specialist", "qa_analyst")
 
 
 def _staff_status(staff_id: str):
@@ -73,7 +77,7 @@ def main() -> int:
         return 1
     if a.cmd == "enroll-mfa":
         import pyotp
-        if row[1] not in ("agent", "senior_agent", "team_lead") or not store.info(a.staff_id):
+        if row[1] not in ("agent", "senior_agent", *ADMIN_MANAGED) or not store.info(a.staff_id):
             print("An active sign-in account is required first.", file=sys.stderr)
             return 1
         secret = pyotp.random_base32()
@@ -87,9 +91,9 @@ def main() -> int:
         for code in codes:
             print(code)
         return 0
-    if row[1] != "team_lead":
-        print(f"{a.staff_id} is a {row[1].replace('_', ' ')}. Only team leads are set up here; an agent's password is "
-              "set by their team lead in the app.", file=sys.stderr)
+    if row[1] not in ADMIN_MANAGED:
+        print(f"{a.staff_id} is a {row[1].replace('_', ' ')}. Only team leads, hardship specialists and QA analysts are "
+              "set up here; an agent's password is set by their team lead in the app.", file=sys.stderr)
         return 1
     if a.generate:
         password = _generate()
@@ -103,7 +107,8 @@ def main() -> int:
             print("The passwords do not match.", file=sys.stderr)
             return 1
     store.set_password(a.staff_id, password)
-    print(f"Team lead account ready for {a.staff_id}. They sign in with the Team lead option.")
+    tab = {"team_lead": "Team lead", "hardship_specialist": "Hardship", "qa_analyst": "QA"}[row[1]]
+    print(f"Account ready for {a.staff_id} ({row[1].replace('_', ' ')}). They sign in with the {tab} option.")
     if a.generate:
         print(f"Password (shown once, share it privately): {password}")
     return 0

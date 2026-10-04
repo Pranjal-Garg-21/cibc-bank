@@ -86,13 +86,21 @@ def test_identity_decision_validates_input(client):
 
 
 def test_status_and_reports(client):
-    sign_in(client, "A1")
+    sign_in(client, "L1")
     s = client.get("/api/status").json()
     assert s["publish"]["published"] is True and s["rules"][0]["rule_id"] == "Q1"
     assert s["reports"][0]["title"] == "Data quality"
     assert "All good" in client.get("/api/status/reports/data_quality_report.md").json()["markdown"]
     assert client.get("/api/status/reports/..%2Fsettings.yaml").status_code == 404
     assert client.get("/api/status/reports/nope.md").status_code == 404
+
+
+def test_agents_get_freshness_not_data_quality(client):
+    sign_in(client, "A1")
+    assert client.get("/api/session/me").json()["can"]["status"] is False
+    assert client.get("/api/status").status_code == 403
+    assert client.get("/api/status/reports/data_quality_report.md").status_code == 403
+    assert client.get("/api/status/freshness").json()["ok"] is True
 
 
 # --- NBA adapters with fakes ---------------------------------------------------------------------------------
@@ -160,9 +168,11 @@ def test_queue_and_card(client, fake_nba):
     assert client.get("/api/queue/digest").status_code == 403
 
 
-def test_card_access_denied_for_other_agent(client, fake_nba):
+def test_card_not_visible_to_other_agent_looks_like_missing(client, fake_nba):
     sign_in(client, "A2")
-    assert client.get("/api/cases/R1").status_code == 403
+    other, missing = client.get("/api/cases/R1"), client.get("/api/cases/R404")
+    assert other.status_code == missing.status_code == 404
+    assert other.json()["message"] == missing.json()["message"]
 
 
 def test_review_writes_go_through_backend(client, fake_nba):

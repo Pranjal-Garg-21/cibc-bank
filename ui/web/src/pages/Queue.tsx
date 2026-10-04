@@ -1,18 +1,28 @@
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { QueueResponse } from '@/api/types'
 import { useMe } from '@/auth'
 import { DataTable, ErrorState, Figures, Loading, NotConnected, PageHeader, Section, StatusBadge } from '@/components/app'
 import { amount, int, isoDate, pct } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { ACTION_LABEL, APPROVAL_LABEL, STATE_LABEL, STATE_TONE, label } from '@/lib/labels'
 
 export function Queue() {
   const me = useMe()
   const nav = useNavigate()
   const q = useQuery({ queryKey: ['queue', 'mine'], queryFn: () => api.get<QueueResponse>('/api/queue/mine'), enabled: me.features.queue })
-  const rows = q.data?.queue.rows.map((r) => Object.fromEntries(q.data!.queue.columns.map((c, i) => [c, r[i]]))) ?? []
-  const count = (state: string) => rows.filter((r) => r.state === state).length
+  const [params, setParams] = useSearchParams()
+  const state = params.get('state') ?? ''
+  const action = params.get('action') ?? ''
+  const all = q.data?.queue.rows.map((r) => Object.fromEntries(q.data!.queue.columns.map((c, i) => [c, r[i]]))) ?? []
+  const rows = all.filter((r) => (!state || r.state === state) && (!action || r.action === action))
+  const setFilter = (k: 'state' | 'action', v: string) => {
+    const next = new URLSearchParams(params)
+    v && next.get(k) !== v ? next.set(k, v) : next.delete(k)
+    setParams(next, { replace: true })
+  }
+  const count = (st: string) => all.filter((r) => r.state === st).length
 
   return (
     <>
@@ -27,14 +37,31 @@ export function Queue() {
         <div className="space-y-5">
           <Figures
             items={[
-              { label: 'Recommendations', value: int(rows.length), note: `Business date ${isoDate(q.data.as_of_date)}` },
+              { label: 'Recommendations', value: int(all.length), note: `Business date ${isoDate(q.data.as_of_date)}` },
               { label: 'Waiting for your decision', value: int(count('waiting_agent')), tone: count('waiting_agent') ? 'warn' : undefined },
               { label: 'Waiting for approval', value: int(count('waiting_approval')) },
               { label: 'Ready', value: int(count('ready')) },
             ]}
           />
-          <Section title="Cases assigned to you" flush>
+          <Section title={`Cases assigned to you (${int(rows.length)}${rows.length !== all.length ? ` of ${int(all.length)}` : ''})`} flush>
+            <div className="flex flex-wrap items-center gap-2 border-b border-border bg-white p-3" role="group" aria-label="Filter the queue">
+              {Object.entries(STATE_LABEL).filter(([k]) => count(k) > 0).map(([k, v]) => (
+                <button key={k} type="button" aria-pressed={state === k} onClick={() => setFilter('state', k)}
+                  className={cn('rounded-sm border px-3 py-1 text-sm', state === k ? 'border-brand bg-[#f5e3e8] font-bold text-brand-dark' : 'border-border text-muted-foreground hover:border-[#8a8d90]')}>
+                  {v} ({count(k)})
+                </button>
+              ))}
+              {[...new Set(all.map((r) => String(r.action)))].map((a) => (
+                <button key={a} type="button" aria-pressed={action === a} onClick={() => setFilter('action', a)}
+                  className={cn('rounded-sm border px-3 py-1 text-sm', action === a ? 'border-brand bg-[#f5e3e8] font-bold text-brand-dark' : 'border-border text-muted-foreground hover:border-[#8a8d90]')}>
+                  {label(ACTION_LABEL, a)}
+                </button>
+              ))}
+              {(state || action) && <button type="button" className="ml-auto text-sm text-brand underline underline-offset-4" onClick={() => setParams({}, { replace: true })}>Clear filters</button>}
+            </div>
             <DataTable
+              sortable
+              searchable={all.length > 6}
               data={rows}
               rowKey="recommendation_id"
               empty="You have no recommendations today."

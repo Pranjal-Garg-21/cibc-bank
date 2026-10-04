@@ -1,10 +1,11 @@
 // Shared page parts, built on the shadcn components in ./ui and styled like the bank's own sites:
 // white panels with a grey title bar, ledger tables, small rectangular status labels.
-import type { ReactNode } from 'react'
-import { Inbox } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, ChevronsUpDown, Inbox, Search } from 'lucide-react'
 import { ApiError } from '@/api/client'
 import type { Table as TableData } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cell, humanize, isNumeric } from '@/lib/format'
@@ -170,7 +171,8 @@ type Col = {
   render?: (row: Record<string, unknown>) => ReactNode
 }
 
-/** A ledger-style table. `data` is either {columns, rows} from the API or a list of objects. */
+/** A ledger-style table. `data` is either {columns, rows} from the API or a list of objects.
+ *  `sortable` turns the headers into sort buttons; `searchable` adds a box that filters the rows as you type. */
 export function DataTable({
   data,
   columns,
@@ -180,6 +182,8 @@ export function DataTable({
   caption,
   maxRows,
   showEmptyHeaders = false,
+  sortable = false,
+  searchable = false,
 }: {
   data: TableData | Record<string, unknown>[]
   columns?: Col[]
@@ -189,55 +193,93 @@ export function DataTable({
   caption?: string
   maxRows?: number
   showEmptyHeaders?: boolean
+  sortable?: boolean
+  searchable?: boolean
 }) {
-  const objects: Record<string, unknown>[] = Array.isArray(data)
-    ? data
-    : data.rows.map((r) => Object.fromEntries(data.columns.map((c, i) => [c, r[i]])))
+  const [term, setTerm] = useState('')
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
+  const objects: Record<string, unknown>[] = useMemo(
+    () => (Array.isArray(data) ? data : data.rows.map((r) => Object.fromEntries(data.columns.map((c, i) => [c, r[i]])))),
+    [data],
+  )
   const cols: Col[] = columns ?? (Array.isArray(data) ? Object.keys(objects[0] ?? {}) : data.columns).map((k) => ({ key: k }))
-  const shown = maxRows ? objects.slice(0, maxRows) : objects
+  const visible = useMemo(() => {
+    const t = term.trim().toLowerCase()
+    let rows = t ? objects.filter((r) => cols.some((c) => String(r[c.key] ?? '').toLowerCase().includes(t))) : objects
+    if (sort) {
+      rows = [...rows].sort((a, b) => {
+        const x = a[sort.key], y = b[sort.key]
+        if (x == null) return 1
+        if (y == null) return -1
+        return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * sort.dir
+      })
+    }
+    return rows
+  }, [objects, term, sort, cols])
+  const shown = maxRows ? visible.slice(0, maxRows) : visible
   if (!objects.length && (!showEmptyHeaders || !cols.length)) return <Empty>{empty}</Empty>
   const right = (c: Col) => c.align === 'right' || (c.align == null && isNumeric(objects[0]?.[c.key]))
   return (
-    <div className="ledger-table overflow-x-auto rounded-sm border border-border bg-white">
-      <Table aria-label={caption}>
-        {caption && <TableCaption className="sr-only">{caption}</TableCaption>}
-        <TableHeader className="bg-panel">
-          <TableRow className="border-b-input hover:bg-transparent">
-            {cols.map((c) => (
-              <TableHead key={c.key} className={cn('h-11 px-5 text-[13px] font-bold text-foreground', right(c) && 'text-right')}>
-                {c.label ?? humanize(c.key)}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {!shown.length && <TableRow><TableCell colSpan={cols.length} className="px-5 py-8 text-sm text-muted-foreground">{empty}</TableCell></TableRow>}
-          {shown.map((row, i) => (
-            <TableRow
-              key={rowKey ? String(row[rowKey]) : i}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-              onKeyDown={onRowClick ? (e) => {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(row) }
-                if (e.key === 'ArrowDown') { e.preventDefault(); (e.currentTarget.nextElementSibling as HTMLElement | null)?.focus() }
-                if (e.key === 'ArrowUp') { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLElement | null)?.focus() }
-              } : undefined}
-              tabIndex={onRowClick ? 0 : undefined}
-              className={cn('border-b-[#e6e6e6] hover:bg-[#f7f7f7]', onRowClick && 'cursor-pointer focus-visible:bg-[#f5e3e8]')}
-            >
-              {cols.map((c) => (
-                <TableCell key={c.key} className={cn('h-14 px-5 py-3 text-[14px]', c.wrap && 'min-w-64 whitespace-normal', right(c) && 'text-right tabular-nums', c.className)}>
-                  {c.render ? c.render(row) : cell(row[c.key], c.key)}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {maxRows && objects.length > maxRows && (
-        <p className="border-t border-border px-3 py-2 text-xs text-faint">
-          Showing {maxRows} of {objects.length}.
-        </p>
+    <div>
+      {searchable && (
+        <div className="relative border-b border-border bg-white p-3">
+          <Search className="pointer-events-none absolute top-1/2 left-5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Filter this list" aria-label="Filter this list" className="h-9 max-w-sm rounded-sm pl-8" />
+          {term && <span className="ml-3 text-xs text-muted-foreground" role="status">{visible.length} of {objects.length}</span>}
+        </div>
       )}
+      <div className="ledger-table overflow-x-auto rounded-sm border border-border bg-white">
+        <Table aria-label={caption}>
+          {caption && <TableCaption className="sr-only">{caption}</TableCaption>}
+          <TableHeader className="bg-panel">
+            <TableRow className="border-b-input hover:bg-transparent">
+              {cols.map((c) => {
+                const active = sort?.key === c.key
+                const text = c.label ?? humanize(c.key)
+                return (
+                  <TableHead key={c.key} aria-sort={active ? (sort!.dir === 1 ? 'ascending' : 'descending') : undefined}
+                    className={cn('h-11 px-5 text-[13px] font-bold text-foreground', right(c) && 'text-right')}>
+                    {sortable ? (
+                      <button type="button" className={cn('inline-flex items-center gap-1 hover:text-brand', right(c) && 'flex-row-reverse')}
+                        onClick={() => setSort(!active ? { key: c.key, dir: 1 } : sort!.dir === 1 ? { key: c.key, dir: -1 } : null)}>
+                        {text}
+                        {active ? (sort!.dir === 1 ? <ArrowUp className="size-3.5" aria-hidden="true" /> : <ArrowDown className="size-3.5" aria-hidden="true" />) : <ChevronsUpDown className="size-3.5 text-faint" aria-hidden="true" />}
+                      </button>
+                    ) : text}
+                  </TableHead>
+                )
+              })}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {!shown.length && <TableRow><TableCell colSpan={cols.length} className="px-5 py-8 text-sm text-muted-foreground">{term ? 'No rows match your filter.' : empty}</TableCell></TableRow>}
+            {shown.map((row, i) => (
+              <TableRow
+                key={rowKey ? String(row[rowKey]) : i}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={onRowClick ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(row) }
+                  if (e.key === 'ArrowDown') { e.preventDefault(); (e.currentTarget.nextElementSibling as HTMLElement | null)?.focus() }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLElement | null)?.focus() }
+                } : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                className={cn('border-b-[#e6e6e6] hover:bg-[#f7f7f7]', onRowClick && 'cursor-pointer focus-visible:bg-[#f5e3e8]')}
+              >
+                {cols.map((c) => (
+                  <TableCell key={c.key} className={cn('h-14 px-5 py-3 text-[14px]', c.wrap && 'min-w-64 whitespace-normal', right(c) && 'text-right tabular-nums', c.className)}>
+                    {c.render ? c.render(row) : cell(row[c.key], c.key)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {maxRows && visible.length > maxRows && (
+          <p className="border-t border-border px-3 py-2 text-xs text-faint">
+            Showing {maxRows} of {visible.length}.
+          </p>
+        )}
+      </div>
     </div>
   )
 }

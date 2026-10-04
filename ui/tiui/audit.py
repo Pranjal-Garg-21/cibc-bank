@@ -7,7 +7,7 @@ that module is installed. Append only: the API has no endpoint that updates or d
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import duckdb
@@ -42,6 +42,42 @@ class AccessLog:
         except ImportError:
             return None
         return _LockedAudit(AuditLog(self.con()), self._lock)
+
+    def search(self, *, hours: int = 24, user: str = "", action: str = "", outcome: str = "", text: str = "",
+               limit: int = 200) -> tuple[list[dict], dict]:
+        """Newest-first events plus counts for the same window. Parameters are bound, never interpolated.
+        outcome: '' (any), 'ok', 'issues' (anything but ok) or an exact outcome. QA's audit screen only."""
+        where, params = ["ts >= ?"], [datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)]
+        if user:
+            where.append("user_id ILIKE ?"); params.append(f"%{user}%")
+        if action:
+            where.append("action = ?"); params.append(action)
+        if outcome == "issues":
+            where.append("outcome <> 'ok'")
+        elif outcome:
+            where.append("outcome = ?"); params.append(outcome)
+        if text:
+            where.append("(object_id ILIKE ? OR user_id ILIKE ? OR action ILIKE ? OR request_id ILIKE ?)")
+            params += [f"%{text}%"] * 4
+        clause = " AND ".join(where)
+        with self._lock:
+            con = self.con()
+            rows = con.execute(f"""SELECT ts, user_id, role, action, object_id, outcome, request_id FROM ui.access_log
+                                   WHERE {clause} ORDER BY ts DESC LIMIT ?""", [*params, limit]).fetchall()
+            total, issues = con.execute(f"""SELECT count(*), count(*) FILTER (WHERE outcome <> 'ok') FROM ui.access_log
+                                            WHERE {clause}""", params).fetchone()
+            actions = [r[0] for r in con.execute("SELECT DISTINCT action FROM ui.access_log ORDER BY 1").fetchall()]
+            outcomes = [r[0] for r in con.execute("SELECT DISTINCT outcome FROM ui.access_log ORDER BY 1").fetchall()]
+        keys = ("at", "user_id", "role", "action", "object_id", "outcome", "request_id")
+        out = [dict(zip(keys, (r[0].replace(tzinfo=timezone.utc).isoformat(), *r[1:]))) for r in rows]
+        return out, {"total": total, "issues": issues, "actions": actions, "outcomes": outcomes}
+
+    def issues_since(self, hours: int = 24) -> int:
+        """Refused, locked-out or otherwise not-ok events in the window (a headline number, no detail)."""
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
+        with self._lock:
+            return self.con().execute("SELECT count(*) FROM ui.access_log WHERE ts >= ? AND outcome <> 'ok'",
+                                      [since]).fetchone()[0]
 
     def recent_security(self, user_id: str) -> list[dict]:
         """Own authentication events only; no customer object ids, cookies, credentials or other users' events."""

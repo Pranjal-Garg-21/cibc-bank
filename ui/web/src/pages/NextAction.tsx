@@ -47,7 +47,9 @@ export function NextAction() {
         description={
           me.can.my_queue
             ? "Find one of your customers to see today's recommended treatment, channel and timing."
-            : "Find any customer to see today's recommended treatment, channel and timing."
+            : me.role === 'hardship_specialist'
+              ? "Find a hardship or vulnerability customer to see today's recommended treatment, channel and timing."
+              : "Find any customer to see today's recommended treatment, channel and timing."
         }
       />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[20rem_minmax(0,1fr)]">

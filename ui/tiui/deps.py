@@ -20,14 +20,9 @@ from .security import SESSION_COOKIE, Session
 
 _WAREHOUSE_LOCK = threading.Lock()
 
-# Staff roles (agents.role) -> Ask / masking roles (ask.types.ROLES). Open question Q3 in the design note.
-ASK_ROLE = {"agent": "agent", "senior_agent": "agent", "team_lead": "team_lead",
-            "hardship_specialist": "team_lead", "qa_analyst": "analyst"}
-SUPERVISORS = ("team_lead", "hardship_specialist", "qa_analyst")
-# Who can sign in, by the role chosen on the sign-in page. Other roles have no access to this app.
-PORTALS = {"team_lead": ("team_lead",), "agent": ("agent", "senior_agent")}
+# Roles, sign-in tabs and capabilities live in rbac.py (one table, deny by default).
+from .rbac import ASK_ROLE, PORTALS, SIGN_IN_ROLES, SUPERVISORS  # noqa: E402,F401
 AGENT_ROLES = PORTALS["agent"]
-SIGN_IN_ROLES = PORTALS["team_lead"] + PORTALS["agent"]
 
 
 class WarehouseBusy(ApiError):

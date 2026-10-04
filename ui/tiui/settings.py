@@ -31,7 +31,7 @@ class Settings:
     mfa_key: str | None = field(default=None, repr=False)  # UI_MFA_KEY: secret-manager Fernet key
     demo_password: str | None = field(default=None, repr=False)  # temporary shared access, never persisted
     allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "::1")
-    identity_reviewer_roles: tuple[str, ...] = ("team_lead",)
+    identity_reviewer_roles: tuple[str, ...] = ("team_lead", "qa_analyst")
     warehouse: Path = field(default_factory=config.warehouse_path)
     ui_audit: Path = field(default_factory=lambda: config.warehouse_path().parent / "ui_audit.duckdb")
     accounts_file: Path = field(default_factory=lambda: config.warehouse_path().parent / "ui_accounts.json")
@@ -70,6 +70,6 @@ def from_env() -> Settings:
         mfa_key=os.environ.get("UI_MFA_KEY"),
         demo_password=os.environ.get("UI_DEMO_PASSWORD"),
         allowed_hosts=_roles("UI_ALLOWED_HOSTS", "localhost,127.0.0.1,::1"),
-        identity_reviewer_roles=_roles("UI_IDENTITY_REVIEWER_ROLES", "team_lead"),
+        identity_reviewer_roles=_roles("UI_IDENTITY_REVIEWER_ROLES", "team_lead,qa_analyst"),
         **({"accounts_file": Path(os.environ["UI_ACCOUNTS_FILE"])} if os.environ.get("UI_ACCOUNTS_FILE") else {}),
     )

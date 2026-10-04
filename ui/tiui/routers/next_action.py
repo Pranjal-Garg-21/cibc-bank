@@ -1,9 +1,9 @@
 """Next best action by customer: find a customer and see the recommended treatment, channel and timing.
 
 Reads gold.nba_decisions directly (written by P3's nba/queue.py), so it works whether or not trustissues.nba is
-importable in this build. Visibility is the same rule as nba.agent_view.can_see: supervisors see every
-recommendation, an agent sees only those assigned to them. A customer with nothing visible answers 404, so the
-screen never reveals whether someone else's customer exists.
+importable in this build. Who sees which customers comes from rbac.customer_scope: an agent only their own, a
+hardship specialist only hardship, vulnerability and support-call cases, a team lead all, QA none. A customer with
+nothing visible answers 404, so the screen never reveals whether someone else's customer exists.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import re
 import duckdb
 from fastapi import APIRouter, Query, Request
 
+from .. import rbac
 from ..deps import AS_OF, current_user, warehouse
 from ..errors import ApiError, not_connected
 from .nba import _scrub
@@ -24,12 +25,6 @@ SEARCH = r"^[A-Za-z0-9_\-:.]{0,40}$"
 # Same working order as the queue (nba.agent_view.ACTION_ORDER): the first row is the one contact made today.
 ACTION_RANK = "CASE action WHEN 'support_call' THEN 0 WHEN 'agent_call' THEN 1 WHEN 'wait' THEN 3 ELSE 2 END"
 ORDER_SQL = f"{ACTION_RANK}, expected_value DESC NULLS LAST, risk_score DESC NULLS LAST"
-
-
-def _visible(user) -> tuple[str, list]:
-    if user.is_supervisor:
-        return "", []
-    return " AND agent_id = ?", [user.agent_id]
 
 
 def _query(con, sql: str, params: list):
@@ -46,7 +41,8 @@ def search(request: Request, q: str = Query("", max_length=40)):
         raise ApiError(422, "invalid_input", "Customer IDs use letters, numbers and dashes only.")
     with warehouse(request.app.state.settings) as con:
         user = current_user(request, con)
-        where, params = _visible(user)
+        rbac.require(user, "next_action")
+        where, params = rbac.customer_scope(user)
         rows = _query(con, f"""
             SELECT golden_customer_id AS customer_id, count(*) AS cases,
                    arg_min(action, {ACTION_RANK}) AS action,
@@ -65,7 +61,8 @@ def customer(customer_id: str, request: Request):
         raise ApiError(404, "not_found", "No recommendation for this customer today.")
     with warehouse(request.app.state.settings) as con:
         user = current_user(request, con)
-        where, params = _visible(user)
+        rbac.require(user, "next_action")
+        where, params = rbac.customer_scope(user)
         cur = _query(con, f"""
             SELECT recommendation_id, case_id, agent_id, as_of_date, action, channel, risk_score, expected_value,
                    requires_approval, approval_reason, decision_card, model_version

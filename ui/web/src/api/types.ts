@@ -28,7 +28,12 @@ export type Me = {
   mfa: boolean
   transport_secure: boolean
   features: { queue: boolean; ask: boolean; identity: boolean; status: boolean }
-  can: { ask: boolean; my_queue: boolean; approvals: boolean; manage_agents: boolean; identity_review: boolean; status: boolean }
+  can: Record<
+    'overview' | 'my_queue' | 'next_action' | 'case_view' | 'decide' | 'approvals' | 'approve_batch' | 'manage_agents' |
+    'identity_review' | 'decision_review' | 'status' | 'audit_log' | 'tables' | 'ask' | 'ask_case' | 'ask_portfolio',
+    boolean
+  >
+  approval_kinds: string[]
 }
 
 export type TeamAgent = {
@@ -72,6 +77,7 @@ export type AnswerCard = {
 export type QueueResponse = { as_of_date: string; queue: Table }
 
 export type Digest = {
+  approval_kinds?: string[]
   as_of_date: string
   states: Record<string, number>
   batch_pending: number
@@ -187,3 +193,24 @@ export type NextActionRecommendation = {
   card: DecisionCardPayload
 }
 export type NextActionCustomer = { as_of_date: string; customer_id: string; recommendations: NextActionRecommendation[] }
+export type Freshness = { ok: boolean; refreshed_at: string | null; message: string | null }
+
+// /api/overview: a page described by the server for the signed-in role (tiles and sections)
+export type OverviewTile = { id: string; label: string; value: number | null; note: string | null; tone: 'ok' | 'warn' | 'danger' | null; to: string | null; kind: 'percent' | null }
+export type OverviewColumn = { key: string; label: string; kind?: 'percent' | 'money' | 'int'; wrap?: boolean }
+export type OverviewSection =
+  | { id: string; title: string; description: string | null; kind: 'bars'; items: { label: string; value: number; to: string | null }[] }
+  | { id: string; title: string; description: string | null; kind: 'table'; columns: OverviewColumn[]; rows: Record<string, unknown>[]; empty: string }
+export type Overview = { as_of_date: string; role: string; headline: string; intro: string; tiles: OverviewTile[]; sections: OverviewSection[] }
+
+// /api/oversight
+export type DecisionReviewData = {
+  from: string; to: string; days: number; scope: 'team' | 'bank'
+  totals: { decisions: number; accepted: number; overridden: number; override_rate: number | null; approved: number; rejected: number }
+  by_reason: { code: string; label: string; n: number; safeguard: boolean }[]
+  rejections: { code: string; label: string; n: number }[]
+  by_agent: { agent_id: string; name: string | null; decisions: number; overrides: number; rate: number; top_reason: string | null; outlier: boolean }[]
+  by_day: { day: string; decisions: number; overrides: number }[]
+}
+export type AuditEvent = { at: string; user_id: string | null; role: string | null; action: string; object_id: string; outcome: string; request_id: string | null }
+export type AuditData = { hours: number; events: AuditEvent[]; total: number; issues: number; actions: string[]; outcomes: string[] }

@@ -12,10 +12,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-type Role = 'team_lead' | 'agent'
-const ROLES: { id: Role; label: string; hint: string; help: string }[] = [
-  { id: 'agent', label: 'Agent', hint: 'Use your staff ID and the password your team lead gave you.', help: 'Forgot your password or locked out? Ask your team lead to reset it.' },
-  { id: 'team_lead', label: 'Team lead', hint: 'Use your staff ID and password.', help: 'Forgot your password or locked out? Contact the service desk.' },
+type Role = 'team_lead' | 'agent' | 'hardship_specialist' | 'qa_analyst'
+const ROLES: { id: Role; label: string; full: string; hint: string; help: string }[] = [
+  { id: 'agent', label: 'Agent', full: 'agent', hint: 'Use your staff ID and the password your team lead gave you.', help: 'Forgot your password or locked out? Ask your team lead to reset it.' },
+  { id: 'team_lead', label: 'Team lead', full: 'team lead', hint: 'Use your staff ID and password.', help: 'Forgot your password or locked out? Contact the service desk.' },
+  { id: 'hardship_specialist', label: 'Hardship', full: 'hardship specialist', hint: 'Hardship and vulnerability desk. Use your staff ID and password.', help: 'Forgot your password or locked out? Contact the service desk.' },
+  { id: 'qa_analyst', label: 'QA', full: 'QA analyst', hint: 'Quality assurance. Use your staff ID and password.', help: 'Forgot your password or locked out? Contact the service desk.' },
 ]
 
 /** No staff information is fetched or shown before authentication. */
@@ -80,12 +82,12 @@ export function SignIn() {
                 <Notice tone="warn" title="Sign-in is not set up on this server">Ask your administrator to create your account.</Notice>
               ) : (
                 <Tabs.Root value={role} onValueChange={(value) => { setRole(value as Role); login.reset(); setPassword(''); setCode(''); setShown(false) }}>
-                  <Tabs.List aria-label="Sign in as" className="mb-5 grid grid-cols-2 gap-1 rounded-sm border border-border bg-panel p-1">
+                  <Tabs.List aria-label="Sign in as" className="mb-5 grid grid-cols-2 gap-1 rounded-sm border border-border bg-panel p-1 sm:grid-cols-4">
                     {ROLES.map((r) => <Tabs.Trigger key={r.id} value={r.id} disabled={login.isPending}
-                      className="min-h-11 rounded-sm border border-transparent px-3 text-[14px] text-muted-foreground data-[state=active]:border-border data-[state=active]:bg-white data-[state=active]:font-bold data-[state=active]:text-brand-dark">{r.label}</Tabs.Trigger>)}
+                      className="min-h-11 rounded-sm border border-transparent px-2 text-[14px] whitespace-nowrap text-muted-foreground data-[state=active]:border-border data-[state=active]:bg-white data-[state=active]:font-bold data-[state=active]:text-brand-dark">{r.label}</Tabs.Trigger>)}
                   </Tabs.List>
                   <Tabs.Content value={role}>
-                    <form aria-label={current.label + ' sign-in'} onSubmit={(e) => { e.preventDefault(); if (staffId.trim() && password && !login.isPending) login.mutate() }}>
+                    <form aria-label={current.full + ' sign-in'} onSubmit={(e) => { e.preventDefault(); if (staffId.trim() && password && !login.isPending) login.mutate() }}>
                       <p className="mb-5 text-sm text-muted-foreground">{current.hint}</p>
                       <div className="mb-5">
                         <Label htmlFor="staff-id" className="mb-2 text-sm font-bold">Staff ID</Label>
@@ -116,7 +118,7 @@ export function SignIn() {
                         {login.error instanceof ApiError ? login.error.message : 'Sign-in failed. Try again.'}
                       </p>}
                       <Button type="submit" size="lg" className="w-full justify-between" disabled={login.isPending || !o}>
-                        {login.isPending ? 'Signing in…' : 'Sign in as ' + current.label.toLowerCase()}<ArrowRight aria-hidden="true" strokeWidth={1.5} />
+                        {login.isPending ? 'Signing in…' : 'Sign in as ' + current.full}<ArrowRight aria-hidden="true" strokeWidth={1.5} />
                       </Button>
                       <p className="mt-5 text-[13px] leading-relaxed text-muted-foreground">{current.help}</p>
                     </form>

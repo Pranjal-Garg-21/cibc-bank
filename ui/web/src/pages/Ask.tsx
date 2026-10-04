@@ -32,12 +32,12 @@ export function Ask() {
   return (
     <>
       <PageHeader
-        title="Ask"
-        description="Ask about collections performance or policy. Where a certified metric exists, the answer uses it and says so."
+        title={me.can.ask_portfolio ? 'Policy & portfolio questions' : 'Policy & case questions'}
+        description={me.can.ask_portfolio ? 'Ask about collections performance or policy. Where a certified metric exists, the answer uses it and says so.' : 'Ask about collections policy, or about a case assigned to you (for example, CS-2026-100001).'}
       />
       {!me.features.ask && (
         <div className="mb-5">
-          <NotConnected feature="Ask" owner="P2" />
+          <NotConnected feature="Questions" owner="P2" />
         </div>
       )}
       <form

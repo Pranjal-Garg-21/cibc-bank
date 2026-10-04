@@ -1,7 +1,7 @@
 # TrustIssues web UI
 
 A web console for the collections system, styled with CIBC's brand colours and built with shadcn/ui: **Ask**, **My queue**, **Decision card**,
-**Team & approvals**, **Identity review** and **Data status**. Design: [`docs/ui_design.md`](../docs/ui_design.md).
+**Team & approvals**, **Identity review** and **Data status**. Design: [`docs/ui_design.md`](../docs/ui_design.md); current decisions and their reasoning: [`docs/ui_decisions.md`](../docs/ui_decisions.md).
 
 ```
 ui/
@@ -21,7 +21,7 @@ python ui/accounts.py enroll-mfa AG-1399     # verify identity, pair authenticat
 python ui/serve.py --demo                    # http://127.0.0.1:8000
 ```
 
-The sign-in page has two roles, **Team lead** and **Agent**.
+The sign-in page has four tabs: **Agent**, **Team lead**, **Hardship** and **QA**.
 
 - **Team leads**: an administrator creates their account on the server: `python ui/accounts.py add <staff id>`
   (team leads only; `--generate` makes a random password, printed once; also `remove`, `list`).
@@ -40,6 +40,25 @@ sessions and recovery codes. Password resets preserve the enrolled authenticator
 Set `UI_MFA_KEY` to a Fernet key supplied by your secret manager before provisioning and serving deployed
 accounts. The local fallback creates a private `ui_accounts.mfa.key` beside the accounts file; back up the key
 and accounts together outside git. Losing or replacing the key without migrating secrets prevents MFA login.
+
+## Roles and access
+
+Every route asks one table, `ui/tiui/rbac.py`, what the signed-in role may do (deny by default; the menu is built from
+the same table but is only a convenience). Each role has its own sign-in tab and its own first screen.
+
+| Role (`agents.role`) | Tab | Screens | Customers it may open |
+|---|---|---|---|
+| `agent`, `senior_agent` | Agent | Overview, My work queue, Next best action, Policy & case questions | Own recommendations only |
+| `team_lead` | Team lead | Overview, Next best action, Team & approvals, Decision review (own team), Agent accounts, Identity review, Policy & portfolio questions, Data quality | All |
+| `hardship_specialist` | Hardship | Overview, Next best action, Hardship approvals, Policy & case questions | Hardship, vulnerability and support-call cases only |
+| `qa_analyst` | QA | Overview, Decision review (whole bank), Identity review, Policy & portfolio questions, Data quality, Audit log | None: aggregates only |
+
+Separation of duties: agents decide only their own cases and approve nothing; hardship specialists approve only
+hardship and vulnerability cases; only team leads approve high balances and the digital batch; QA can approve or
+change nothing and never opens a customer's case. A case a role may not see answers 404, the same as one that does
+not exist. Each overview is assembled on the server for the role, so the browser never receives figures its role may not
+see. Accounts for team leads, hardship specialists and QA analysts are created by an administrator with
+`ui/accounts.py add`; agents' passwords are set by their team lead in the app.
 
 ## Isolated design preview
 
@@ -67,10 +86,25 @@ python ui/preview.py                         # http://127.0.0.1:8000
 python ui/preview.py --mfa                   # optional authenticator flow; prints demo setup keys
 ```
 
-Choose **Team lead**, staff ID **DEMO-L1**, password **Preview-only-2026!**. Agent **DEMO-A1** has the same demo
-password. This preview uses a private, temporary synthetic warehouse and never opens the project's account or
-customer files. Closing it removes its data. The default preview visibly disables MFA; only labelled demos
-accept `UI_REQUIRE_MFA=0`. The regular server keeps MFA enabled unless explicitly configured otherwise.
+The preview seeds one account per role, each with its own password, and a believable day of work (about 50
+recommendations, two weeks of past decisions, one agent who overrides far more than the rest). Pick the matching tab
+on the sign-in page:
+
+| Tab | Staff ID | Password | Person |
+|---|---|---|---|
+| Agent | `DEMO-A1` | `Agent-Maya-2026!` | Maya Patel, agent |
+| Agent | `DEMO-A2` | `Senior-Oliver-2026!` | Oliver Chen, senior agent |
+| Agent | `DEMO-A3` | `Agent-Camille-2026!` | Camille Roy, agent (not vulnerable-customer certified) |
+| Team lead | `DEMO-L1` | `Lead-Avery-2026!` | Avery Laurent |
+| Hardship | `DEMO-H1` | `Hardship-Noor-2026!` | Noor Haddad, hardship specialist |
+| QA | `DEMO-Q1` | `Quality-Priya-2026!` | Priya Raman, QA analyst |
+
+These are demo-only credentials for synthetic data; they are printed when the preview starts and open nothing else.
+The preview uses stand-ins for P3's queue/review module and P2's Ask (`ui/preview_backend.py`) that follow the same
+role rules, so every screen works end to end. The real server never imports them. This preview uses a private,
+temporary synthetic warehouse and never opens the project's account or customer files. Closing it removes its data.
+The default preview visibly disables MFA; only labelled demos accept `UI_REQUIRE_MFA=0`. The regular server keeps
+MFA enabled unless explicitly configured otherwise.
 
 `--demo` shows the DEMO ENVIRONMENT tag. Other switches: `--dev` (accepts the Vite dev server and serves
 `/api/docs`), `--ask-llm` (lets Ask use the language model and policy search), `--port`, `--accounts-file`.

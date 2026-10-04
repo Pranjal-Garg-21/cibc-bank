@@ -1,5 +1,8 @@
 # TrustIssues: UI Implementation Design (v0.2)
 
+**Current decisions and the reasoning behind them are in [`ui_decisions.md`](ui_decisions.md).** Where this document disagrees
+(five roles and four dashboards instead of two sign-in roles, a light theme instead of dark, role-scoped screens), that file wins.
+
 **2026-10-04 implementation update:** the `ui/banking-polish-security` branch refines the existing CIBC
 interface and extends authentication with MFA, recovery codes, fresh verification and session management.
 The previous pushed baseline is `3c87423`, also recorded by tag `rollback-ui-3c87423` on GitHub.
@@ -538,12 +541,12 @@ the first screen that shows customer data.
 |---|---|---|
 | Q1 | Is serving the UI from the full warehouse fine for the demo, or should it read a copied "serving" file? | P1 / all |
 | Q2 | ~~Where does the UI read the identity queue?~~ Answered: the build already publishes `gold.identity_review_queue`. | P1 |
-| Q3 | Role mapping in §7, especially `hardship_specialist` for Ask. | P2 |
+| Q3 | Role mapping in §7, especially `hardship_specialist` for Ask. Interim answer: `hardship_specialist` maps to Ask role `agent` (policy and own cases); see `ui_decisions.md` D8. | P2 |
 | Q4 | Which LLM and RAG settings does the live Ask use in the demo (`--llm` equivalent on or off)? | P2 / P4 |
 | Q5 | Customer lookups: `ask()` takes a `resolver`; which function does the UI pass (P4's `customer_path`)? | P4 |
 | Q6 | Accent colour and product name on screen. | team |
 | Q7 | Is P2's `governance/masking.py` (with `config/masking.yaml`) the agreed masking rule set for the UI? | P2 |
-| Q8 | Which staff may use Identity Review? v1: team leads (QA analysts have no sign-in in the two-role design). | P1 |
+| Q8 | ~~Which staff may use Identity Review?~~ Answered: team leads and QA analysts (QA now has its own sign-in); see `ui_decisions.md` §2. | P1 |
 
 ---
 

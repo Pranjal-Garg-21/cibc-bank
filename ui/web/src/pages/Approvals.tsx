@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { Digest, Reasons, ReviewSummary } from '@/api/types'
 import { useMe } from '@/auth'
 import { DataTable, ErrorState, Figures, Loading, NotConnected, Notice, PageHeader, Section } from '@/components/app'
+import { cn } from '@/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +25,9 @@ export function Approvals() {
   const nav = useNavigate()
   const qc = useQueryClient()
   const digest = useQuery({ queryKey: ['digest'], queryFn: () => api.get<Digest>('/api/queue/digest'), enabled: me.features.queue })
-  const summary = useQuery({ queryKey: ['summary'], queryFn: () => api.get<ReviewSummary>('/api/review/summary?days=7'), enabled: me.features.queue })
+  const summary = useQuery({ queryKey: ['summary'], queryFn: () => api.get<ReviewSummary>('/api/review/summary?days=7'), enabled: me.features.queue && me.can.decision_review })
+  const [params, setParams] = useSearchParams()
+  const reason = params.get('reason') ?? ''
   const [confirm, setConfirm] = useState(false)
   const batch = useMutation({
     mutationFn: () => api.post<{ result: unknown }>('/api/review-batch', { rejected: {} }),
@@ -34,19 +37,25 @@ export function Approvals() {
       void qc.invalidateQueries({ queryKey: ['summary'] })
     },
   })
-  const isLead = me.role === 'team_lead'
+  const isLead = me.can.approve_batch
   const d = digest.data
+  const allRows = (d?.pending.rows ?? []).map((r) => Object.fromEntries((d?.pending.columns ?? []).map((c, i) => [c, r[i]])))
+  const pendingRows = reason ? allRows.filter((r) => r.approval_reason === reason) : allRows
 
   return (
     <>
-      <PageHeader title="Team & approvals" description="Where today's recommendations stand across the team, and the approvals waiting on you." />
+      <PageHeader
+        title={isLead ? 'Team & approvals' : 'Hardship & vulnerability approvals'}
+        description={isLead ? "Where today's recommendations stand across the team, and the approvals waiting on you." : 'Customers who may be struggling or vulnerable. Check the card, then approve or reject. You cannot approve high balances or the digital batch.'}
+      />
       {!me.features.queue && <NotConnected feature="Approvals" owner="P3" />}
       {digest.isLoading && <Loading />}
       {digest.error && <ErrorState error={digest.error} onRetry={() => digest.refetch()} />}
       {d && (
         <div className="space-y-5">
-          <Figures items={Object.entries(STATE_LABEL).map(([k, v]) => ({ label: v, value: int(d.states[k] ?? 0), tone: k === 'blocked' && d.states[k] ? 'danger' : undefined }))} />
+          {isLead && <Figures items={Object.entries(STATE_LABEL).map(([k, v]) => ({ label: v, value: int(d.states[k] ?? 0), tone: k === 'blocked' && d.states[k] ? 'danger' : undefined }))} />}
 
+          {isLead && (
           <Section
             title="Daily digital batch"
             description={`Business date ${isoDate(d.as_of_date)}`}
@@ -73,13 +82,24 @@ export function Approvals() {
               </div>
             )}
           </Section>
+          )}
 
-          <Section title={`Waiting for approval (${int(d.pending.rows.length)})`} description="Open a case to approve or reject it" flush>
+          <Section title={`Waiting for approval (${int(pendingRows.length)})`} description="Open a case to approve or reject it" flush>
+            <div className="flex flex-wrap gap-2 border-b border-border bg-white p-3" role="group" aria-label="Filter by approval type">
+              {[{ k: '', n: allRows.length }, ...(d.approval_kinds ?? []).filter((k) => k !== 'digital_batch').map((k) => ({ k, n: allRows.filter((r) => r.approval_reason === k).length }))].map(({ k, n }) => (
+                <button key={k || 'all'} type="button" aria-pressed={reason === k} onClick={() => setParams(k ? { reason: k } : {}, { replace: true })}
+                  className={cn('rounded-sm border px-3 py-1 text-sm', reason === k ? 'border-brand bg-[#f5e3e8] font-bold text-brand-dark' : 'border-border text-muted-foreground hover:border-[#8a8d90]')}>
+                  {k ? label(APPROVAL_LABEL, k) : 'All'} ({n})
+                </button>
+              ))}
+            </div>
             <DataTable
-              data={d.pending}
+              data={pendingRows}
               rowKey="recommendation_id"
               empty="Nothing is waiting for approval."
               caption="Waiting for approval"
+              sortable
+              searchable={allRows.length > 6}
               onRowClick={(r) => nav(`/cases/${encodeURIComponent(String(r.recommendation_id))}`)}
               columns={[
                 { key: 'recommendation_id', label: 'Recommendation' },
@@ -90,7 +110,7 @@ export function Approvals() {
             />
           </Section>
 
-          <WeeklyReview summary={summary.data} error={summary.error} />
+          {me.can.decision_review && <WeeklyReview summary={summary.data} error={summary.error} />}
         </div>
       )}
 

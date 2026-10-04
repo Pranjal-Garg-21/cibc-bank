@@ -15,6 +15,9 @@ import { SignIn } from '@/pages/SignIn'
 const Ask = lazy(() => import('@/pages/Ask').then((m) => ({ default: m.Ask })))
 const Shell = lazy(() => import('@/components/Shell').then((m) => ({ default: m.Shell })))
 const Queue = lazy(() => import('@/pages/Queue').then((m) => ({ default: m.Queue })))
+const Overview = lazy(() => import('@/pages/Overview').then((m) => ({ default: m.Overview })))
+const DecisionReview = lazy(() => import('@/pages/DecisionReview').then((m) => ({ default: m.DecisionReview })))
+const AuditLog = lazy(() => import('@/pages/AuditLog').then((m) => ({ default: m.AuditLog })))
 const NextAction = lazy(() => import('@/pages/NextAction').then((m) => ({ default: m.NextAction })))
 const Approvals = lazy(() => import('@/pages/Approvals').then((m) => ({ default: m.Approvals })))
 const DecisionCard = lazy(() => import('@/pages/DecisionCard').then((m) => ({ default: m.DecisionCard })))
@@ -41,12 +44,7 @@ const queryClient = new QueryClient({
 })
 
 function Home() {
-  const { me } = useAuth()
-  if (!me) return null
-  if (me.can.my_queue && me.features.queue) return <Navigate to="/queue" replace />
-  if (me.can.approvals && me.features.queue) return <Navigate to="/approvals" replace />
-  if (me.can.manage_agents) return <Navigate to="/team" replace />
-  return <Navigate to="/ask" replace />
+  return <Navigate to="/overview" replace />
 }
 
 function Guard({ allow, children }: { allow: boolean; children: ReactNode }) {
@@ -67,18 +65,21 @@ function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Home />} />
-        <Route path="ask" element={<Ask />} />
+        <Route path="ask" element={<Guard allow={me.can.ask}><Ask /></Guard>} />
         <Route path="queue" element={<Guard allow={me.can.my_queue}><Queue /></Guard>} />
-        <Route path="next-action" element={<NextAction />} />
+        <Route path="overview" element={<Guard allow={me.can.overview}><Overview /></Guard>} />
+        <Route path="next-action" element={<Guard allow={me.can.next_action}><NextAction /></Guard>} />
+        <Route path="decision-review" element={<Guard allow={me.can.decision_review}><DecisionReview /></Guard>} />
+        <Route path="audit" element={<Guard allow={me.can.audit_log}><AuditLog /></Guard>} />
         <Route path="approvals" element={<Guard allow={me.can.approvals}><Approvals /></Guard>} />
         <Route path="team" element={<Guard allow={me.can.manage_agents}><TeamAccounts /></Guard>} />
-        <Route path="cases/:recId" element={<DecisionCard />} />
+        <Route path="cases/:recId" element={<Guard allow={me.can.case_view}><DecisionCard /></Guard>} />
         <Route path="identity" element={<Guard allow={me.can.identity_review}><IdentityQueuePage /></Guard>} />
         <Route path="identity/:pairId" element={<Guard allow={me.can.identity_review}><IdentityPairPage /></Guard>} />
-        <Route path="status" element={<StatusPage />} />
-        <Route path="tables" element={<Guard allow={me.demo && me.can.manage_agents}><Tables /></Guard>} />
-        <Route path="tables/:schema/:name" element={<Guard allow={me.demo && me.can.manage_agents}><Tables /></Guard>} />
-        <Route path="status/reports/:name" element={<ReportPage />} />
+        <Route path="status" element={<Guard allow={me.can.status}><StatusPage /></Guard>} />
+        <Route path="tables" element={<Guard allow={me.can.tables}><Tables /></Guard>} />
+        <Route path="tables/:schema/:name" element={<Guard allow={me.can.tables}><Tables /></Guard>} />
+        <Route path="status/reports/:name" element={<Guard allow={me.can.status}><ReportPage /></Guard>} />
         <Route path="*" element={<ErrorState error={new ApiError(404, 'not_found', 'This page does not exist.', null)} />} />
       </Route>
     </Routes>

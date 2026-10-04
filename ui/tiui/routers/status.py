@@ -1,4 +1,7 @@
-"""Data status: the last publish attempt, the contract rule results, gold row counts and the reports (read-only)."""
+"""Data status: the last publish attempt, the contract rule results, gold row counts and the reports (read-only).
+
+The full page is for the roles holding the data_quality capability (team leads, QA). Everyone else gets /freshness only: whether today's data can be
+trusted, with no rule detail or table counts."""
 from __future__ import annotations
 
 import re
@@ -6,6 +9,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 
+from .. import rbac
 from ..deps import AS_OF, current_user, warehouse
 from ..errors import ApiError
 from ..serialize import jsonable
@@ -27,11 +31,30 @@ def _reports(reports_dir):
     return out
 
 
+@router.get("/freshness")
+def freshness(request: Request):
+    """For every role: is today's data safe to work from? Says only what an agent needs to know."""
+    with warehouse(request.app.state.settings) as con:
+        current_user(request, con)
+        tables = {r[0] for r in con.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'gold'").fetchall()}
+        publish = con.execute("""SELECT attempt_ts, published FROM gold._publish_log ORDER BY attempt_ts DESC
+                                 LIMIT 1""").fetchone() if "_publish_log" in tables else None
+    if publish is None:
+        return {"ok": False, "refreshed_at": None,
+                "message": "Today's data refresh has not run. Recommendations may be missing or out of date."}
+    if not publish[1]:
+        return jsonable({"ok": False, "refreshed_at": publish[0],
+                         "message": "Today's data refresh was stopped by a quality check. Recommendations may be out "
+                                    "of date: check with your team lead before acting on them."})
+    return jsonable({"ok": True, "refreshed_at": publish[0], "message": None})
+
+
 @router.get("")
 def status(request: Request):
     s = request.app.state.settings
     with warehouse(s) as con:
-        current_user(request, con)
+        rbac.require(current_user(request, con), "data_quality")
         tables = {r[0] for r in con.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'gold'").fetchall()}
         publish = con.execute("""SELECT attempt_ts, published, failed_rules, warned_rules, secs FROM gold._publish_log
@@ -53,7 +76,7 @@ def status(request: Request):
 def report(name: str, request: Request):
     s = request.app.state.settings
     with warehouse(s) as con:
-        current_user(request, con)
+        rbac.require(current_user(request, con), "data_quality")
     path = s.reports_dir / name
     if not REPORT_NAME.match(name) or not path.is_file() or path.resolve().parent != s.reports_dir.resolve():
         raise ApiError(404, "not_found", "No such report.")
