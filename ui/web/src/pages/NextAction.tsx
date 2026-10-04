@@ -2,14 +2,17 @@ import { useQuery } from '@tanstack/react-query'
 import { Clock3, Mail, MessageSquare, Phone, Search, Send, Smartphone, Target, type LucideIcon } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { api, qs } from '@/api/client'
+import { api, live, qs } from '@/api/client'
+import { Button } from '@/components/ui/button'
 import type { NextActionCustomer, NextActionRecommendation, NextActionSearch } from '@/api/types'
 import { useMe } from '@/auth'
 import { Empty, ErrorState, Loading, PageHeader, Section, StatusBadge } from '@/components/app'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { cad, humanize, isoDate, pct } from '@/lib/format'
-import { ACTION_LABEL, APPROVAL_LABEL, CHANNEL_LABEL, SUPPORT_LABEL, label } from '@/lib/labels'
+import { cad, humanize, int, isoDate, pct } from '@/lib/format'
+import { ACTION_LABEL, APPROVAL_LABEL, BATCH_EXPLAINED, CHANNEL_LABEL, STATE_LABEL, STATE_TONE, SUPPORT_LABEL, label } from '@/lib/labels'
+
+const PAGE_SIZE = 50
 import { cn } from '@/lib/utils'
 
 const CHANNEL_ICON: Record<string, LucideIcon> = { phone: Phone, sms: MessageSquare, email: Mail, mail: Send, push: Smartphone }
@@ -29,15 +32,21 @@ export function NextAction() {
   const selected = params.get('customer')
   const [text, setText] = useState('')
   const term = useDebounced(text.trim())
+  const [page, setPage] = useState(1)
+  useEffect(() => setPage(1), [term])
 
+  // every customer the role may see, a page at a time (the list used to stop at the first 20)
   const search = useQuery({
-    queryKey: ['next-action', 'search', term],
-    queryFn: () => api.get<NextActionSearch>(`/api/next-action/customers${qs({ q: term })}`),
+    queryKey: ['next-action', 'search', term, page],
+    queryFn: () => api.get<NextActionSearch>(`/api/next-action/customers${qs({ q: term, page, page_size: PAGE_SIZE })}`),
+    placeholderData: (prev) => prev,
   })
+  const pages = search.data ? Math.max(1, Math.ceil(search.data.total / PAGE_SIZE)) : 1
   const detail = useQuery({
     queryKey: ['next-action', 'customer', selected],
-    queryFn: () => api.get<NextActionCustomer>(`/api/next-action/customers/${encodeURIComponent(selected!)}`),
+    queryFn: () => api.poll<NextActionCustomer>(`/api/next-action/customers/${encodeURIComponent(selected!)}`),
     enabled: !!selected,
+    ...live, // an approval given elsewhere shows here within 20 s
   })
 
   return (
@@ -45,10 +54,10 @@ export function NextAction() {
       <PageHeader
         title="Next best action"
         description={
-          me.can.my_queue
-            ? "Find one of your customers to see today's recommended treatment, channel and timing."
-            : me.role === 'hardship_specialist'
-              ? "Find a hardship or vulnerability customer to see today's recommended treatment, channel and timing."
+          me.role === 'hardship_specialist'
+            ? "Find a hardship or vulnerability customer to see today's recommended treatment, channel and timing."
+            : me.can.my_queue
+              ? "Find one of your customers to see today's recommended treatment, channel and timing."
               : "Find any customer to see today's recommended treatment, channel and timing."
         }
       />
@@ -101,6 +110,17 @@ export function NextAction() {
               ))}
             </ul>
           ))}
+          {search.data && search.data.total > 0 && (
+            <nav aria-label="Customer list pages" className="flex items-center justify-between gap-2 border-t border-border px-4 py-3 text-[13px] text-muted-foreground">
+              <span role="status">
+                {int((page - 1) * PAGE_SIZE + 1)}–{int(Math.min(page * PAGE_SIZE, search.data.total))} of {int(search.data.total)}
+              </span>
+              <span className="flex gap-2">
+                <Button size="sm" variant="outline" disabled={page <= 1 || search.isFetching} onClick={() => setPage((n) => n - 1)}>Previous</Button>
+                <Button size="sm" variant="outline" disabled={page >= pages || search.isFetching} onClick={() => setPage((n) => n + 1)}>Next</Button>
+              </span>
+            </nav>
+          )}
         </Section>
 
         <div>
@@ -283,20 +303,31 @@ function Timing({ rec, asOf }: { rec: NextActionRecommendation; asOf: string }) 
           : ['Any time today', `${day}; delivered, not a live contact`]
   return (
     <Pillar step={3} title="Timing" icon={Clock3} headline={headline} sub={sub}>
-      <Detail title="Approval">
-        {rec.requires_approval ? (
-          <p>
-            <StatusBadge tone="warn">Needs approval</StatusBadge>{' '}
-            <span className="text-muted-foreground">
-              {rec.approval_reason === 'digital_batch'
-                ? 'Goes out once the team lead approves the daily digital batch.'
-                : `Goes ahead after ${label(APPROVAL_LABEL, rec.approval_reason).toLowerCase()} approval.`}
-            </span>
-          </p>
-        ) : (
-          <p className="text-muted-foreground">No approval needed.</p>
-        )}
+      <Detail title="Where it stands">
+        <ApprovalState rec={rec} />
       </Detail>
     </Pillar>
+  )
+}
+
+/** The live state (gold.nba_overrides), not the static requires_approval flag: once a specialist or team lead has
+ * approved the case it reads "Approved", then "Cleared" or "Done". */
+function ApprovalState({ rec }: { rec: NextActionRecommendation }) {
+  const st = rec.status ?? { state: null, approval: rec.requires_approval ? 'pending' : 'not_needed', agent: null, completed: false, outcome: null }
+  const kind = label(APPROVAL_LABEL, rec.approval_reason).toLowerCase()
+  const state = st.state ? <StatusBadge tone={STATE_TONE[st.state] ?? 'neutral'}>{label(STATE_LABEL, st.state)}</StatusBadge> : null
+  const note =
+    st.state === 'overridden' ? 'The assigned agent overrode it: it will not be carried out today.'
+      : st.state === 'blocked' ? `Rejected at ${kind} approval: it will not be carried out today.`
+        : st.state === 'done' ? (st.completed ? 'The call has been made and marked complete.' : 'The agent accepted waiting today.')
+          : st.approval === 'pending'
+            ? rec.approval_reason === 'digital_batch' ? `Waiting for the team lead to approve today's batch. ${BATCH_EXPLAINED}` : `Waiting for ${kind} approval.`
+            : st.state === 'waiting_agent' ? `${st.approval === 'approved' ? `Approved (${kind}). ` : ''}Waiting for the assigned agent to accept it.`
+              : st.approval === 'approved' ? `Approved (${kind}). Cleared to carry out.`
+                : st.state === 'ready' ? 'No approval needed. Cleared to carry out.' : 'No approval needed.'
+  return (
+    <p>
+      {state} <span className="text-muted-foreground">{note}</span>
+    </p>
   )
 }

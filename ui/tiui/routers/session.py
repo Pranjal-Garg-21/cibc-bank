@@ -1,20 +1,20 @@
 """Sign-in, sign-out and who you are (§9.1).
 
-Staff sign in with their staff ID and password (accounts made by an administrator with ui/accounts.py). Nothing
-about any member of staff is available before sign-in, and a failed sign-in never says whether the staff ID exists.
+Staff sign in with their staff ID and password (accounts made by an administrator with ui/accounts.py) on one form
+for every role. The browser never chooses or sends a role: the server reads it from curated.agents.role after the
+password is checked, and the app opens that role's screens. Nothing about any member of staff is available before
+sign-in, and a failed sign-in never says whether the staff ID exists.
 """
 from __future__ import annotations
 
 import importlib.util
 import sys
 
-from typing import Literal
-
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .. import rbac
-from ..deps import AS_OF, PORTALS, current_user, lookup_staff, require_reauthentication, require_session, warehouse
+from ..deps import AS_OF, SIGN_IN_ROLES, check_credentials, current_user, lookup_staff, require_reauthentication, require_session, warehouse
 from ..errors import ApiError
 from ..security import SESSION_COOKIE
 
@@ -48,7 +48,7 @@ def options(request: Request):
 
 
 class Login(BaseModel):
-    role: Literal["team_lead", "agent", "hardship_specialist", "qa_analyst"]  # the tab chosen on the sign-in page
+    model_config = ConfigDict(extra="forbid")  # a role (or anything else) sent by the browser is refused, not used
     staff_id: str = Field(pattern=STAFF_ID)
     password: str = Field(min_length=1, max_length=128)
     verification_code: str = Field(default="", max_length=32)
@@ -75,8 +75,9 @@ def login(body: Login, request: Request, response: Response):
     if ok:
         with warehouse(app.settings) as con:
             user = lookup_staff(con, staff_id)
-    # Wrong role for the chosen tab fails exactly like a wrong password: nothing is revealed about the account.
-    ok = ok and user is not None and user.status == "active" and user.role in PORTALS[body.role]
+    # The role is the warehouse's (curated.agents.role), never the browser's. A member of staff who is inactive or
+    # whose role has no screens here fails exactly like a wrong password: nothing is revealed about the account.
+    ok = ok and user is not None and user.status == "active" and user.role in SIGN_IN_ROLES
     mfa = app.accounts.has_mfa(staff_id)
     if ok and (app.settings.require_mfa or mfa):
         ok = app.accounts.verify_mfa(staff_id, body.verification_code)
@@ -155,20 +156,7 @@ def reauthenticate(body: Reauthenticate, request: Request, response: Response):
     with warehouse(app.settings) as con:
         user = current_user(request, con)
     old = require_session(request)
-    wait = app.limiter.hit("reauth", user.agent_id) or app.accounts.locked_for(user.agent_id)
-    if wait:
-        raise ApiError(429, "rate_limited", "Too many attempts. Try again later.", {"Retry-After": str(wait)})
-    ok = app.accounts.verify(user.agent_id, body.password, record=False)
-    if ok and (app.settings.require_mfa or app.accounts.has_mfa(user.agent_id)):
-        ok = app.accounts.verify_mfa(user.agent_id, body.verification_code)
-    ok = ok and app.accounts.version(user.agent_id) == old.credential_version
-    app.accounts.record_attempt(user.agent_id, bool(ok))
-    app.access_log.record(action="reauthenticate", outcome="ok" if ok else "refused", user_id=user.agent_id,
-                          role=user.role, request_id=request.state.request_id)
-    if not ok:
-        if app.accounts.locked_for(user.agent_id):
-            app.sessions.delete_user(user.agent_id)
-        raise ApiError(403, "verification_failed", "The password or verification code is incorrect.")
+    check_credentials(request, user, old, body.password, body.verification_code, action="reauthenticate")
     sess = app.sessions.reauthenticate(old.sid)
     if sess is None:
         raise ApiError(401, "not_signed_in", "Your session has ended. Please sign in again.")

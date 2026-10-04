@@ -7,6 +7,14 @@ afterEach(() => { cleanups.splice(0).forEach((cleanup) => cleanup()); vi.unstubA
 const response = (status: number, body: unknown) => new Response(JSON.stringify(body), { status })
 
 describe('session-bound API requests', () => {
+  it('marks automatic refreshes so they do not keep an idle session alive', async () => {
+    vi.mocked(fetch).mockResolvedValue(response(200, { ok: true }))
+    await api.poll('/api/queue/digest')
+    expect(vi.mocked(fetch).mock.calls[0][1]?.headers).toMatchObject({ 'X-TI-Background': '1' })
+    await api.get('/api/queue/digest')
+    expect(vi.mocked(fetch).mock.calls[1][1]?.headers).not.toHaveProperty('X-TI-Background')
+  })
+
   it('sends the session CSRF token on writes and never persists it', async () => {
     setCsrfToken('session-token')
     vi.mocked(fetch).mockResolvedValue(response(200, { ok: true }))

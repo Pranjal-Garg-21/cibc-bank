@@ -22,6 +22,16 @@ REASON_LABELS = {
     "other": "None of the above",
 }
 SAFEGUARD_REASONS = ("hardship_disclosed", "vulnerability_concern", "dispute_raised")
+# Fallback list of call outcomes (nba.review.CALL_OUTCOMES owns it), for the synthetic preview.
+CALL_OUTCOME_LABELS = {
+    "reached_promise": "Reached: promise to pay",
+    "reached_paid": "Reached: payment taken",
+    "reached_hardship": "Reached: hardship or support discussed",
+    "reached_no_commitment": "Reached: no commitment",
+    "callback_requested": "Customer asked for a call back",
+    "no_answer": "No answer",
+    "wrong_number": "Wrong number",
+}
 
 
 def reason_labels() -> tuple[dict[str, str], tuple[str, ...]]:
@@ -43,7 +53,8 @@ def have_decisions(con) -> bool:
 
 def state_rows(con, as_of, extra_where: str = "", params: list | None = None) -> list[dict]:
     """Today's recommendations (optionally narrowed by an AND-clause on gold.nba_decisions columns) with `state`:
-    ready | waiting_agent | waiting_approval | blocked | overridden. [] if the tables are missing."""
+    blocked | overridden | waiting_agent | waiting_approval | done | ready, in that order of precedence, the same rule
+    as nba/review.py state_sql (tests_ui/test_nba_state.py keeps the two in step). [] if the tables are missing."""
     if not have_decisions(con):
         return []
     overrides = _has(con, "gold", "nba_overrides")
@@ -53,21 +64,26 @@ def state_rows(con, as_of, extra_where: str = "", params: list | None = None) ->
     approval = ("SELECT recommendation_id, arg_max(decision, ts) AS approval_decision FROM gold.nba_overrides "
                 "WHERE decision IN ('approved', 'rejected') GROUP BY 1") if overrides else \
         "SELECT NULL::VARCHAR AS recommendation_id, NULL::VARCHAR AS approval_decision WHERE false"
+    completion = ("SELECT recommendation_id, true AS completed, arg_max(reason_code, ts) AS outcome "
+                  "FROM gold.nba_overrides WHERE decision = 'completed' GROUP BY 1") if overrides else \
+        "SELECT NULL::VARCHAR AS recommendation_id, NULL::BOOLEAN AS completed, NULL::VARCHAR AS outcome WHERE false"
     calls = ", ".join(f"'{a}'" for a in CALL_ACTIONS)
     cur = con.execute(f"""
         WITH d AS (SELECT * EXCLUDE (decision_card), json_extract_string(decision_card, '$.summary') AS summary,
                           json_extract_string(decision_card, '$.support_reason') AS support_reason
                    FROM gold.nba_decisions WHERE as_of_date = ?{extra_where}),
-             ag AS ({agent}), ap AS ({approval})
-        SELECT d.*, ag.agent_decision, ap.approval_decision,
+             ag AS ({agent}), ap AS ({approval}), cp AS ({completion})
+        SELECT d.*, ag.agent_decision, ap.approval_decision, coalesce(cp.completed, false) AS completed, cp.outcome,
                (d.requires_approval AND ap.approval_decision IS NULL AND coalesce(ag.agent_decision, '') <> 'overridden')
                    AS approval_pending,
-               CASE WHEN ag.agent_decision = 'overridden' THEN 'overridden'
-                    WHEN ap.approval_decision = 'rejected' THEN 'blocked'
-                    WHEN d.action IN ({calls}) AND ag.agent_decision IS NULL THEN 'waiting_agent'
+               CASE WHEN ap.approval_decision = 'rejected' THEN 'blocked'
+                    WHEN ag.agent_decision = 'overridden' THEN 'overridden'
+                    WHEN d.action IN ({calls}) AND d.agent_id IS NOT NULL AND ag.agent_decision IS NULL THEN 'waiting_agent'
                     WHEN d.requires_approval AND ap.approval_decision IS NULL THEN 'waiting_approval'
+                    WHEN cp.completed OR (d.action = 'wait' AND ag.agent_decision = 'accepted') THEN 'done'
                     ELSE 'ready' END AS state
-        FROM d LEFT JOIN ag USING (recommendation_id) LEFT JOIN ap USING (recommendation_id)""",
+        FROM d LEFT JOIN ag USING (recommendation_id) LEFT JOIN ap USING (recommendation_id)
+               LEFT JOIN cp USING (recommendation_id)""",
                       [as_of, *(params or [])])
     cols = [c[0] for c in cur.description]
     return [dict(zip(cols, r)) for r in cur.fetchall()]

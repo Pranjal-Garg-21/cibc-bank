@@ -10,7 +10,7 @@ import types
 import pandas as pd
 import pytest
 
-from uikit import PAIR_1, PAIR_2, PAIR_3, sign_in
+from uikit import TEST_PASSWORD, PAIR_1, PAIR_2, PAIR_3, sign_in
 
 
 def test_sign_in_page_reveals_no_staff(client):
@@ -121,6 +121,9 @@ def fake_nba(monkeypatch):
         rec = {"recommendation_id": rec_id, "agent_id": "A1", "case_id": "C1", "requires_approval": True,
                "approval_reason": "hardship", "card": {"summary": "Call"}, "first_name": "ANNA",
                "history": pd.DataFrame({"ts": [pd.Timestamp("2026-10-01")], "decision": ["accepted"]})}
+        if rec_id == "R-READY":  # a call accepted and cleared: its agent marks it complete
+            rec.update(action="agent_call", requires_approval=False, approval_reason=None,
+                       status={"agent": "accepted", "approval": "not_needed", "completion": "not_done", "state": "ready"})
         if user["role"] not in ("team_lead",) and user["agent_id"] != rec["agent_id"]:
             raise AccessDenied("no")
         return rec
@@ -139,6 +142,7 @@ def fake_nba(monkeypatch):
         case_context=lambda con, c, d: {"facts": {"case_id": c}, "contacts": pd.DataFrame(), "promises": pd.DataFrame()})
     review = types.SimpleNamespace(
         REASON_CODES={"other": "Other", "dispute_raised": "Dispute"}, SAFEGUARD_REASONS=("dispute_raised",),
+        CALL_OUTCOMES={"no_answer": "No answer"},
         APPROVERS={"hardship": ("team_lead", "hardship_specialist"), "digital_batch": ("team_lead",)},
         ReviewError=ReviewError, record=record,
         approve_batch=lambda con, lead, d, rej: {"approved": 3, "rejected": len(rej or {})},
@@ -163,7 +167,9 @@ def test_queue_and_card(client, fake_nba):
     c = client.get("/api/cases/R1").json()
     assert c["recommendation"]["card"] == {"summary": "Call"}
     assert c["recommendation"]["first_name"] == "***"  # second-line scrub of sensitive columns
-    assert c["allowed"] == {"agent_decision": True, "approval": False}
+    assert c["allowed"] == {"agent_decision": True, "complete": False, "approval": False}
+    assert client.get("/api/cases/R-READY").json()["allowed"] == {"agent_decision": True, "complete": True,
+                                                                  "approval": False}
     assert client.get("/api/cases/R404").status_code == 404
     assert client.get("/api/queue/digest").status_code == 403
 
@@ -183,14 +189,30 @@ def test_review_writes_go_through_backend(client, fake_nba):
     assert client.post("/api/review/R1", json={"decision": "overridden", "reason_code": "bogus"}, headers=h).status_code == 422
     assert client.post("/api/review/R1", json={"decision": "accepted"}, headers=h).status_code == 200
     assert fake_nba["record"] == ("R1", "A1", "accepted", None)  # user id comes from the session, not the body
+    # a completed call carries its outcome, from its own list (an override reason is not an outcome)
+    assert client.post("/api/review/R1", json={"decision": "completed", "reason_code": "other"}, headers=h).status_code == 422
+    assert client.post("/api/review/R1", json={"decision": "completed", "reason_code": "no_answer"}, headers=h).status_code == 200
+    assert fake_nba["record"] == ("R1", "A1", "completed", "no_answer")
 
 
 def test_batch_only_for_team_lead(client, fake_nba):
     csrf = sign_in(client, "A1")
-    assert client.post("/api/review-batch", json={}, headers={"X-CSRF-Token": csrf}).status_code == 403
+    assert client.post("/api/review-batch", json={"password": TEST_PASSWORD}, headers={"X-CSRF-Token": csrf}).status_code == 403
     csrf = sign_in(client, "L1")
-    r = client.post("/api/review-batch", json={"rejected": {"R2": "other"}}, headers={"X-CSRF-Token": csrf})
+    r = client.post("/api/review-batch", json={"password": TEST_PASSWORD, "rejected": {"R2": "other"}},
+                    headers={"X-CSRF-Token": csrf})
     assert r.status_code == 200 and r.json()["result"] == {"approved": 3, "rejected": 1}
+
+
+def test_batch_needs_the_password_every_time(client, fake_nba):
+    """D38: a re-authentication a moment ago (sign_in renews it) does not stand in for the batch's own password."""
+    csrf = sign_in(client, "L1")
+    h = {"X-CSRF-Token": csrf}
+    assert client.post("/api/review-batch", json={}, headers=h).status_code == 422          # no password: refused
+    r = client.post("/api/review-batch", json={"password": "not-the-password-1!"}, headers=h)
+    assert r.status_code == 403 and r.json()["code"] == "verification_failed"
+    for _ in range(2):  # a second batch inside the old 300 s window still asks
+        assert client.post("/api/review-batch", json={"password": TEST_PASSWORD}, headers=h).status_code == 200
 
 
 def test_queue_not_connected_without_backend(client, monkeypatch):

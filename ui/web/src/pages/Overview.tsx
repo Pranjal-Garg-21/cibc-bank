@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowUpRight, RefreshCw } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api } from '@/api/client'
+import { api, live } from '@/api/client'
 import type { Overview as OverviewData, OverviewColumn, OverviewSection, OverviewTile } from '@/api/types'
 import { useMe } from '@/auth'
 import { DataTable, Empty, ErrorState, Loading, PageHeader, Section } from '@/components/app'
@@ -18,11 +18,13 @@ function greeting(name: string | null): string {
 }
 
 const TONE = { ok: 'text-ok', warn: 'text-warn', danger: 'text-danger' } as const
+// one column per tile on wide screens, so a role with three figures gets three full cells, not an empty fourth
+const COLS: Record<number, string> = { 1: '', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-2 lg:grid-cols-4' }
 
 /** Every role's first screen: the server describes the page for the signed-in role, this draws it. */
 export function Overview() {
   const me = useMe()
-  const q = useQuery({ queryKey: ['overview'], queryFn: () => api.get<OverviewData>('/api/overview'), refetchInterval: 60_000 })
+  const q = useQuery({ queryKey: ['overview'], queryFn: () => api.poll<OverviewData>('/api/overview'), ...live })
   const d = q.data
   return (
     <>
@@ -43,7 +45,7 @@ export function Overview() {
           {d.tiles.length > 0 && <Tiles tiles={d.tiles} />}
           <Sections sections={d.sections} />
           {!d.tiles.length && !d.sections.length && <Section><Empty>{d.intro}</Empty></Section>}
-          <p className="text-xs text-faint">Business date {isoDate(d.as_of_date)}. Figures update every minute.</p>
+          <p className="text-xs text-faint">Business date {isoDate(d.as_of_date)}. Figures update every 20 seconds.</p>
         </div>
       )}
     </>
@@ -57,7 +59,7 @@ function tileValue(t: OverviewTile): string {
 
 function Tiles({ tiles }: { tiles: OverviewTile[] }) {
   return (
-    <ul className="grid grid-cols-1 gap-px border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+    <ul className={cn('grid grid-cols-1 gap-px border border-border bg-border', COLS[Math.min(tiles.length, 4)])}>
       {tiles.map((t) => {
         const inner = (
           <>

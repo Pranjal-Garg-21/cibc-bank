@@ -53,9 +53,10 @@ def _state(con, as_of: date) -> pd.DataFrame:
 
 
 def agent_queue(con, agent_id: str, as_of: date) -> pd.DataFrame:
-    """The agent's recommendations for the day, in working order, with where each one stands. One row per customer
-    (golden customer): a person with several cases is contacted on one of them at most (nba/queue.py), so the list
-    shows that case, or the first in working order, and `other_cases` counts the rest (on the decision card)."""
+    """Every recommendation assigned to the agent for the day, in working order, with where each one stands. A person
+    with several cases is contacted on one of them at most (nba/queue.py): `todays_contact` marks that case (the first
+    of the person's cases in working order) and `other_cases` counts the rest. Every case is listed, so the queue's
+    search finds all of them (an earlier version kept one row per customer and hid the others)."""
     q = con.execute("""
         SELECT recommendation_id, case_id, golden_customer_id AS customer, action, channel, risk_score, expected_value,
                approval_reason, json_extract_string(decision_card, '$.summary') AS summary,
@@ -65,7 +66,8 @@ def agent_queue(con, agent_id: str, as_of: date) -> pd.DataFrame:
     q["order"] = q["action"].map(ACTION_ORDER).fillna(9)
     q = q.sort_values(["order", "expected_value", "risk_score"], ascending=[True, False, False]).drop(columns="order")
     q["other_cases"] = q.groupby("customer")["recommendation_id"].transform("size") - 1
-    return q.drop_duplicates("customer", keep="first")
+    q["todays_contact"] = ~q.duplicated("customer", keep="first") | q["customer"].isna()
+    return q.reset_index(drop=True)
 
 
 def lead_digest(con, as_of: date) -> dict:
@@ -78,10 +80,26 @@ def lead_digest(con, as_of: date) -> dict:
         FROM gold.nba_decisions WHERE as_of_date = ?""", [as_of]).df(), on="recommendation_id")
     return {
         "states": st["state"].value_counts().to_dict(),
+        "overridden": overridden(con, as_of),
         "batch_pending": int(((st["approval_reason"] == "digital_batch") & (st["approval"] == "pending")).sum()),
         "batch_total": int((st["approval_reason"] == "digital_batch").sum()),
         "pending": pending.sort_values(["approval_reason", "risk_score"], ascending=[True, False]),
     }
+
+
+def overridden(con, as_of: date) -> pd.DataFrame:
+    """The day's recommendations their agent has overridden: who overrode, when, and why (reason code). They need no
+    sign-off, so they leave the approval lists; the team lead's archive (Approvals > Overridden) lists them here."""
+    return con.execute("""
+        WITH ag AS (SELECT recommendation_id, agent_id AS overridden_by, decision, reason_code, ts
+                    FROM gold.nba_overrides WHERE decision IN ('accepted', 'overridden')
+                    QUALIFY row_number() OVER (PARTITION BY recommendation_id ORDER BY ts DESC) = 1)
+        SELECT d.recommendation_id, d.case_id, d.golden_customer_id AS customer, d.action, d.approval_reason,
+               d.risk_score, json_extract_string(d.decision_card, '$.summary') AS summary,
+               ag.overridden_by, ag.reason_code, ag.ts AS overridden_at
+        FROM gold.nba_decisions d JOIN ag USING (recommendation_id)
+        WHERE d.as_of_date = ? AND ag.decision = 'overridden'
+        ORDER BY ag.ts DESC""", [as_of]).df()
 
 
 def can_see(user: dict | None, rec: dict) -> bool:

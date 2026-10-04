@@ -48,7 +48,7 @@ def sign_in(app, sid: str, reauthenticate: bool = True):
     s = STAFF[sid]
     c = TestClient(app, base_url=BASE)
     app.state.limiter._hits.clear()  # the sign-in limit is tested elsewhere
-    r = c.post("/api/session/login", json={"role": preview_data.SIGN_IN_TAB[s[3]], "staff_id": sid, "password": s[-1]})
+    r = c.post("/api/session/login", json={"staff_id": sid, "password": s[-1]})
     assert r.status_code == 200, r.text
     csrf = c.get("/api/session/me").json()["csrf_token"]
     if reauthenticate:
@@ -117,16 +117,23 @@ def test_everything_needs_a_session(app):
         assert c.get(e).status_code == 401, e
 
 
-def test_wrong_tab_fails_like_a_wrong_password(app):
+def test_one_sign_in_form_and_the_role_comes_from_the_warehouse(app):
+    """D37: staff ID and password only. The role is curated.agents.role; a wrong password and an unknown staff ID
+    fail alike; a role sent by the browser is refused, never used."""
     c = TestClient(app, base_url=BASE)
-    for sid, tab in (("DEMO-H1", "agent"), ("DEMO-Q1", "team_lead"), ("DEMO-L1", "qa_analyst"), ("DEMO-A1", "hardship_specialist")):
+    for sid in ("DEMO-A1", "DEMO-A2", "DEMO-L1", "DEMO-H1", "DEMO-Q1"):
         app.state.limiter._hits.clear()
-        wrong_tab = c.post("/api/session/login", json={"role": tab, "staff_id": sid, "password": STAFF[sid][-1]})
+        assert c.post("/api/session/login", json={"staff_id": sid, "password": STAFF[sid][-1]}).status_code == 200
+        assert c.get("/api/session/me").json()["role"] == STAFF[sid][3]
         app.state.limiter._hits.clear()
-        wrong_pw = c.post("/api/session/login", json={"role": preview_data.SIGN_IN_TAB[STAFF[sid][3]], "staff_id": sid,
-                                                      "password": "not-the-password-1!"})
-        assert wrong_tab.status_code == wrong_pw.status_code == 401
-        assert wrong_tab.json()["message"] == wrong_pw.json()["message"]
+        assert c.post("/api/session/login", json={"role": "team_lead", "staff_id": sid,
+                                                  "password": STAFF[sid][-1]}).status_code == 422
+    app.state.limiter._hits.clear()
+    wrong_pw = c.post("/api/session/login", json={"staff_id": "DEMO-L1", "password": "not-the-password-1!"})
+    app.state.limiter._hits.clear()
+    unknown = c.post("/api/session/login", json={"staff_id": "DEMO-ZZ9", "password": "not-the-password-1!"})
+    assert wrong_pw.status_code == unknown.status_code == 401
+    assert wrong_pw.json()["message"] == unknown.json()["message"]
 
 
 # ------------------------------------------------------------------------------------------ which customers
@@ -173,7 +180,7 @@ def test_qa_never_reaches_a_customer(app):
     assert q.get("/api/queue/mine").status_code == 403
     for body in ({"decision": "accepted"}, {"decision": "approved"}):
         assert q.post(f"/api/review/{REC_CALL}", json=body, headers={"X-CSRF-Token": csrf}).status_code == 403
-    assert q.post("/api/review-batch", json={}, headers={"X-CSRF-Token": csrf}).status_code == 403
+    assert q.post("/api/review-batch", json={"password": STAFF["DEMO-Q1"][-1]}, headers={"X-CSRF-Token": csrf}).status_code == 403
 
 
 def test_a_case_you_may_not_see_looks_like_one_that_does_not_exist(app):
@@ -200,7 +207,38 @@ def test_agent_decides_own_cases_only_and_approves_nothing(app):
     assert post(a1, c1, REC_CALL, decision="approved").status_code == 403      # agents give no approvals
     assert post(a2, c2, REC_CALL, decision="accepted").status_code == 409      # not their recommendation
     assert post(a1, c1, REC_CALL, decision="overridden").status_code == 409    # an override needs a reason
+    # D39: nothing is done twice. The seed has already accepted this call: accepting again is refused, and the
+    # card greys the button out; overriding is the only change left
+    assert post(a1, c1, REC_CALL, decision="accepted").status_code == 409
+    card = a1.get(f"/api/cases/{REC_CALL}").json()
+    assert card["recommendation"]["status"]["agent"] == "accepted" and card["override"] is None
+    assert post(a1, c1, REC_CALL, decision="overridden", reason_code="customer_already_paid").status_code == 200
+    assert post(a1, c1, REC_CALL, decision="overridden", reason_code="other").status_code == 409
+    card = a1.get(f"/api/cases/{REC_CALL}").json()
+    assert card["override"]["by"] == "DEMO-A1" and card["override"]["name"] == "Maya Patel"
+    assert card["override"]["reason"] == "Payment or arrangement already in place"  # the label, not the code
     assert post(a1, c1, REC_CALL, decision="accepted").status_code == 200
+
+
+def test_an_approval_is_final(app):
+    """D39: once approved (or rejected) a case cannot be approved or rejected again."""
+    h, csrf = sign_in(app, "DEMO-H1")
+    assert post(h, csrf, REC_HARDSHIP, decision="approved").status_code == 200
+    assert post(h, csrf, REC_HARDSHIP, decision="approved").status_code == 409
+    assert post(h, csrf, REC_HARDSHIP, decision="rejected", reason_code="other").status_code == 409
+
+
+def test_the_lead_sees_overridden_cases_with_who_and_why(app):
+    """D40: overridden cases leave the approval list and wait in the lead's archive with the agent and the reason."""
+    a1, c1 = sign_in(app, "DEMO-A1")
+    assert post(a1, c1, REC_HARDSHIP, decision="overridden", reason_code="hardship_disclosed").status_code == 200
+    d = sign_in(app, "DEMO-L1", False)[0].get("/api/queue/digest").json()
+    over = [dict(zip(d["overridden"]["columns"], r)) for r in d["overridden"]["rows"]]
+    row = next(r for r in over if r["recommendation_id"] == REC_HARDSHIP)
+    assert row["overridden_by"] == "DEMO-A1" and row["overridden_by_name"] == "Maya Patel"
+    assert row["reason"] == "Customer disclosed hardship that is not on the card"
+    pending = [r[d["pending"]["columns"].index("recommendation_id")] for r in d["pending"]["rows"]]
+    assert REC_HARDSHIP not in pending
 
 
 def test_specialist_approves_hardship_but_not_batch_or_high_balance(app):
@@ -209,7 +247,7 @@ def test_specialist_approves_hardship_but_not_batch_or_high_balance(app):
     assert post(h, csrf, REC_BIG, decision="approved").status_code == 409
     assert post(h, csrf, REC_HARDSHIP, decision="approved").status_code == 200
     assert post(h, csrf, REC_CALL, decision="accepted").status_code == 409     # not theirs: nba.review refuses
-    assert h.post("/api/review-batch", json={}, headers={"X-CSRF-Token": csrf}).status_code == 403
+    assert h.post("/api/review-batch", json={"password": STAFF["DEMO-H1"][-1]}, headers={"X-CSRF-Token": csrf}).status_code == 403
 
 
 def test_nobody_approves_a_recommendation_assigned_to_themself(app):
@@ -220,7 +258,7 @@ def test_nobody_approves_a_recommendation_assigned_to_themself(app):
     con.close()
     h, csrf = sign_in(app, "DEMO-H1")
     allowed_ = h.get(f"/api/cases/{REC_HARDSHIP}").json()["allowed"]
-    assert allowed_ == {"agent_decision": True, "approval": False}
+    assert allowed_ == {"agent_decision": True, "complete": False, "approval": False}
     assert post(h, csrf, REC_HARDSHIP, decision="approved").status_code == 409
     assert post(h, csrf, REC_HARDSHIP, decision="accepted").status_code == 200
 
@@ -229,7 +267,7 @@ def test_only_a_team_lead_approves_the_batch(app):
     l1, csrf = sign_in(app, "DEMO-L1")
     before = next(t for t in l1.get("/api/overview").json()["tiles"] if t["id"] == "batch")["value"]
     assert before > 0
-    assert l1.post("/api/review-batch", json={}, headers={"X-CSRF-Token": csrf}).status_code == 200
+    assert l1.post("/api/review-batch", json={"password": STAFF["DEMO-L1"][-1]}, headers={"X-CSRF-Token": csrf}).status_code == 200
     assert next(t for t in l1.get("/api/overview").json()["tiles"] if t["id"] == "batch")["value"] == 0
 
 

@@ -17,9 +17,8 @@ from tiui.security import SessionStore, csv_safe
 from tiui.settings import Settings
 
 
-def login(c, code="", staff_id="A1", role="agent"):
-    return c.post("/api/session/login", json={"role": role, "staff_id": staff_id,
-                                              "password": TEST_PASSWORD, "verification_code": code})
+def login(c, code="", staff_id="A1", password=TEST_PASSWORD):
+    return c.post("/api/session/login", json={"staff_id": staff_id, "password": password, "verification_code": code})
 
 
 @pytest.fixture
@@ -70,10 +69,21 @@ def test_failed_second_factor_locks_even_with_correct_password(mfa_client):
     assert login(c).status_code == 429
 
 
-def test_wrong_role_is_counted_as_an_authentication_failure(client):
+def test_role_is_never_taken_from_the_browser(client):
+    """One sign-in form (D37): a role in the request is refused outright, whatever it says, and signs nobody in."""
+    client.app.state.limiter.limits["login"] = []
+    for role in ("agent", "team_lead", "qa_analyst"):
+        r = client.post("/api/session/login", json={"role": role, "staff_id": "A1", "password": TEST_PASSWORD})
+        assert r.status_code == 422
+        assert client.get("/api/session/me").status_code == 401
+    assert login(client, staff_id="L1").status_code == 200
+    assert client.get("/api/session/me").json()["role"] == "team_lead"  # from curated.agents.role
+
+
+def test_wrong_password_is_counted_towards_the_lock(client):
     client.app.state.limiter.limits["login"] = []
     for _ in range(5):
-        assert login(client, role="team_lead").status_code == 401
+        assert login(client, password="not-the-password-1!").status_code == 401
     assert login(client).status_code == 429
 
 
@@ -227,7 +237,7 @@ def test_host_spoof_and_cross_site_fetch_refused(client):
     assert login(client).status_code == 200
     r = client.get("/api/status", headers={"Sec-Fetch-Site": "cross-site"})
     assert r.status_code == 403
-    r = client.post("/api/session/login", json={"role": "agent", "staff_id": "A1", "password": TEST_PASSWORD}, headers={"Origin": "https://attacker.example"})
+    r = client.post("/api/session/login", json={"staff_id": "A1", "password": TEST_PASSWORD}, headers={"Origin": "https://attacker.example"})
     assert r.status_code == 403
 
 

@@ -65,9 +65,10 @@ def build_preview(folder: Path, mfa: bool = False) -> Settings:
 
 
 def print_accounts() -> None:
-    print("Demo accounts (synthetic data only). Pick the matching tab on the sign-in page:", flush=True)
-    for sid, name, _t, role, *_rest, tab, password in preview_data.STAFF:
-        print(f"  {tab:<9} {sid:<8} {password:<22} {name} ({role.replace('_', ' ')})", flush=True)
+    print("Demo accounts (synthetic data only). Sign in with the staff ID and password; the role comes from the "
+          "staff record:", flush=True)
+    for sid, name, _t, role, *_rest, _label, password in preview_data.STAFF:
+        print(f"  {sid:<8} {password:<22} {name} ({role.replace('_', ' ')})", flush=True)
 
 
 def main() -> None:

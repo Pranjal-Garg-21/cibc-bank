@@ -10,7 +10,7 @@ import json
 import random
 from datetime import date, datetime, time, timedelta
 
-# (staff id, name, team, role, certified, site, lead, languages, employment, sign-in tab, password)
+# (staff id, name, team, role, certified, site, lead, languages, employment, role label, password)
 # Demo-only credentials for the synthetic preview. They open nothing but this temporary, fake warehouse.
 STAFF = [
     ("DEMO-A1", "Maya Patel", "Toronto collections", "agent", True, "Toronto", "DEMO-L1", "en", "full_time",
@@ -26,8 +26,6 @@ STAFF = [
     ("DEMO-Q1", "Priya Raman", "Quality assurance", "qa_analyst", False, "Toronto", None, "en", "full_time",
      "QA", "Quality-Priya-2026!"),
 ]
-SIGN_IN_TAB = {"agent": "agent", "senior_agent": "agent", "team_lead": "team_lead",
-               "hardship_specialist": "hardship_specialist", "qa_analyst": "qa_analyst"}
 
 LATE = ("dpd_last_snapshot", "Well past due at the last account snapshot", 0.21)
 BROKE = ("prior_broken_ptp_count", "Earlier promises broken in this case", 0.14)

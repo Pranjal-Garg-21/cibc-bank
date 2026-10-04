@@ -57,7 +57,7 @@ function accessList(me: Me): string[] {
   const a: string[] = []
   if (me.can.my_queue) a.push('Own case queue and decisions')
   if (me.can.next_action) a.push(me.role === 'hardship_specialist' ? 'Next best action: hardship and vulnerability customers' : me.can.my_queue ? 'Next best action: your own customers' : 'Next best action: all customers')
-  if (me.can.approvals) a.push(me.can.approve_batch ? 'Approvals: all types, including the digital batch' : 'Approvals: hardship and vulnerability only')
+  if (me.can.approvals) a.push(me.can.approve_batch ? 'Approvals: all types, including the daily batch of automated reminders' : 'Approvals: hardship and vulnerability only')
   if (me.can.decision_review) a.push(me.can.audit_log ? 'Decision review: whole bank' : 'Decision review: your team')
   if (me.can.manage_agents) a.push("Agent accounts: set your agents' passwords")
   if (me.can.identity_review) a.push('Identity review')
@@ -84,11 +84,6 @@ export function Shell() {
         <div className="console-width flex min-h-[72px] flex-wrap items-center justify-between gap-3 py-3">
           <div className="flex flex-wrap items-center gap-4">
             <Wordmark />
-            {me.demo && (
-              <span className="rounded-sm border border-warn px-2 py-1 text-[11px] font-bold text-warn" title="Synthetic data and local accounts">
-                DEMO ENVIRONMENT
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-3 text-[13px] sm:gap-5">
             <span className="hidden text-muted-foreground md:inline">
@@ -144,7 +139,7 @@ export function Shell() {
 
       <main id="main" tabIndex={-1} className="console-width flex-1 py-7 md:py-9">
         <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 text-[13px] text-muted-foreground">
-          <button type="button" className="flex min-h-8 flex-wrap items-center gap-2 text-left hover:text-brand" onClick={() => { setProfileTab('security'); setProfileOpen(true) }}><ShieldCheck className="size-4" strokeWidth={1.5} aria-hidden="true" />{me.mfa ? 'Multi-factor authentication verified' : 'Demo access: MFA disabled'}<span className="ml-2 text-brand underline underline-offset-4">Session & security</span></button>
+          <button type="button" className="flex min-h-8 flex-wrap items-center gap-2 text-left hover:text-brand" onClick={() => { setProfileTab('security'); setProfileOpen(true) }}><ShieldCheck className="size-4" strokeWidth={1.5} aria-hidden="true" />{me.mfa ? 'Multi-factor authentication verified' : 'Demo access · MFA enabled in deployment'}<span className="ml-2 text-brand underline underline-offset-4">Session & security</span></button>
           <span className="flex items-center gap-2 tabular-nums"><Clock3 className="size-4" strokeWidth={1.5} aria-hidden="true" />{secondsLeft === null ? 'Automatic session expiry is off for this demo' : `Session expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`}</span>
         </div>
         {!me.can.status && <DataWarning />}

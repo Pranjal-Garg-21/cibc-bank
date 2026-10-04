@@ -14,13 +14,18 @@ from trustissues.nba.actions import CATALOGUE
 
 ACTION_TEXT = {
     "wait": "Wait: no contact today",
-    "push_reminder": "Send an app push reminder",
+    "push_reminder": "Send an app notification",
     "email_reminder": "Send an email reminder",
     "sms_reminder": "Send an SMS reminder with a payment link",
     "letter": "Send a letter",
     "agent_call": "Call the customer",
     "support_call": "A certified agent calls to offer support (no payment request before an option is offered)",
 }
+
+# Short names for an action inside a sentence (the web console's labels): never the stored code.
+ACTION_NAME = {"wait": "waiting", "push_reminder": "an app notification", "email_reminder": "an email reminder",
+               "sms_reminder": "an SMS reminder", "letter": "a letter", "agent_call": "a call",
+               "support_call": "a support call"}
 
 # Hardship and vulnerable cases (nba/hardship.py): why a support call is due, or why the case waits.
 SUPPORT_TEXT = {
@@ -193,9 +198,10 @@ def why_beat(action: str, runner_up: str | None, values: dict[str, float],
     if runner_up is None:
         return None
     if action == "wait":
-        return f"No contact is expected to recover more than it costs (best: {runner_up}, ${values[runner_up]:,.2f})"
+        return (f"No contact is expected to recover more than it costs (best: {ACTION_NAME.get(runner_up, runner_up)}, "
+                f"${values[runner_up]:,.2f})")
     gap = values.get(action, 0.0) - values.get(runner_up, 0.0)
-    return (f"Expected net ${values[action]:,.2f} vs ${values[runner_up]:,.2f} for {runner_up} "
+    return (f"Expected net ${values[action]:,.2f} vs ${values[runner_up]:,.2f} for {ACTION_NAME.get(runner_up, runner_up)} "
             f"(${gap:,.2f} more after contact cost)")
 
 

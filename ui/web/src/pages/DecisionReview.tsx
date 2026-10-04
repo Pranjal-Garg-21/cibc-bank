@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
-import { api, qs } from '@/api/client'
+import { api, live, qs } from '@/api/client'
 import type { DecisionReviewData } from '@/api/types'
 import { useMe } from '@/auth'
 import { DataTable, Empty, ErrorState, Figures, Loading, PageHeader, Section, StatusBadge } from '@/components/app'
@@ -17,7 +17,8 @@ export function DecisionReview() {
   const days = PERIODS.includes(Number(params.get('days'))) ? Number(params.get('days')) : 14
   const agent = params.get('agent') ?? ''
   const reason = params.get('reason') ?? ''
-  const q = useQuery({ queryKey: ['decision-review', days], queryFn: () => api.get<DecisionReviewData>(`/api/oversight/decisions${qs({ days })}`) })
+  // live: decisions made in other sessions appear within 20 s, or when the window regains focus
+  const q = useQuery({ queryKey: ['decision-review', days], queryFn: () => api.poll<DecisionReviewData>(`/api/oversight/decisions${qs({ days })}`), ...live })
   const set = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params)
     for (const [k, v] of Object.entries(patch)) v ? next.set(k, v) : next.delete(k)

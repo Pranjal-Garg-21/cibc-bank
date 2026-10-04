@@ -64,7 +64,7 @@ The staff table (`curated.agents`, 1,000 people) has exactly five roles:
 ### 2.2 Decision D1: five roles, four dashboards
 
 **Decision.** Agents and senior agents share one dashboard. Team lead, hardship specialist and QA analyst each get their
-own. That is four dashboards and four sign-in tabs.
+own. That is four dashboards (and, until D37, four sign-in tabs; now one sign-in form).
 
 **Why.** We grouped roles by *what they are allowed to do*, taken from the backend rules, not by job title:
 
@@ -145,9 +145,9 @@ asserts the two responses are byte-identical.
 **Why.** The risky actions in collections (contacting a customer in hardship, a large balance, a bulk send) are exactly the
 ones where one person acting alone causes harm. The design forces a second person, with a *narrower* power than the first.
 
-### D6: sign-in: one tab per role, a wrong tab fails like a wrong password
+### D6: sign-in: one tab per role, a wrong tab fails like a wrong password (replaced by D37, 4 Oct)
 
-**Decision.** The sign-in page has four tabs: Agent, Team lead, Hardship, QA. Choosing the wrong tab for your account returns
+**Decision (no longer in force).** The sign-in page has four tabs: Agent, Team lead, Hardship, QA. Choosing the wrong tab for your account returns
 the same error and timing as a wrong password.
 
 **Why.** The tab is a claim about who you are; if a wrong claim got a different message ("this is a team lead account"),
@@ -421,7 +421,7 @@ tabs and the form was submitted with the wrong role. The app correctly refused i
 | Decision review, audit log | `ui/tiui/routers/oversight.py`, `ui/tiui/audit.py`, `ui/web/src/pages/DecisionReview.tsx`, `AuditLog.tsx` |
 | Approvals, queue, case card | `ui/tiui/routers/nba.py`, `ui/web/src/pages/Approvals.tsx`, `Queue.tsx`, `DecisionCard.tsx` |
 | Data freshness banner | `ui/tiui/routers/status.py` (`/freshness`), `DataWarning` in `ui/web/src/components/Shell.tsx` |
-| Sign-in tabs | `ui/web/src/pages/SignIn.tsx`, `ui/tiui/routers/session.py` |
+| Sign-in (one form, D37) | `ui/web/src/pages/SignIn.tsx`, `ui/tiui/routers/session.py` |
 | Navigation and labels | `ui/web/src/components/Shell.tsx`, `ui/web/src/lib/labels.ts` |
 | Sorting and search | `DataTable` in `ui/web/src/components/app.tsx` |
 | Preview data, accounts, stand-ins | `ui/preview.py`, `ui/preview_data.py`, `ui/preview_backend.py` |
@@ -509,6 +509,187 @@ answered, analyst refused by role), someone else's case and a missing case (iden
 **Where.** `ui/tiui/routers/ask.py`, `ui/tiui/security.py` (`mask_text`, `mask_names`), `ui/tiui/routers/status.py`;
 tests `test_api.py` (text, CSV, names), `test_integration.py` (identical refusals; with `RUN_LLM_TESTS=1`, a real case
 answer has no phone, email, card, DOB or the customer's name).
+
+### D36: a cleared call is marked complete with its outcome; done cases leave the queue
+
+**Decision.** A new decision `completed` (a third kind in `gold.nba_overrides`, beside agent and approval): once a call
+(`agent_call` or `support_call`) is `ready`, its assigned agent clicks **Mark as complete** and picks the call outcome
+(`review.CALL_OUTCOMES`: reached with a promise, reached and paid, reached and hardship discussed, reached with no
+commitment, call back requested, no answer, wrong number; stored in `reason_code`, required). A completed call, or a
+`wait` its agent accepts, gets the new state `done` and leaves the day's queue (a **Done** filter brings it back);
+nothing more can be decided on a completed call. `ready` is shown as **Cleared** ("cleared to carry out"), and a wait's
+card says "No contact today" instead of "No approval needed". The state rule is one CASE in `nba/review.py`
+(`state_sql`): blocked > overridden > waiting_agent > waiting_approval > done > ready; the overview's query
+(`tiui/nba_state.py`) follows it and `tests_ui/test_nba_state.py` keeps the two equal.
+**Replaces.** "Ready" as the last state, and two state orders: the overview put overridden before blocked and the
+agent before the approval, `review.status` the opposite (a call needing approval showed "To approve" in the queue and
+"Agent to decide" on the overview).
+**Why.** Click-testing (4 Oct): a ready case still showed Accept / Override with nothing to say it had been done, and a
+protective wait for a vulnerable customer read "Ready / No approval needed", which looked like a missed safeguard. The
+flow staff expect is accept, then approve, then make the call and close it. The agent goes first because they see the
+case before anyone signs it off.
+**Rejected.** Removing "Ready" (it is the only state for "every sign-off is in", used by the queue, overview and Ask);
+"complete" for letters and reminders (the system or the digital batch sends them, not the agent); deleting done rows
+(agents, QA and Change decision need them).
+**Consequence.** Override rate is unchanged: completion is not an agent decision. `review.summary` adds
+`call_outcomes`. Ask's case facts say "done: the call has been made (outcome)". `gold.nba_overrides` keeps its columns.
+**Where.** `src/trustissues/nba/review.py`, `src/trustissues/ask/case_facts.py`, `ui/tiui/nba_state.py`,
+`ui/tiui/routers/nba.py`, `ui/tiui/routers/overview.py`, `ui/preview_backend.py`, `ui/web/src/pages/DecisionCard.tsx`,
+`ui/web/src/pages/Queue.tsx`, `ui/web/src/lib/labels.ts`; tests `tests/test_review.py`, `tests_ui/test_nba_state.py`,
+`tests_ui/test_api.py`.
+
+## 11b. Click-test fixes (4 Oct, evening)
+
+Fourteen findings from click-testing the console with the real warehouse, fixed together. Measured on the 28 Sep
+queue (86,059 recommendations, 86,051 people) unless a test is named.
+
+### D37: one sign-in form; the role comes from the staff record
+
+**Decision.** The sign-in page has one form for everyone: staff ID and password (and a verification code where MFA is
+on). The login request carries no role; the server refuses any request that sends one (422, `extra="forbid"`), reads
+the role from `curated.agents.role` after the password check, and the app goes to `/`, which opens that role's first
+screen (its Overview). Any role in `rbac.ROLES` may sign in; an unknown staff ID, a wrong password, an inactive account
+or a role with no screens all fail with the same message.
+**Replaces.** D6 ("one tab per role, a wrong tab fails like a wrong password"). With no tab there is no wrong tab; the
+rule that a failed sign-in never says whether the staff ID exists stays.
+**Why.** Staff had to know which of four tabs their account belonged to, and a wrong tab looked like a wrong password.
+The tab added nothing the server did not already know, and the browser should never be the source of a role.
+**Rejected.** Keeping the tabs but ignoring them (misleading); a role dropdown filled from the server (D6's reason
+still holds: nothing about staff before sign-in).
+**Consequence.** QA analysts sign in like everyone else (they could before only on the QA tab). `rbac.PORTALS` and
+`RoleSpec.portal` are gone; `rbac.AGENT_ROLES` names the roles whose passwords a team lead sets. After sign-in the app
+always lands on the Overview, not the page that was open when the session ended (it may be another person's session).
+**Where.** `ui/tiui/routers/session.py`, `ui/tiui/rbac.py`, `ui/tiui/deps.py`, `ui/web/src/pages/SignIn.tsx`,
+`ui/preview_data.py`, `ui/preview.py`; tests `tests_ui/test_rbac.py`
+(`test_one_sign_in_form_and_the_role_comes_from_the_warehouse`), `tests_ui/test_team.py`,
+`tests_ui/test_banking_security.py` (`test_role_is_never_taken_from_the_browser`), `tests_ui/test_shared_demo_access.py`;
+docs `ui/README.md`, `docs/teammate_setup.md`.
+
+### D38: the daily batch asks for the password every time
+
+**Decision.** Approving the daily batch sends the team lead's password (and code, where MFA is on) in the approval
+request itself; the server checks it there (`deps.check_credentials`, the same check, rate limit and lock as
+re-authentication, logged as `confirm_batch`). A re-authentication made for another action, however recent, does not
+count.
+**Replaces.** The batch used `require_reauthentication`, valid for 300 s (`deps.py`), so a second batch approval inside
+that window went through without a prompt.
+**Why.** One click signs off every automated reminder of the day (34,154 on 28 Sep); it should be confirmed on purpose
+each time.
+**Rejected.** Shortening the window (still skippable); consuming the re-authentication after the batch (a single-case
+approval just before would still cover it).
+**Consequence.** The confirmation dialog has a password field; a wrong password keeps the dialog open with the error.
+Single-case approvals and account changes keep the 300 s re-authentication.
+**Where.** `ui/tiui/routers/nba.py` (`BatchIn`, `approve_batch`), `ui/tiui/deps.py`, `ui/tiui/routers/session.py`,
+`ui/web/src/pages/Approvals.tsx` (`BatchSection`); tests `tests_ui/test_api.py`
+(`test_batch_needs_the_password_every_time`), `tests_ui/test_rbac.py`.
+
+### D39: nothing is done twice
+
+**Decision.** An action already done is not clickable again, and the server refuses it too. On the decision card:
+once the agent accepts, **Accept** turns grey ("Accepted"), the current decision is shown, and **Override** is the only
+way to change it; once overridden, **Override** is grey and accepting again is the way back. Once a case is approved or
+rejected, **Approve** and **Reject** are both grey ("Approval: Approved (final)"). The batch button greys out at 0.
+`nba.review.record` refuses an approval decision when one exists (approvals are final) and the agent decision that is
+already current.
+**Replaces.** Buttons stayed live after use, and the latest-row-wins rule let an approver flip approved/rejected.
+**Why.** Click-testing: staff could not tell whether a click had registered, and a second click wrote a second row.
+**Rejected.** Disabling in the browser only (a second tab or a script would still write twice).
+**Consequence.** The history keeps one approval per case. An agent can still change their mind (accepted to overridden
+and back), which re-opens the approval if one is needed (D11 unchanged).
+**Where.** `src/trustissues/nba/review.py` (`record`), `ui/preview_backend.py`, `ui/web/src/pages/DecisionCard.tsx`;
+tests `tests/test_review.py` (`test_nothing_is_decided_twice`), `tests_ui/test_rbac.py`
+(`test_an_approval_is_final`, `test_agent_decides_own_cases_only_and_approves_nothing`).
+
+### D40: overridden cases are archived, with who overrode them and why
+
+**Decision.** A case its agent overrides leaves the active lists: the agent's queue hides it like a Done case (the
+**Overridden** filter brings it back), and the team lead's approvals keep it out of "Waiting for approval" but list it
+under **Overridden (n)** with the agent's name and staff ID, the reason in words (`review.REASON_CODES`), the approval it
+would have needed, and when. The decision card of an overridden case opens with "Overridden by <name> (<staff ID>)",
+the reason and the time, for every role that can open it; the decision history shows names and reason labels, not codes.
+A hardship specialist's archive is limited to their remit.
+**Replaces.** Overridden cases stayed in the agent's open list; a team lead saw no reason and no name (the history
+showed `customer_already_paid`).
+**Why.** A team lead reviewing a case that will no longer be carried out needs to know who stopped it and why.
+**Consequence.** `agent_view.lead_digest` returns `overridden` (`agent_view.overridden`); `/api/cases/{id}` returns
+`override`. Ask says the reason in words too ("overridden by the assigned agent (payment or arrangement already in
+place)").
+**Where.** `src/trustissues/nba/agent_view.py`, `ui/tiui/routers/nba.py`, `src/trustissues/ask/case_facts.py`,
+`ui/web/src/pages/Approvals.tsx`, `Queue.tsx`, `DecisionCard.tsx`; tests `tests/test_agent_view.py`
+(`test_lead_digest_lists_overridden_cases_with_who_and_why`), `tests_ui/test_rbac.py`
+(`test_the_lead_sees_overridden_cases_with_who_and_why`).
+
+### D41: every customer and every case can be found; live state everywhere
+
+**Decision.** (a) Next best action lists every customer the role may see, 50 a page with Previous / Next and the total
+(team lead 86,051; hardship specialist 13,522; agent AG-5944 271). (b) The agent's queue lists every case assigned to
+them, not one row per person: `agent_queue` no longer drops a person's other cases, marks the one contacted today
+(`todays_contact`), and the queue's own search covers every case (customer, case, recommendation, treatment, status,
+summary), including done and overridden ones, whatever filter is on. (c) Next best action's Timing pillar shows the live
+state ("Cleared · Approved (hardship)", "Waiting for hardship approval", "Rejected at approval") from
+`gold.nba_overrides`, and the card header says "Approved: Hardship" once approved.
+**Replaces.** `LIMIT 20` in `/api/next-action/customers`; `drop_duplicates("customer")` in `agent_view.agent_queue`; a
+table filter that searched only the visible columns of the visible rows (the customer ID was not a column, and done
+cases were filtered out first); the static `requires_approval` flag read as "Needs approval" after approval.
+**Why.** Click-testing: the NBA tab showed 20 customers; an agent could not find some of their own customers; an
+approved case still said it needed approval.
+**Rejected.** A bigger LIMIT (still a cut-off); server-side search for the queue (271 rows at most per agent today).
+**Consequence.** `/api/next-action/customers` takes `page`, `page_size` (10-200) and returns `total`; each
+recommendation of `/api/next-action/customers/{id}` carries `status`. On the 28 Sep queue no agent has two cases of one
+person, so (b) changes no counts today; it matters once identity merges more people.
+**Where.** `ui/tiui/routers/next_action.py`, `src/trustissues/nba/agent_view.py`, `ui/preview_backend.py`,
+`ui/web/src/pages/NextAction.tsx`, `Queue.tsx`, `DecisionCard.tsx`; tests `tests/test_agent_view.py`.
+
+### D42: only the numbers each role acts on
+
+**Decision.** Each screen keeps the figures its role uses to decide what to do next; queue figures always count the
+whole queue, never the filtered rows. Removed:
+
+| Screen | Removed | Kept |
+|---|---|---|
+| Agent overview | Recommendations today (a total), Your override rate (7 days), Today's treatments and Channels bars | Waiting for your decision, Cleared to carry out, Done today, Up next |
+| My work queue | Recommendations (repeated in the list title), Waiting for approval (the agent cannot act on it) | Waiting for your decision, Cleared to carry out, Done today |
+| Team lead overview | "Agents still to decide: across the bank" (now "Your agents still to decide", the lead's team only), "Where today's recommendations stand" (bank-wide bars), the batch in the by-type bars | Case approvals waiting, Automated reminders waiting, Your agents still to decide, Team override rate, approvals by type, Your team |
+| Team & approvals | The six bank-wide state figures, the "Override review" panel (duplicated Decision review) | The batch, Waiting for approval (with type filters), Overridden |
+| Hardship specialist overview | Vulnerability and Hardship tiles (the total split again), Support calls today (bank-wide), "Why a support call is due", "Programmes on the cards" | Waiting for your approval, Waiting for your decision and Cleared to carry out (their own queue), Next to review |
+| QA overview | Recommendation mix today | Override rate, Safeguard overrides, Failed data rules, Refused requests, Overrides by reason, Risk score bands |
+
+"Waiting for your decision" in the queue was checked by clicking the tile and the filter: it stays at the full count
+(10 for DEMO-A1 in the preview, 87 for AG-5944) because it counts the whole queue.
+**Why.** Click-testing: agents saw bank-wide counts they could do nothing about, and the same total in three places.
+**Where.** `ui/tiui/routers/overview.py`, `ui/web/src/pages/Queue.tsx`, `Approvals.tsx`, `Overview.tsx` (the tile row
+has one column per tile, so three tiles leave no empty cell).
+
+### D43: names staff understand; header and MFA wording
+
+**Decision.** Labels only, the stored codes stay: `push_reminder` reads **App notification** and channel `push`
+**Mobile app notification** (web labels, overview, card text from `nba/explain.py`, Ask); `digital_batch` reads
+**Automated reminders (daily batch)**, explained where it appears: "Reminders sent automatically by SMS, email or app
+notification. No agent is involved, so a team lead approves the whole day's batch at once, and can pull out any case
+first." The header shows the CIBC mark and **CIBC Collections** (page title too); the DEMO ENVIRONMENT tag is gone; with
+MFA off in a demo the badge reads "Demo access · MFA enabled in deployment". Card text also names the runner-up action in
+words ("vs $0.09 for an SMS reminder", not `sms_reminder`).
+**Why.** "Push reminder" and "Digital batch" meant nothing to staff; "MFA disabled" read as a security fault.
+**Consequence.** Decision cards already in `gold.nba_decisions` keep their old sentence ("Send an app push reminder",
+runner-up codes) until the queue is next written (`make nightly`); labels around them change now. The CIBC mark is
+drawn inline in `Wordmark.tsx` as a stand-in; swap in the bank's official logo file when one is approved.
+**Where.** `ui/web/src/lib/labels.ts`, `ui/tiui/routers/overview.py`, `src/trustissues/nba/explain.py`,
+`src/trustissues/ask/case_facts.py`, `ui/web/src/components/Wordmark.tsx`, `Shell.tsx`, `SecurityPanel.tsx`,
+`ui/web/src/pages/SignIn.tsx`, `ui/web/index.html`; test `tests/test_ask_case_facts.py`.
+
+### D44: approvals and decision review update live
+
+**Decision.** Team & approvals, Decision review, the work queue, the overview and a customer's next best action refetch
+every 20 s while the tab is visible and whenever the window regains focus (`live` in `ui/web/src/api/client.ts`). Any
+decision, approval or batch approval in the same browser invalidates every screen it can change (`DECISION_QUERIES`).
+Automatic refreshes send `X-TI-Background: 1`, and the server does not count them as activity, so an open screen never
+keeps an idle session alive; only the person's own clicks and keys do (the idle lock's keep-alive).
+**Replaces.** These screens fetched once (the overview every 60 s, which also reset the idle timer); decisions made in
+another session appeared only after a manual reload.
+**Rejected.** Server push (websockets): more moving parts for a 20 s need.
+**Where.** `ui/web/src/api/client.ts`, `ui/tiui/deps.py` (`session_of`), `Approvals.tsx`, `DecisionReview.tsx`,
+`Queue.tsx`, `Overview.tsx`, `NextAction.tsx`, `DecisionCard.tsx`; tests `tests_ui/test_security.py`
+(`test_background_refresh_does_not_keep_an_idle_session_alive`), `ui/web/src/api/client.test.ts`.
 
 ---
 

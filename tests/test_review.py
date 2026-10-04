@@ -77,7 +77,8 @@ def test_approvers_by_reason(con):
 
 
 def test_states_follow_the_decisions(con):
-    assert _states(con) == {"R-CALL": "waiting_agent", "R-HB": "waiting_approval", "R-HARD": "waiting_approval",
+    # a call waits for its agent first (accept, then approve); a digital reminder has no agent, only the approval
+    assert _states(con) == {"R-CALL": "waiting_agent", "R-HB": "waiting_agent", "R-HARD": "waiting_agent",
                             "R-SMS1": "waiting_approval", "R-SMS2": "waiting_approval", "R-WAIT": "ready"}
     review.record(con, "R-CALL", "AG-1", "accepted", ts=T0)
     review.record(con, "R-HB", "TL-1", "approved", ts=T0)
@@ -101,6 +102,19 @@ def test_an_overridden_recommendation_is_not_approved_or_rejected(con):
     assert _states(con)["R-HB"] == "ready"
 
 
+def test_nothing_is_decided_twice(con):
+    """D39: an approval or rejection is final; an agent's current decision is not recorded again."""
+    review.record(con, "R-HB", "TL-1", "approved", ts=T0)
+    _rejects(con, "R-HB", "TL-1", "approved", match="already been approved")
+    _rejects(con, "R-HB", "TL-1", "rejected", "card_facts_wrong", match="already been approved")
+    review.record(con, "R-HARD", "TL-1", "rejected", "hardship_disclosed", ts=T0)
+    _rejects(con, "R-HARD", "HS-1", "approved", match="already been rejected")
+    review.record(con, "R-CALL", "AG-1", "accepted", ts=T0)
+    _rejects(con, "R-CALL", "AG-1", "accepted", match="already accepted")
+    review.record(con, "R-CALL", "AG-1", "overridden", "other", ts=datetime(2026, 9, 28, 10, 0))  # the one change left
+    _rejects(con, "R-CALL", "AG-1", "overridden", "too_much_contact", match="already overridden")
+
+
 def test_latest_decision_wins_and_history_is_kept(con):
     review.record(con, "R-CALL", "AG-1", "accepted", ts=T0)
     review.record(con, "R-CALL", "AG-1", "overridden", "too_much_contact", ts=datetime(2026, 9, 28, 11, 0))
@@ -116,7 +130,7 @@ def test_batch_approval_covers_the_open_digital_batch_only(con):
     assert review.approve_batch(con, "TL-1", D, {"R-SMS2": "contact_details_wrong"}, ts=T0) == \
         {"approved": 1, "rejected": 1}
     s = _states(con)
-    assert (s["R-SMS1"], s["R-SMS2"], s["R-HB"]) == ("ready", "blocked", "waiting_approval")
+    assert (s["R-SMS1"], s["R-SMS2"], s["R-HB"]) == ("ready", "blocked", "waiting_agent")
     # a second sign-off does not touch what was already decided
     assert review.approve_batch(con, "TL-1", D, ts=datetime(2026, 9, 28, 10, 0)) == {"approved": 0, "rejected": 0}
 
@@ -132,3 +146,41 @@ def test_weekly_summary(con):
     assert s["safeguard_overrides"] == [("R-CALL", "CS-R-CALL", "hardship_disclosed")]
     assert s["rejections_by_reason"] == {"too_much_contact": 1}
     assert s["still_pending"] == {"high_balance": 1, "hardship": 1}
+
+
+def test_a_call_is_accepted_then_approved_then_marked_complete_with_its_outcome(con):
+    _rejects(con, "R-HB", "AG-1", "completed", "reached_promise", match="not cleared yet")  # nothing signed off yet
+    review.record(con, "R-HB", "AG-1", "accepted", ts=T0)
+    assert _states(con)["R-HB"] == "waiting_approval"
+    _rejects(con, "R-HB", "AG-1", "completed", "reached_promise", match="not cleared yet")
+    review.record(con, "R-HB", "TL-1", "approved", ts=T0)
+    assert _states(con)["R-HB"] == "ready"
+    _rejects(con, "R-HB", "AG-1", "completed", match="needs its outcome")
+    _rejects(con, "R-HB", "AG-1", "completed", "customer_already_paid", match="needs its outcome")  # a reason, not an outcome
+    _rejects(con, "R-HB", "AG-2", "completed", "no_answer", match="assigned to AG-1")
+    review.record(con, "R-HB", "AG-1", "completed", "reached_promise", ts=datetime(2026, 9, 28, 10, 0))
+    st = review.status_of(con, "R-HB", D)
+    assert (st["state"], st["completion"], st["outcome"]) == ("done", "completed", "reached_promise")
+    # the call has been made: nothing more is decided on it, by the agent or the approver
+    _rejects(con, "R-HB", "AG-1", "overridden", "other", match="marked complete")
+    _rejects(con, "R-HB", "TL-1", "rejected", "other", match="marked complete")
+    assert review.summary(con, D, D)["call_outcomes"] == {"reached_promise": 1}
+    assert review.summary(con, D, D)["agent_decisions"] == 1  # completion is not an agent decision: rate unchanged
+
+
+def test_only_calls_are_marked_complete(con):
+    _rejects(con, "R-WAIT", "AG-2", "completed", "no_answer", match="only a call")
+    _rejects(con, "R-SMS1", "TL-1", "completed", "no_answer", match="only a call")
+
+
+def test_an_accepted_wait_is_done_and_can_still_be_changed(con):
+    review.record(con, "R-WAIT", "AG-2", "accepted", ts=T0)
+    assert _states(con)["R-WAIT"] == "done"
+    review.record(con, "R-WAIT", "AG-2", "overridden", "customer_requested_channel", ts=datetime(2026, 9, 28, 10, 0))
+    assert _states(con)["R-WAIT"] == "overridden"
+
+
+def test_a_rejection_outranks_a_later_override(con):
+    review.record(con, "R-HB", "TL-1", "rejected", "card_facts_wrong", ts=T0)
+    review.record(con, "R-HB", "AG-1", "overridden", "other", ts=datetime(2026, 9, 28, 10, 0))
+    assert _states(con)["R-HB"] == "blocked"
