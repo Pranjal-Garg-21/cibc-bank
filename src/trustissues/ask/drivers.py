@@ -206,16 +206,21 @@ def _explain_volume(current: Period, previous: Period, policy, con, database) ->
     days_now, days_before = (current.end - current.start).days, (previous.end - previous.start).days
     per_dim: dict[str, list[Segment]] = {}
     totals = None
+    unplaced: dict[str, tuple[float, float]] = {}  # calls with no value for a segment: in the total, not in its table
     log: list[str] = []
     for dim, expr in VOLUME_DIMENSIONS.items():
-        sides = []
+        sides, whole, blank = [], [], []
         for period in (previous, current):
             res = _run(VOLUME_SQL.format(expr=expr), {"start": period.start, "end": period.end}, policy, con, database, log)
             scale = 1.0 if days_now == days_before else 1.0 / max((period.end - period.start).days, 1)
             sides.append({str(r[0]): r[1] * scale for r in res.rows if r[0] is not None})
+            whole.append(sum(r[1] for r in res.rows) * scale)
+            blank.append(sum(r[1] for r in res.rows if r[0] is None) * scale)
         r0, r1, segs = decompose_counts(sides[0], sides[1], dim)
         per_dim[dim] = segs
-        totals = (r0, r1)
+        totals = (whole[0], whole[1])  # the true call volume, whatever the segment: the same for every dimension
+        if blank[0] or blank[1]:
+            unplaced[dim] = (blank[0], blank[1])
     overall = (totals[1] - totals[0]) / totals[0] if totals and totals[0] else None
     broad = broad_based(per_dim, overall)
     notes = ["Outbound calls only (channel 'call', direction 'outbound').",
@@ -223,6 +228,9 @@ def _explain_volume(current: Period, previous: Period, policy, con, database) ->
              "which are not connected, so no cause is claimed."]
     if broad:
         notes.insert(1, broad)
+    for dim, (b0, b1) in unplaced.items():
+        notes.append(f"Calls with no {dim} recorded ({b0:,.0f} before, {b1:,.0f} after) are in the totals but not in the "
+                     f"{dim} rows.")
     if days_now != days_before:
         notes.append("Periods differ in length, so volumes are per-day averages.")
     return DriverReport("contact_volume", "calls", totals[0], totals[1], rank_segments(per_dim), notes, log)

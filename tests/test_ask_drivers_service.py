@@ -104,3 +104,15 @@ def test_metric_answer_records_the_executed_statement_and_parameters(con):
     row = run([q], con=con)[0]
     assert "semantic_contacts" in row["sql_or_sources"] and "-- parameters:" in row["sql_or_sources"]
     assert "start: 2026-09-01" in row["sql_or_sources"] and "LIMIT" in row["sql_or_sources"]  # the statement that actually ran
+
+
+def test_volume_headline_counts_calls_that_have_no_segment_value(con):
+    # 3 more calls on each side with no province and no site: they are real calls, so they belong in the totals
+    for n, day in enumerate((21, 21, 21, 23, 23, 23)):
+        con.execute("INSERT INTO gold.semantic_contacts (contact_id, case_id, channel, direction, rpc_flag, agent_site, "
+                    "province, contact_hour_local, contact_ts_local) VALUES (?, 'A', 'call', 'outbound', false, NULL, NULL, 10, ?)",
+                    [f"Z{n}", datetime(2026, 9, day, 10)])
+    a = ask("Why did outbound call volume drop on 23-24 September 2026?", LEAD, as_of_date=AS_OF, con=con)
+    assert "moved from 23 to 17 (-6)" in a.answer  # 20 + 3 blank before, 14 + 3 blank after
+    assert any("Calls with no province recorded (3 before, 3 after)" in n for n in a.notes)
+    assert any("Calls with no agent_site recorded" in n for n in a.notes)
