@@ -1,0 +1,177 @@
+# Data contract: gold.c360_customer (Collections 360 customer record)
+# One machine-readable file that documents the product AND drives the publish gate
+# (src/trustissues/factory/quality/contract_checks.py). Change a rule here and the gate changes with it.
+# In rule SQL, {g} is the schema being checked (gold_stage before publishing) and {as_of} is AS_OF_DATE.
+
+product: gold.c360_customer
+version: "1.1.1"   # 1.1 (4 Oct): the ten columns added after 1.0 are described; known exceptions recorded; no rule changed. 1.1.1 (4 Oct): Q6 cause breakdown corrected; no rule changed
+id: DC-C360-001
+domain: retail collections and recovery
+business_owner: Head of Collections Data
+technical_owner: P1 (Layer 1)
+grain: strictly one row per resolved person (golden_customer_id)
+refresh: daily batch after the source extracts (02:00-05:00 ET); published by about 06:00 ET
+freshness_sla_hours: 24
+classification: restricted, contains direct PII
+access: >-
+  Agents see their assigned cases only; team leads see aggregates; analysts see non-PII data; PII masked by default.
+
+allowed_uses:
+  - collections operations
+  - next-best-action scoring and recommendations (through gold.decisioning_customer only)
+  - hardship identification
+  - frontline agent assistance
+  - collections analytics and reporting
+prohibited_uses:
+  - marketing and cross-selling
+  - credit decisions outside collections
+  - any decision using protected attributes
+  - any customer-affecting action without human review
+
+schema:
+  - {name: golden_customer_id, type: VARCHAR, key: true, description: "G- + 7 digits, stable across runs"}
+  - {name: source_keys, type: VARCHAR, description: "JSON {system: [keys]}: every linked CRM, card, loan, deposit and bureau key"}
+  - {name: match_method, type: VARCHAR, description: "strongest link in the cluster: crm_pointer, national_id, cif, human, name_dob_phone, dob_name_postal, splink, llm_confirmed, singleton"}
+  - {name: match_confidence, type: DOUBLE, description: "lowest link confidence in the cluster; NULL for a singleton"}
+  - {name: full_name, type: VARCHAR, sensitivity: direct_pii, description: "survivorship; see full_name_source / full_name_as_of"}
+  - {name: date_of_birth, type: DATE, sensitivity: direct_pii, description: "survivorship; see date_of_birth_source / date_of_birth_as_of"}
+  - {name: full_name_source, type: VARCHAR, description: "where the surviving name came from: crm, or the system of the best other record"}
+  - {name: full_name_as_of, type: TIMESTAMP, description: "when that source record was last updated (CRM profile update or extract time, otherwise the other system's as-of time)"}
+  - {name: date_of_birth_source, type: VARCHAR, description: "where the surviving date of birth came from; NULL when no linked source has one (see known_exceptions Q6)"}
+  - {name: date_of_birth_as_of, type: TIMESTAMP, description: "when that source record was last updated"}
+  - {name: survivor_crm_customer_id, type: VARCHAR, sensitivity: none, description: "the CRM record whose values survived into this row; NULL for a person with no CRM record"}
+  - {name: segment, type: VARCHAR}
+  - {name: province, type: VARCHAR, sensitivity: quasi_identifier}
+  - {name: consent_phone, type: VARCHAR, description: "CRM consent_call; most restrictive across CRM duplicates"}
+  - {name: consent_sms, type: VARCHAR}
+  - {name: consent_email, type: VARCHAR}
+  - {name: consent_mail, type: VARCHAR, description: "CRM consent_letter"}
+  - {name: consent_push, type: VARCHAR, description: "push-notification consent; most restrictive across CRM duplicates"}
+  - {name: consent_autodialer, type: VARCHAR, description: "autodialer consent; most restrictive across CRM duplicates"}
+  - {name: cease_contact, type: BOOLEAN, description: "true if any source says so"}
+  - {name: deceased, type: BOOLEAN}
+  - {name: bankruptcy, type: BOOLEAN}
+  - {name: open_dispute, type: BOOLEAN}
+  - {name: hardship_flag, type: BOOLEAN}
+  - {name: product_count, type: INTEGER, description: "number of linked accounts (0 when none)"}
+  - {name: payroll_delay_days, type: BIGINT, description: "days since the expected payroll date with no payroll credit, after a 2-day processing tolerance (data dictionary); taken from the latest deposit-account snapshot, NULL when the person has no deposit account"}
+  - {name: total_balance, type: DOUBLE, description: "money owed: card balance + loan outstanding + overdraft in use"}
+  - {name: total_overdue, type: DOUBLE}
+  - {name: max_dpd, type: INTEGER, description: "worst over open accounts"}
+  - {name: worst_bucket, type: VARCHAR}
+  - {name: active_promise_status, type: VARCHAR, description: "status of the most recent promise"}
+  - {name: source_systems, type: VARCHAR}
+  - {name: dq_status, type: VARCHAR, description: "'identity_in_review' when an open identity review item involves this person (4,857 on the 4 Oct build), otherwise 'ok'"}
+  - {name: refresh_ts, type: TIMESTAMP}
+
+related_products:   # other published gold tables that consumers read; each is checked by Q0 (interface shape) or Q11 (semantic shape)
+  - {name: gold.customer_xref, role: every source record and the golden person it belongs to (Q2)}
+  - {name: gold.decisioning_customer, role: the only table next-best-action scoring may read; no PII, protected attributes or proxies (Q4)}
+  - {name: gold.case_customer, role: which golden person each collections case belongs to}
+  - {name: "gold.semantic_* (cases, contacts, promises, accounts, snapshots, payroll)", role: the six views the Ask layer reads (Q11)}
+
+known_exceptions:   # warnings that fail on the published 4 Oct build, and why; neither blocks publishing and neither is a build error
+  - id: Q6
+    records: 9027   # of 1,011,960 people (0.89%)
+    cause: >-
+      Every one has no date of birth on file; none has an impossible age (none under 18, over 110 or in the future).
+      8,784 are people known only from the bureau file, not linked to any bank customer record, and the bureau
+      file carries a date for almost none of them (54 of 8,845 bureau-linked people with no date). The other 243
+      have a blank date in every linked record: 182 are loan-only (125) or CRM-only (57), and 53 have a bureau
+      record plus a bank record.
+    handling: the value is left NULL and date_of_birth_source says so; nothing is imputed, and age-based logic must treat NULL as unknown
+  - id: Q7
+    records: 18
+    cause: >-
+      Credit-card accounts in credit (the customer overpaid), from -2.37 to -145.11 CAD. The totals still equal the
+      sum of the accounts for all 18; only the 'not negative' half of the rule trips.
+    handling: kept as recorded; a card in credit is valid, so the 'not negative' test is stricter than the data warrants and is left as is
+
+rules:
+  # ---------------------------------------------------------------- blocking: publishing stops if any fails
+  - id: Q1
+    blocking: true
+    title: golden_customer_id is unique and not null
+    sql: "SELECT count(*) - count(DISTINCT golden_customer_id) + count(*) FILTER (WHERE golden_customer_id IS NULL), count(*) FROM {g}.c360_customer"
+  - id: Q2
+    blocking: true
+    title: every source record appears in customer_xref exactly once
+    sql: >-
+      SELECT (SELECT count(*) FROM identity.nodes n WHERE NOT EXISTS (SELECT 1 FROM {g}.customer_xref x WHERE x.node_id = n.node_id))
+           + (SELECT count(*) - count(DISTINCT node_id) FROM {g}.customer_xref),
+             (SELECT count(*) FROM identity.nodes)
+  - id: Q3
+    blocking: true
+    title: no link below 0.80; links between 0.80 and 0.95 only through LLM agreement or a person
+    sql: >-
+      SELECT count(*) FILTER (WHERE confidence < 0.80 OR (confidence < 0.95 AND method NOT IN ('llm_confirmed', 'human'))), count(*)
+      FROM identity.accepted_links
+  - id: Q4
+    blocking: true
+    title: no protected attribute, direct PII or proxy column in decisioning_customer
+    kind: decisioning_allow_list   # computed in Python from config/sensitivity.yaml plus the extra names below
+    forbidden_extra: [geo_lat, geo_lon, age, age_band, fsa, fsa_income_index, customer_accent_region, interpreter_used_flag,
+                      full_name, date_of_birth, national_id_hash, email, phone, postal, address_line1]
+  - id: Q5
+    blocking: true
+    title: a safety flag true in any source is true in gold
+    sql: >-
+      WITH src AS (
+        SELECT x.golden_customer_id, 'cease_contact' flag FROM curated.customers_current c JOIN {g}.customer_xref x ON x.node_id = 'crm|' || c.crm_customer_id WHERE c.cease_communication_flag
+        UNION ALL SELECT x.golden_customer_id, 'deceased' FROM curated.customers_current c JOIN {g}.customer_xref x ON x.node_id = 'crm|' || c.crm_customer_id WHERE c.deceased_flag
+        UNION ALL SELECT x.golden_customer_id, 'bankruptcy' FROM curated.customers_current c JOIN {g}.customer_xref x ON x.node_id = 'crm|' || c.crm_customer_id WHERE c.bankruptcy_flag
+        UNION ALL SELECT x.golden_customer_id, 'deceased' FROM curated.external e JOIN {g}.customer_xref x ON x.node_id = 'bureau|' || e.bank_subject_ref WHERE e.deceased_indicator
+        UNION ALL SELECT x.golden_customer_id, 'bankruptcy' FROM curated.external e JOIN {g}.customer_xref x ON x.node_id = 'bureau|' || e.bank_subject_ref WHERE e.bankruptcy_on_file_flag
+        UNION ALL SELECT cc.golden_customer_id, 'cease_contact' FROM curated.collections_cases c JOIN {g}.case_customer cc USING (case_id) WHERE c.cease_contact_flag
+        UNION ALL SELECT cc.golden_customer_id, 'deceased' FROM curated.collections_cases c JOIN {g}.case_customer cc USING (case_id) WHERE c.deceased_hold_flag
+        UNION ALL SELECT cc.golden_customer_id, 'open_dispute' FROM curated.collections_cases c JOIN {g}.case_customer cc USING (case_id) WHERE c.dispute_status = 'open'
+        UNION ALL SELECT a.golden_customer_id, 'open_dispute' FROM {g}.c360_account a WHERE a.dispute_flag)
+      SELECT count(*) FILTER (WHERE NOT CASE s.flag WHEN 'cease_contact' THEN g.cease_contact WHEN 'deceased' THEN g.deceased
+                                            WHEN 'bankruptcy' THEN g.bankruptcy WHEN 'open_dispute' THEN g.open_dispute END),
+             count(*)
+      FROM src s JOIN {g}.c360_customer g USING (golden_customer_id)
+  - id: Q0
+    blocking: true
+    title: every gold table has the agreed interface shape (contracts/interfaces/stubs.sql)
+    kind: interface_shape
+  - id: Q11
+    blocking: true
+    title: every semantic_* table has exactly the columns and types P2's Ask layer expects (ask/data/semantic.py)
+    kind: semantic_shape   # added with the semantic views (4 Oct): Ask's validator allows exactly these columns
+
+  # ---------------------------------------------------------------- warnings: reported, do not block
+  - id: Q6
+    blocking: false
+    title: date_of_birth valid; derived age between 18 and 110
+    sql: >-
+      SELECT count(*) FILTER (WHERE date_of_birth IS NULL OR date_diff('year', date_of_birth, DATE '{as_of}') NOT BETWEEN 18 AND 110), count(*)
+      FROM {g}.c360_customer
+  - id: Q7
+    blocking: false
+    title: balances and max_dpd are not negative; customer balance and overdue totals equal the sum of accounts
+    # overdue added from P2's rule 7 (P2 merge, 4 Oct); 0 overdue mismatches on the 4 Oct build, so Q7 still counts 18
+    sql: >-
+      SELECT count(*) FILTER (WHERE g.total_balance < 0 OR g.max_dpd < 0 OR g.total_overdue < 0
+                              OR abs(g.total_balance - coalesce(a.owed, 0)) > 0.01
+                              OR abs(coalesce(g.total_overdue, 0) - coalesce(a.overdue, 0)) > 0.01), count(*)
+      FROM {g}.c360_customer g LEFT JOIN (SELECT golden_customer_id, sum(amount_owed) owed, sum(overdue_amount) overdue
+                                          FROM {g}.c360_account GROUP BY 1) a USING (golden_customer_id)
+  - id: Q8
+    blocking: false
+    title: bureau score within its scoring model's range (RS-2.4 and RS-3.0 both score 300-850 in this release)
+    sql: >-
+      SELECT count(*) FILTER (WHERE bureau_score NOT BETWEEN 300 AND 850), count(bureau_score) FROM {g}.decisioning_customer
+  - id: Q9
+    blocking: false
+    title: source snapshot no more than 24 hours behind AS_OF_DATE
+    sql: >-
+      SELECT CASE WHEN date_diff('day', (SELECT max(snapshot_date) FROM {g}.c360_account), DATE '{as_of}') > 1 THEN 1 ELSE 0 END, 1
+  - id: Q10
+    blocking: false
+    title: the gold build is no more than 24 hours old when it is checked (batch clock, not the data's as-of date)
+    # from P2's rule 8 (P2 merge, 4 Oct): Q9 checks the data is current, this checks the build is. refresh_ts is
+    # written with the same clock (current_timestamp::TIMESTAMP in build_c360.py)
+    sql: >-
+      SELECT count(*) FILTER (WHERE refresh_ts IS NULL OR refresh_ts > current_timestamp::TIMESTAMP
+                              OR refresh_ts < current_timestamp::TIMESTAMP - INTERVAL 24 HOUR), count(*)
+      FROM {g}.c360_customer

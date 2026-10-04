@@ -230,9 +230,14 @@ unmasked identity data to any provider.
 
 ## 4. Where the other deliverables are
 
-| Deliverable | Where |
-|---|---|
-| Data contract | `contracts/c360_customer.yaml` |
-| Data quality report | `reports/data_quality_report.md` (regenerate with `python -m trustissues.factory.quality.dq_report`) |
-| Benchmark answers | `submission/benchmark_answers.csv` |
-| Design sections per layer | `docs/p1_design_sections.md`, `docs/p2_design_sections.md`, `docs/p3_submission_text.md`, `docs/p4_design_sections.md` |
+Copies of everything the hackathon asks for in the repo are in [`deliverables/`](deliverables/):
+
+| Deliverable | File in `deliverables/` | Source of truth |
+|---|---|---|
+| Architecture diagram | `architecture_diagram.png` | `docs/architecture/full.png` |
+| Data contract | `data_contract.yaml` | `contracts/c360_customer.yaml` |
+| Data quality report | `data_quality_report.md` | `reports/data_quality_report.md` (regenerate with `python -m trustissues.factory.quality.dq_report`) |
+| Benchmark answers | `benchmark_answers.csv` | `submission/benchmark_answers.csv` |
+
+Design sections per layer: `docs/p1_design_sections.md`, `docs/p2_design_sections.md`, `docs/p3_submission_text.md`,
+`docs/p4_design_sections.md`.
