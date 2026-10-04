@@ -23,7 +23,6 @@ CALL_ACTIONS = ("agent_call", "support_call")
 
 @dataclass(frozen=True)
 class RoleSpec:
-    portal: str                      # the sign-in tab that admits this role
     ask_role: str                    # the Ask / masking role (ask.types.ROLES)
     caps: frozenset[str]
     approvals: tuple[str, ...] = ()  # kinds of approval this role may give
@@ -33,29 +32,28 @@ class RoleSpec:
 _COMMON = {"overview", "ask_policy"}
 
 ROLES: dict[str, RoleSpec] = {
-    "agent": RoleSpec("agent", "agent", frozenset(_COMMON | {"my_queue", "next_action", "case_view", "decide", "ask_case"}),
+    "agent": RoleSpec("agent", frozenset(_COMMON | {"my_queue", "next_action", "case_view", "decide", "ask_case"}),
                       customers="own"),
-    "senior_agent": RoleSpec("agent", "agent", frozenset(_COMMON | {"my_queue", "next_action", "case_view", "decide", "ask_case"}),
+    "senior_agent": RoleSpec("agent", frozenset(_COMMON | {"my_queue", "next_action", "case_view", "decide", "ask_case"}),
                              customers="own"),
     # "decide": a recommendation the queue allocated to the lead themself (nba.review checks it is theirs).
-    "team_lead": RoleSpec("team_lead", "team_lead", frozenset(_COMMON | {
+    "team_lead": RoleSpec("team_lead", frozenset(_COMMON | {
         "next_action", "case_view", "decide", "approvals", "approve_batch", "manage_agents", "identity_review", "decision_review",
         "data_quality", "ask_case", "ask_portfolio", "tables"}), approvals=ALL_APPROVALS, customers="all"),
     # Ask role "agent": policy and cases assigned to them only. No portfolio numbers for the support desk.
     # The queue allocates recommendations to specialists too (1,440 on 28 Sep, 450 of them support calls), so they
     # work their own queue like an agent (as on the Streamlit pages) besides approving hardship and vulnerability.
-    "hardship_specialist": RoleSpec("hardship_specialist", "agent", frozenset(_COMMON | {
+    "hardship_specialist": RoleSpec("agent", frozenset(_COMMON | {
         "my_queue", "next_action", "case_view", "decide", "approvals", "ask_case"}), approvals=SUPPORT_APPROVALS,
         customers="support"),
-    "qa_analyst": RoleSpec("qa_analyst", "analyst", frozenset(_COMMON | {
+    "qa_analyst": RoleSpec("analyst", frozenset(_COMMON | {
         "identity_review", "decision_review", "data_quality", "audit_log", "ask_portfolio"})),
 }
 
-# Sign-in tab -> staff roles it admits. A role on the wrong tab fails like a wrong password.
-PORTALS: dict[str, tuple[str, ...]] = {}
-for _role, _spec in ROLES.items():
-    PORTALS[_spec.portal] = PORTALS.get(_spec.portal, ()) + (_role,)
+# One sign-in form for everyone (D37): the role comes from curated.agents.role, never from the browser. Any role in
+# this table may sign in; anything else fails like a wrong password.
 SIGN_IN_ROLES = tuple(ROLES)
+AGENT_ROLES = ("agent", "senior_agent")  # whose passwords a team lead sets (routers/team.py)
 ASK_ROLE = {r: s.ask_role for r, s in ROLES.items()}
 SUPERVISORS = ("team_lead", "hardship_specialist", "qa_analyst")  # who nba.agent_view lets see others' recommendations
 

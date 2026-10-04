@@ -50,12 +50,8 @@ def real(tmp_path):
 
 
 def sign_in(c, agent_id: str) -> str:
-    """conftest.sign_in picks the tab from the tiny test warehouse's IDs; here the tab is the real role's portal."""
+    """One sign-in form for every role: the server reads the role from the real warehouse."""
     import uikit as conftest
-    from tiui import rbac
-    for role, sid in REAL_IDS.items():
-        if sid == agent_id:
-            conftest.ROLE_TAB[agent_id] = rbac.ROLES[role].portal
     return conftest.sign_in(c, agent_id)
 
 

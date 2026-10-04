@@ -93,25 +93,27 @@ make ui-build                                           # once: builds ui/web/di
 python ui/serve.py --demo --shared-access               # asks for one demo password at start-up; http://127.0.0.1:8000
 ```
 
-Sign in with **any active staff ID** from `curated.agents` and that password, on the tab for the person's role
-(Agent, Team lead, Hardship, QA; a wrong tab fails like a wrong password). Staff IDs that make a good test set (one
-real team plus a specialist and QA):
+Sign in with **any active staff ID** from `curated.agents` and that password. There is one sign-in form for every
+role: the server reads the role from `curated.agents.role` and opens that role's screens (no role tabs since 4 Oct;
+`docs/ui_decisions.md` D37). Staff IDs that make a good test set (one real team plus a specialist and QA):
 
-| Tab | Staff ID | Who |
-|---|---|---|
-| Agent | `AG-5944` | agent, vulnerable-customer certified, 271 recommendations |
-| Agent | `AG-1785` | senior agent, same team |
-| Agent | `AG-8916` | agent, same team, not certified |
-| Team lead | `AG-4595` | their team lead |
-| Hardship | `AG-1125` | hardship specialist with a queue of their own |
-| QA | `AG-3805` | QA analyst |
+| Staff ID | Who |
+|---|---|
+| `AG-5944` | agent, vulnerable-customer certified, 271 recommendations |
+| `AG-1785` | senior agent, same team |
+| `AG-8916` | agent, same team, not certified |
+| `AG-4595` | their team lead (Next best action lists all 86,051 customers, 50 a page) |
+| `AG-1125` | hardship specialist with a queue of their own (13,522 customers in their remit) |
+| `AG-3805` | QA analyst |
 
 - Add `--ask-llm` to let Ask use the language model (policy answers, call summaries, generated queries). It needs
   `OPENROUTER_API_KEY` in `.env`. Without it, certified metrics, case facts and refusals still answer.
 - The server opens the warehouse only per request, so the nightly run can go while it is up (the console says "Data is
   being refreshed" for a moment). Do not click decisions while a nightly stage is starting.
-- Which role sees which screens and customers: `ui/README.md` ("Roles and access"). Decisions you click (accept,
-  override, approve, reject, the batch) are written to `gold.nba_overrides` on your machine only. To start clean
+- Which role sees which screens and customers: `ui/README.md` ("Roles and access").
+- Approving the daily batch of automated reminders asks for the team lead's password every time, in the confirmation
+  dialog (D38). Approvals, rejections and accepts cannot be clicked twice (D39). Decisions you click (accept,
+  override, approve, reject, mark complete, the batch) are written to `gold.nba_overrides` on your machine only. To start clean
   again: `DELETE FROM gold.nba_overrides` with the console stopped.
 - Individual accounts with MFA instead of the shared password: `python ui/accounts.py add <staff id>` and
   `enroll-mfa` (`ui/README.md`).

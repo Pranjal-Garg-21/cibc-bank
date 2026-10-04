@@ -31,6 +31,11 @@ FACT_WORDS = {
     "nba": r"\b(next best action|nba|next action|next step|what should (?:i|we|the agent) do|recommend\w*|"
            r"treatment|best (?:action|channel|time)|how (?:should|do) (?:i|we) (?:contact|reach)|channel|timing)\b",
 }
+# Actions and channels in staff words, as the web console labels them (ui/web/src/lib/labels.ts), never codes.
+ACTION_WORDS = {"push_reminder": "app notification", "sms_reminder": "SMS reminder", "email_reminder": "email reminder",
+                "agent_call": "call", "support_call": "support call", "letter": "letter", "wait": "wait"}
+CHANNEL_WORDS = {"push": "mobile app notification", "sms": "SMS", "email": "email", "phone": "phone",
+                 "mail": "letter by post"}
 ALL_FACTS = ("status", "queue", "bucket", "dpd", "balance", "agent", "last_contact", "promise", "nba")
 
 
@@ -132,8 +137,9 @@ def _approvers(reason) -> str:
 
 def _state_text(st: dict | None, needs_approval: bool, reason) -> str | None:
     """The recommendation's state in words, from the review rules; None if nothing applies."""
+    from trustissues.nba import review
     why = (st or {}).get("reason_code")
-    why = f" ({str(why).replace('_', ' ')})" if why else ""
+    why = f" ({review.REASON_CODES.get(why, str(why).replace('_', ' ')).lower()})" if why else ""
     state = (st or {}).get("state")
     if state == "overridden":
         return f"overridden by the assigned agent{why}: it will not be carried out today"
@@ -144,8 +150,14 @@ def _state_text(st: dict | None, needs_approval: bool, reason) -> str | None:
         return f"needs a team lead's approval ({label})" if who == "team lead" else f"needs approval by a {who} ({label})"
     if state == "waiting_agent":
         return "waiting for the assigned agent to accept or override it"
+    if state == "done":
+        outcome = (st or {}).get("outcome")
+        if (st or {}).get("completion") == "completed":
+            return "done: the call has been made" + (
+                f" ({review.CALL_OUTCOMES.get(outcome, str(outcome).replace('_', ' ')).lower()})" if outcome else "")
+        return "done: the assigned agent accepted waiting today"
     if state == "ready":
-        return "ready to carry out (every sign-off it needs is in)"
+        return "cleared to carry out (every sign-off it needs is in)"
     return None
 
 
@@ -155,8 +167,8 @@ def _nba_text(r) -> tuple[str, list[tuple[str, str]]]:
         card = json.loads(card_json or "{}")
     except ValueError:
         card = {}
-    action_text = str(action).replace("_", " ")
-    parts = [f"{action_text}" + (f" by {channel}" if channel and channel != "none" else "")]
+    action_text = ACTION_WORDS.get(action, str(action).replace("_", " "))
+    parts = [f"{action_text}" + (f" by {CHANNEL_WORDS.get(channel, channel)}" if channel and channel != "none" else "")]
     rows = [("next_best_action", action_text), ("recommended_channel", str(channel or "none"))]
     if card.get("contact_window"):
         parts.append(f"within {card['contact_window']}")

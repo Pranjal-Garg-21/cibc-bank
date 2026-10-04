@@ -1,4 +1,4 @@
-"""Two sign-in roles, and agent passwords set by their team lead."""
+"""One sign-in form for every role, and agent passwords set by their team lead."""
 from __future__ import annotations
 
 from uikit import TEST_PASSWORD, sign_in
@@ -6,23 +6,21 @@ from uikit import TEST_PASSWORD, sign_in
 AGENT_PW = "agent-pass-" + TEST_PASSWORD[-8:]
 
 
-def login(c, staff_id, password, role):
-    return c.post("/api/session/login", json={"role": role, "staff_id": staff_id, "password": password})
+def login(c, staff_id, password):
+    return c.post("/api/session/login", json={"staff_id": staff_id, "password": password})
 
 
-def test_role_tab_must_match_the_account(client):
+def test_the_role_comes_from_the_staff_record(client):
     client.app.state.limiter.limits["login"] = []  # many sign-ins in one test; the per-address limit is tested elsewhere
-    assert login(client, "L1", TEST_PASSWORD, "agent").status_code == 401       # a lead on the Agent tab
-    assert login(client, "A1", TEST_PASSWORD, "team_lead").status_code == 401   # an agent on the Team lead tab
-    r = login(client, "A1", TEST_PASSWORD, "team_lead")
-    assert r.json()["message"] == login(client, "A1", "wrong-password-1", "agent").json()["message"]  # same message
-    assert login(client, "A1", TEST_PASSWORD, "agent").status_code == 200
-    assert login(client, "L1", TEST_PASSWORD, "team_lead").status_code == 200
+    for sid, role in (("A1", "agent"), ("L1", "team_lead"), ("Q1", "qa_analyst")):
+        assert login(client, sid, TEST_PASSWORD).status_code == 200
+        assert client.get("/api/session/me").json()["role"] == role
+    # a wrong password and an unknown staff ID: the same refusal, so nothing says whether the ID exists
+    assert login(client, "A1", "wrong-password-1").json()["message"] == login(client, "ZZ9", "wrong-password-1").json()["message"]
+    assert login(client, "X1", TEST_PASSWORD).status_code == 401  # terminated
 
 
-def test_other_roles_cannot_sign_in(client):
-    for tab in ("agent", "team_lead"):
-        assert login(client, "Q1", TEST_PASSWORD, tab).status_code == 401  # QA analyst: no access to this app
+def test_a_role_cannot_be_sent(client):
     assert client.post("/api/session/login", json={"role": "admin", "staff_id": "L1", "password": TEST_PASSWORD}).status_code == 422
 
 
@@ -48,8 +46,8 @@ def test_lead_sets_an_agents_password_and_it_works(client, ui_settings):
     r = client.post("/api/team/agents/A2/password", json={"password": AGENT_PW}, headers={"X-CSRF-Token": csrf})
     assert r.status_code == 200 and r.json()["set_by"] == "L1" and "password" not in r.json()
     assert AGENT_PW not in ui_settings.accounts_file.read_text(encoding="utf-8")  # stored hashed
-    assert login(client, "A2", TEST_PASSWORD, "agent").status_code == 401  # old password replaced
-    assert login(client, "A2", AGENT_PW, "agent").status_code == 200
+    assert login(client, "A2", TEST_PASSWORD).status_code == 401  # old password replaced
+    assert login(client, "A2", AGENT_PW).status_code == 200
 
 
 def test_lead_cannot_touch_another_teams_agent_or_a_lead(client):
@@ -83,4 +81,4 @@ def test_revoking_signs_the_agent_out(make_client):
     r = lead.post("/api/team/agents/A1/revoke", json={}, headers={"X-CSRF-Token": csrf})
     assert r.status_code == 200 and r.json()["removed"] is True
     assert agent.get("/api/session/me").status_code == 401
-    assert login(agent, "A1", TEST_PASSWORD, "agent").status_code == 401
+    assert login(agent, "A1", TEST_PASSWORD).status_code == 401

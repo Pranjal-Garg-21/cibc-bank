@@ -29,7 +29,7 @@ export function SecurityPanel({ me }: { me: Me }) {
       <div>
         <h3 className="mb-3 flex items-center gap-2 text-[16px] font-bold"><ShieldCheck className="size-5 text-brand" strokeWidth={1.5} aria-hidden="true" />Account security</h3>
         <dl className="space-y-3 text-sm">
-          <div className="flex items-center justify-between gap-3"><dt>Multi-factor authentication</dt><dd><StatusBadge tone={me.mfa ? 'ok' : 'warn'}>{me.mfa ? 'Verified' : 'Demo: disabled'}</StatusBadge></dd></div>
+          <div className="flex items-center justify-between gap-3"><dt>Multi-factor authentication</dt><dd><StatusBadge tone={me.mfa ? 'ok' : 'warn'}>{me.mfa ? 'Verified' : 'Demo access · enabled in deployment'}</StatusBadge></dd></div>
           <div className="flex items-center justify-between gap-3"><dt>Connection</dt><dd>{me.transport_secure ? 'HTTPS' : 'Local HTTP preview'}</dd></div>
         </dl>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Lost your authenticator? Use an unused recovery code or contact the service desk. Changing a second factor requires identity verification.</p>

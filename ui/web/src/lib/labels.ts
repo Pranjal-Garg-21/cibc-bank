@@ -1,11 +1,12 @@
-// Labels shared with the Streamlit app (app/ui.py) so both interfaces say the same thing.
+// Labels for stored codes. The codes never change (push_reminder, push, digital_batch); only the words do.
+// The server's own copies: ui/tiui/routers/overview.py (ACTION_NAME, CHANNEL_NAME, APPROVAL_NAME).
 
 export const ACTION_LABEL: Record<string, string> = {
   support_call: 'Support call',
   agent_call: 'Call',
   sms_reminder: 'SMS reminder',
   email_reminder: 'Email reminder',
-  push_reminder: 'Push reminder',
+  push_reminder: 'App notification',
   letter: 'Letter',
   wait: 'Wait',
 }
@@ -15,7 +16,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   sms: 'SMS',
   email: 'Email',
   mail: 'Letter by post',
-  push: 'App push notification',
+  push: 'Mobile app notification',
 }
 
 export const SUPPORT_LABEL: Record<string, string> = {
@@ -25,10 +26,12 @@ export const SUPPORT_LABEL: Record<string, string> = {
   vulnerable_contact: 'Vulnerable customer due for contact',
 }
 
+// Order is the queue's filter order. `ready` reads "Cleared": every sign-off is in, not yet carried out.
 export const STATE_LABEL: Record<string, string> = {
-  ready: 'Ready',
   waiting_agent: 'Agent to decide',
   waiting_approval: 'To approve',
+  ready: 'Cleared',
+  done: 'Done',
   blocked: 'Rejected',
   overridden: 'Overridden',
 }
@@ -39,6 +42,7 @@ export const STATE_TONE: Record<string, Tone> = {
   ready: 'ok',
   waiting_agent: 'warn',
   waiting_approval: 'warn',
+  done: 'neutral',
   blocked: 'danger',
   overridden: 'neutral',
 }
@@ -55,7 +59,7 @@ export const ROLE_LABEL: Record<string, string> = {
 export const ROLE_DUTY: Record<string, string> = {
   agent: 'Works assigned collections cases; accepts or overrides recommended contacts.',
   senior_agent: 'Works complex collections cases; accepts or overrides recommended contacts.',
-  team_lead: "Approves high-balance, hardship and vulnerability cases and the daily digital batch; manages the team's agent accounts and reviews customer identity matches.",
+  team_lead: "Approves high-balance, hardship and vulnerability cases and the daily batch of automated reminders; manages the team's agent accounts and reviews customer identity matches.",
   hardship_specialist: 'Approves hardship and vulnerability cases; handles payment arrangements.',
   qa_analyst: 'Reviews decisions and data quality; resolves customer identity matches.',
 }
@@ -93,7 +97,7 @@ export const APPROVAL_LABEL: Record<string, string> = {
   vulnerability: 'Vulnerability',
   hardship: 'Hardship',
   high_balance: 'High balance',
-  digital_batch: 'Digital batch',
+  digital_batch: 'Automated reminders (daily batch)',
 }
 
 export const ANSWER_PATH: Record<string, { label: string; tone: Tone; help: string }> = {
@@ -122,4 +126,16 @@ export const IDENTITY_REASON: Record<string, string> = {
 export function label(map: Record<string, string>, key: string | null | undefined): string {
   if (!key) return '-'
   return map[key] ?? key.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+}
+
+/** What the daily batch is, wherever it appears (team lead's approvals, overview, next best action). */
+export const BATCH_EXPLAINED =
+  "Reminders sent automatically by SMS, email or app notification. No agent is involved, so a team lead approves the whole day's batch at once, and can pull out any case first."
+
+/** Where a recommendation's approval stands, from its live state (never from the static requires_approval flag). */
+export const APPROVAL_STATE_LABEL: Record<string, string> = {
+  pending: 'Waiting for approval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  not_needed: 'No approval needed',
 }

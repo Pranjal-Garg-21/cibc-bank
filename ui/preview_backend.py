@@ -16,8 +16,8 @@ from datetime import date, datetime
 
 import pandas as pd
 
-from tiui.nba_state import SAFEGUARD_REASONS, REASON_LABELS, count_by, decision_rows, state_rows
-from tiui.rbac import SUPPORT_APPROVALS
+from tiui.nba_state import CALL_OUTCOME_LABELS, SAFEGUARD_REASONS, REASON_LABELS, count_by, decision_rows, state_rows
+from tiui.rbac import CALL_ACTIONS, SUPPORT_APPROVALS
 
 SUPERVISORS = ("team_lead", "hardship_specialist", "qa_analyst")
 ACTION_ORDER = {"support_call": 0, "agent_call": 1, "sms_reminder": 2, "email_reminder": 2, "push_reminder": 2,
@@ -64,7 +64,8 @@ def agent_queue(con, agent_id, as_of):
     df["order"] = df["action"].map(ACTION_ORDER).fillna(9)
     df = df.sort_values(["order", "expected_value", "risk_score"], ascending=[True, False, False]).drop(columns="order")
     df["other_cases"] = df.groupby("customer")["recommendation_id"].transform("size") - 1
-    return df.drop_duplicates("customer", keep="first")
+    df["todays_contact"] = ~df.duplicated("customer", keep="first")
+    return df.reset_index(drop=True)
 
 
 def lead_digest(con, as_of):
@@ -74,7 +75,16 @@ def lead_digest(con, as_of):
     df = pd.DataFrame([{"recommendation_id": r["recommendation_id"], "approval_reason": r["approval_reason"],
                         "risk_score": r["risk_score"], "summary": r["summary"]} for r in pending],
                       columns=["recommendation_id", "approval_reason", "risk_score", "summary"])
-    return {"states": count_by(rows, "state"),
+    over = con.execute("""
+        WITH ag AS (SELECT recommendation_id, agent_id AS overridden_by, decision, reason_code, ts
+                    FROM gold.nba_overrides WHERE decision IN ('accepted', 'overridden')
+                    QUALIFY row_number() OVER (PARTITION BY recommendation_id ORDER BY ts DESC) = 1)
+        SELECT d.recommendation_id, d.case_id, d.golden_customer_id AS customer, d.action, d.approval_reason,
+               d.risk_score, json_extract_string(d.decision_card, '$.summary') AS summary,
+               ag.overridden_by, ag.reason_code, ag.ts AS overridden_at
+        FROM gold.nba_decisions d JOIN ag USING (recommendation_id)
+        WHERE d.as_of_date = ? AND ag.decision = 'overridden' ORDER BY ag.ts DESC""", [as_of]).df()
+    return {"states": count_by(rows, "state"), "overridden": over,
             "batch_pending": sum(bool(r["approval_pending"]) for r in batch), "batch_total": len(batch),
             "pending": df.sort_values(["approval_reason", "risk_score"], ascending=[True, False]) if len(df) else df}
 
@@ -89,6 +99,7 @@ def card(con, recommendation_id, user):
     rec["card"] = json.loads(rec.pop("decision_card"))
     st = _status(con, rec["as_of_date"]).get(recommendation_id, {})
     rec["status"] = {"approval": st.get("approval_decision") or "pending", "agent": st.get("agent_decision") or "pending",
+                     "completion": "completed" if st.get("completed") else "not_done", "outcome": st.get("outcome"),
                      "state": st.get("state")}
     rec["history"] = con.execute("""SELECT ts, agent_id AS decided_by, decision, reason_code FROM gold.nba_overrides
                                     WHERE recommendation_id = ? ORDER BY ts""", [recommendation_id]).df()
@@ -122,16 +133,30 @@ def _record(con, rec_id, user_id, decision, reason_code):
 
 
 def record(con, rec_id, user_id, decision, reason_code=None):
-    r = con.execute("SELECT agent_id, requires_approval, approval_reason FROM gold.nba_decisions "
+    r = con.execute("SELECT agent_id, requires_approval, approval_reason, action, as_of_date FROM gold.nba_decisions "
                     "WHERE recommendation_id = ?", [rec_id]).fetchone()
     if r is None:
         raise ReviewError("No such recommendation.")
-    agent_id, needs, reason = r
-    if decision in ("accepted", "overridden"):
+    agent_id, needs, reason, action, as_of = r
+    st = _status(con, as_of).get(rec_id, {})
+    if st.get("completed"):
+        raise ReviewError("This call has been marked complete: nothing more can be decided on it.")
+    if decision in ("approved", "rejected") and st.get("approval_decision"):
+        raise ReviewError(f"This case has already been {st['approval_decision']}: an approval decision is final.")
+    if decision in ("accepted", "overridden") and st.get("agent_decision") == decision:
+        raise ReviewError(f"This case is already {decision}: nothing to change.")
+    if decision in ("accepted", "overridden", "completed"):
         if agent_id != user_id:
             raise ReviewError("Only the agent this recommendation is assigned to can decide it.")
         if decision == "overridden" and reason_code is None:
             raise ReviewError("An override needs a reason code.")
+        if decision == "completed":
+            if action not in CALL_ACTIONS:
+                raise ReviewError("Only a call is marked complete.")
+            if reason_code not in CALL_OUTCOME_LABELS:
+                raise ReviewError("A completed call needs its outcome.")
+            if st.get("state") != "ready":
+                raise ReviewError("A call is marked complete once it is accepted and any approval is in.")
     else:
         role = _staff_role(con, user_id)
         if not needs:
@@ -251,6 +276,7 @@ def install() -> None:
                                        customer_context=customer_context)
     review = types.SimpleNamespace(
         REASON_CODES=REASON_LABELS, SAFEGUARD_REASONS=SAFEGUARD_REASONS, APPROVERS=APPROVERS, ReviewError=ReviewError,
+        CALL_OUTCOMES=CALL_OUTCOME_LABELS,
         record=record, approve_batch=approve_batch, summary=summary)
     sources = types.SimpleNamespace(register=lambda con, as_of=None: None)
     nba = types.ModuleType("trustissues.nba")

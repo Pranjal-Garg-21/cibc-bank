@@ -83,6 +83,8 @@ export type Digest = {
   batch_pending: number
   batch_total: number
   pending: Table
+  /** today's cases their agent overrode: overridden_by, overridden_by_name, reason (label), overridden_at, ... */
+  overridden: Table
 }
 
 // gold.nba_decisions.decision_card (common/interfaces.py DecisionCard, plus P3's extra fields)
@@ -118,16 +120,22 @@ export type CaseResponse = {
     as_of_date: string
     model_version: string | null
     card: DecisionCardPayload
-    status: { approval?: string; agent?: string; state?: string; [k: string]: unknown }
+    status: { approval?: string; agent?: string; completion?: string; outcome?: string | null; state?: string; [k: string]: unknown }
     history: Table
     [k: string]: unknown
   }
   context: { facts: Record<string, unknown>; contacts: Table; promises: Table }
   customer: { customer: string | null; cases: Table; offers: Table }
-  allowed: { agent_decision: boolean; approval: boolean }
+  /** set when the assigned agent has overridden the recommendation: who, and why (label) */
+  override: { by: string; name: string | null; reason_code: string; reason: string; at: string } | null
+  allowed: { agent_decision: boolean; complete: boolean; approval: boolean }
 }
 
-export type Reasons = { reasons: { code: string; label: string }[]; safeguard_reasons: string[] }
+export type Reasons = {
+  reasons: { code: string; label: string }[]
+  safeguard_reasons: string[]
+  call_outcomes: { code: string; label: string }[]
+}
 
 export type ReviewSummary = {
   from: string
@@ -178,6 +186,9 @@ export type Status = {
 // /api/next-action: gold.nba_decisions by customer
 export type NextActionSearch = {
   as_of_date: string
+  total: number
+  page: number
+  page_size: number
   customers: { customer_id: string; cases: number; action: string; channel: string | null }[]
 }
 export type NextActionRecommendation = {
@@ -193,6 +204,8 @@ export type NextActionRecommendation = {
   approval_reason: string | null
   model_version: string | null
   card: DecisionCardPayload
+  /** live, from gold.nba_overrides: state (waiting_agent | waiting_approval | ready | done | overridden | blocked) */
+  status: { state: string | null; approval: string; agent: string | null; completed: boolean; outcome: string | null }
 }
 export type NextActionCustomer = { as_of_date: string; customer_id: string; recommendations: NextActionRecommendation[] }
 export type Freshness = { ok: boolean; refreshed_at: string | null; message: string | null }

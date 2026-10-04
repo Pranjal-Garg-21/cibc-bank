@@ -32,8 +32,8 @@ def test_every_route_is_guarded(client):
             assert r.status_code in (401, 501), (method, path, r.status_code)
 
 
-def login(c, staff_id, password=TEST_PASSWORD, role="agent"):
-    return c.post("/api/session/login", json={"role": role, "staff_id": staff_id, "password": password})
+def login(c, staff_id, password=TEST_PASSWORD):
+    return c.post("/api/session/login", json={"staff_id": staff_id, "password": password})
 
 
 def test_no_accounts_means_no_sign_in(make_client, tmp_path):
@@ -223,3 +223,16 @@ def test_app_page_gets_a_fresh_style_nonce(make_client, tmp_path):
     assert n1 not in r2.text  # a new nonce on every response
     assert "unsafe-inline" not in r1.headers["content-security-policy"]
     assert "script-src 'self';" in r1.headers["content-security-policy"]  # scripts never get a nonce
+
+
+def test_background_refresh_does_not_keep_an_idle_session_alive(make_client):
+    """Live lists poll every 20 s with X-TI-Background: 1; only the person's own requests reset the idle timer."""
+    c = make_client(idle_minutes=15)
+    now = [0.0]
+    c.app.state.sessions.clock = lambda: now[0]
+    assert login(c, "A1").status_code == 200
+    for minute in (5, 10, 14):
+        now[0] = minute * 60
+        assert c.get("/api/session/me", headers={"X-TI-Background": "1"}).status_code == 200
+    now[0] = 15 * 60 + 1
+    assert c.get("/api/session/me", headers={"X-TI-Background": "1"}).status_code == 401

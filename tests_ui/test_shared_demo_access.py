@@ -28,7 +28,7 @@ def test_demo_without_automatic_expiry_remains_signed_in(ui_settings):
     now = [0.0]
     app.state.sessions.clock = lambda: now[0]
     with TestClient(app) as c:
-        r = c.post('/api/session/login', json={'staff_id': 'A1', 'role': 'agent', 'password': PASSWORD})
+        r = c.post('/api/session/login', json={'staff_id': 'A1', 'password': PASSWORD})
         assert r.status_code == 200
         assert 'max-age' not in r.headers['set-cookie'].lower()
         me = c.get('/api/session/me').json()
@@ -52,7 +52,7 @@ def test_shared_demo_one_hour_session_boundary(ui_settings):
     now = [0.0]
     app.state.sessions.clock = lambda: now[0]
     with TestClient(app) as c:
-        r = c.post('/api/session/login', json={'staff_id': 'A1', 'role': 'agent', 'password': PASSWORD})
+        r = c.post('/api/session/login', json={'staff_id': 'A1', 'password': PASSWORD})
         assert r.status_code == 200 and 'Max-Age=3600' in r.headers['set-cookie']
         me = c.get('/api/session/me').json()
         assert me['idle_minutes'] == 60 and me['max_hours'] == 1
@@ -73,17 +73,18 @@ def test_shared_access_uses_live_staff_and_preserves_accounts(ui_settings, tmp_p
     app = create_app(settings)
     with TestClient(app) as c:
         assert c.get('/api/session/options').json()['shared_access'] is True
-        for sid, role in [('A1', 'agent'), ('A2', 'agent'), ('L1', 'team_lead'), ('L2', 'team_lead')]:
-            r = c.post('/api/session/login', json={'staff_id': sid, 'role': role, 'password': PASSWORD})
-            assert r.status_code == 200
-            assert c.get('/api/session/me').json()['agent_id'] == sid
-        # Unknown IDs, inactive staff, forbidden roles, wrong tab and wrong password still fail.
-        for sid, role, password in [('MISSING', 'agent', PASSWORD), ('X1', 'agent', PASSWORD),
-                                    ('Q1', 'agent', PASSWORD), ('L1', 'agent', PASSWORD), ('A1', 'agent', 'wrong')]:
+        for sid, role in [('A1', 'agent'), ('A2', 'agent'), ('L1', 'team_lead'), ('L2', 'team_lead'), ('Q1', 'qa_analyst')]:
             app.state.limiter._hits.clear()
-            assert c.post('/api/session/login', json={'staff_id': sid, 'role': role, 'password': password}).status_code == 401
+            r = c.post('/api/session/login', json={'staff_id': sid, 'password': PASSWORD})
+            assert r.status_code == 200
+            me = c.get('/api/session/me').json()
+            assert me['agent_id'] == sid and me['role'] == role  # the role is the warehouse's
+        # Unknown IDs, inactive staff and a wrong password still fail, all alike.
+        for sid, password in [('MISSING', PASSWORD), ('X1', PASSWORD), ('A1', 'wrong')]:
+            app.state.limiter._hits.clear()
+            assert c.post('/api/session/login', json={'staff_id': sid, 'password': password}).status_code == 401
         app.state.limiter._hits.clear()
-        assert c.post('/api/session/login', json={'staff_id': 'L1', 'role': 'team_lead', 'password': PASSWORD}).status_code == 200
+        assert c.post('/api/session/login', json={'staff_id': 'L1', 'password': PASSWORD}).status_code == 200
         me = c.get('/api/session/me').json()
         agents = c.get('/api/team/agents').json()['agents']
         assert agents and all(a['has_account'] and a['set_at'] is None for a in agents)

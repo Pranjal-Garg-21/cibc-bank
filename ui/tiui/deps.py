@@ -20,9 +20,8 @@ from .security import SESSION_COOKIE, Session
 
 _WAREHOUSE_LOCK = threading.Lock()
 
-# Roles, sign-in tabs and capabilities live in rbac.py (one table, deny by default).
-from .rbac import ASK_ROLE, PORTALS, SIGN_IN_ROLES, SUPERVISORS  # noqa: E402,F401
-AGENT_ROLES = PORTALS["agent"]
+# Roles and capabilities live in rbac.py (one table, deny by default).
+from .rbac import AGENT_ROLES, ASK_ROLE, SIGN_IN_ROLES, SUPERVISORS  # noqa: E402,F401
 
 
 class WarehouseBusy(ApiError):
@@ -91,7 +90,14 @@ def lookup_staff(con, agent_id: str) -> User | None:
     return User(*row) if row else None
 
 
+BACKGROUND_HEADER = "x-ti-background"  # set by the browser on automatic refreshes (ui/web/src/api/client.ts)
+
+
 def session_of(request: Request, touch: bool = True) -> Session | None:
+    # An automatic refresh (live lists polling every 20 s) must never keep an idle session alive: only the person's
+    # own activity does. Reads marked as background do not count as activity.
+    if request.method == "GET" and request.headers.get(BACKGROUND_HEADER) == "1":
+        touch = False
     return request.app.state.sessions.get(request.cookies.get(SESSION_COOKIE), touch=touch)
 
 
@@ -121,6 +127,27 @@ def require_reauthentication(request: Request) -> None:
     s = require_session(request)
     if s.reauthenticated is None or request.app.state.sessions.clock() - s.reauthenticated >= 300:
         raise ApiError(403, "reauthentication_required", "Confirm your identity before making this security change.")
+
+
+def check_credentials(request: Request, user: User, sess: Session, password: str, code: str, action: str) -> None:
+    """Re-check the signed-in person's password (and second factor, where enrolled or required) for one action.
+    Rate-limited and counted towards the account lock like a sign-in; logged; 403 if wrong. Used to renew a session
+    (/api/session/reauthenticate) and, every time, to confirm a digital batch approval (routers/nba.py)."""
+    app = request.app.state
+    wait = app.limiter.hit("reauth", user.agent_id) or app.accounts.locked_for(user.agent_id)
+    if wait:
+        raise ApiError(429, "rate_limited", "Too many attempts. Try again later.", {"Retry-After": str(wait)})
+    ok = app.accounts.verify(user.agent_id, password, record=False)
+    if ok and (app.settings.require_mfa or app.accounts.has_mfa(user.agent_id)):
+        ok = app.accounts.verify_mfa(user.agent_id, code)
+    ok = ok and app.accounts.version(user.agent_id) == sess.credential_version
+    app.accounts.record_attempt(user.agent_id, bool(ok))
+    app.access_log.record(action=action, outcome="ok" if ok else "refused", user_id=user.agent_id,
+                          role=user.role, request_id=request.state.request_id)
+    if not ok:
+        if app.accounts.locked_for(user.agent_id):
+            app.sessions.delete_user(user.agent_id)
+        raise ApiError(403, "verification_failed", "The password or verification code is incorrect.")
 
 
 def require_role(user: User, roles) -> None:

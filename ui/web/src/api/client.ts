@@ -38,9 +38,11 @@ export function onUnauthorized(fn: Listener) {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, retried = false, background = false): Promise<T> {
   const generation = sessionGeneration
   const headers: Record<string, string> = { Accept: 'application/json' }
+  // An automatic refresh is not activity: the server does not reset the idle timer for it (tiui/deps.py).
+  if (background) headers['X-TI-Background'] = '1'
   if (method !== 'GET') {
     headers['Content-Type'] = 'application/json'
     if (csrfToken) headers['X-CSRF-Token'] = csrfToken
@@ -69,7 +71,7 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
     if (res.status === 403 && data?.code === 'reauthentication_required' && !retried && reauthentication) {
       // The server has refused before any write. Retry exactly once, after a successful fresh challenge.
       await reauthentication()
-      return request<T>(method, path, body, true)
+      return request<T>(method, path, body, true, background)
     }
     const err = new ApiError(
       res.status,
@@ -85,8 +87,17 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
+  /** A read made by an automatic refresh (see `live`): it does not keep an idle session alive. */
+  poll: <T>(path: string) => request<T>('GET', path, undefined, false, true),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
 }
+
+/** Lists that other people change (approvals, decision review, the queue): refetched every 20 s while the tab is
+ * visible and whenever the window regains focus. Use with `api.poll` as the query function. */
+export const live = { refetchInterval: 20_000, refetchIntervalInBackground: false, refetchOnWindowFocus: true } as const
+
+/** Every query a decision, approval or batch approval can change, so the same browser updates at once. */
+export const DECISION_QUERIES = [['case'], ['queue'], ['digest'], ['decision-review'], ['overview'], ['next-action'], ['summary']]
 
 export function qs(params: Record<string, string | number | boolean | null | undefined>): string {
   const p = new URLSearchParams()

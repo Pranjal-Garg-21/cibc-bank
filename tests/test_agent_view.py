@@ -46,10 +46,14 @@ def con():
 
 def test_agent_queue_order_and_scope(con):
     q = agent_view.agent_queue(con, "AG-1", D)
-    assert list(q["recommendation_id"]) == ["R-SUP", "R-CALL", "R-EMAIL", "R-WAIT"]  # support, call, contact, wait
-    assert dict(zip(q["recommendation_id"], q["other_cases"]))["R-CALL"] == 1  # R-SAME: same person, not listed
-    assert dict(zip(q["recommendation_id"], q["state"])) == {"R-SUP": "waiting_approval", "R-CALL": "waiting_agent",
-                                                            "R-EMAIL": "ready", "R-WAIT": "ready"}
+    # every case assigned to the agent is listed (so the queue's search finds them all): support, call, contact, waits
+    assert list(q["recommendation_id"]) == ["R-SUP", "R-CALL", "R-EMAIL", "R-WAIT", "R-SAME"]
+    assert dict(zip(q["recommendation_id"], q["other_cases"]))["R-CALL"] == 1  # R-SAME: the same person
+    # the person is contacted on one case today: R-CALL (first in working order), not R-SAME
+    assert dict(zip(q["recommendation_id"], q["todays_contact"])) == {
+        "R-SUP": True, "R-CALL": True, "R-EMAIL": True, "R-WAIT": True, "R-SAME": False}
+    assert dict(zip(q["recommendation_id"], q["state"])) == {"R-SUP": "waiting_agent", "R-CALL": "waiting_agent",
+                                                            "R-EMAIL": "ready", "R-WAIT": "ready", "R-SAME": "ready"}
 
 
 def test_who_may_see_a_card(con):
@@ -96,3 +100,12 @@ def test_customer_context_lists_the_persons_cases_and_offers(con):
     who = agent_view.customer_context(con, "G-1", D)
     assert list(who["cases"]["case_id"]) == ["CS-3", "CS-8"]  # open first
     assert list(who["offers"]["programme"]) == ["HP-LOAN-SKIP"]  # the offer after the as-of date is not shown
+
+
+def test_lead_digest_lists_overridden_cases_with_who_and_why(con):
+    review.record(con, "R-CALL", "AG-1", "overridden", "customer_already_paid", ts=datetime(2026, 9, 28, 9))
+    over = agent_view.lead_digest(con, D)["overridden"]
+    assert over[["recommendation_id", "overridden_by", "reason_code"]].values.tolist() == [
+        ["R-CALL", "AG-1", "customer_already_paid"]]
+    review.record(con, "R-CALL", "AG-1", "accepted", ts=datetime(2026, 9, 28, 10))  # changed their mind
+    assert agent_view.lead_digest(con, D)["overridden"].empty
