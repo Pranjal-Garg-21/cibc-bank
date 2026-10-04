@@ -166,3 +166,24 @@ export type Status = {
   row_counts: Record<string, number>
   reports: { name: string; title: string; modified: string }[]
 }
+
+// /api/next-action: gold.nba_decisions by customer
+export type NextActionSearch = {
+  as_of_date: string
+  customers: { customer_id: string; cases: number; action: string; channel: string | null }[]
+}
+export type NextActionRecommendation = {
+  recommendation_id: string
+  case_id: string
+  agent_id: string | null
+  as_of_date: string
+  action: string
+  channel: string | null
+  risk_score: number | null
+  expected_value: number | null
+  requires_approval: boolean
+  approval_reason: string | null
+  model_version: string | null
+  card: DecisionCardPayload
+}
+export type NextActionCustomer = { as_of_date: string; customer_id: string; recommendations: NextActionRecommendation[] }

@@ -10,6 +10,21 @@ export const ACTION_LABEL: Record<string, string> = {
   wait: 'Wait',
 }
 
+export const CHANNEL_LABEL: Record<string, string> = {
+  phone: 'Phone call',
+  sms: 'SMS',
+  email: 'Email',
+  mail: 'Letter by post',
+  push: 'App push notification',
+}
+
+export const SUPPORT_LABEL: Record<string, string> = {
+  offer_programme: 'Offer a hardship programme',
+  plan_ending: 'Hardship plan ending soon',
+  follow_up: 'Follow up on a hardship offer',
+  vulnerable_contact: 'Vulnerable customer due for contact',
+}
+
 export const STATE_LABEL: Record<string, string> = {
   ready: 'Ready',
   waiting_agent: 'Agent to decide',

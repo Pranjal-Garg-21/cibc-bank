@@ -17,7 +17,7 @@ from . import errors
 from .accounts import AccountStore, SharedDemoAccounts
 from .audit import AccessLog
 from .middleware import SecurityMiddleware, csp
-from .routers import ask, identity, nba, session, status, tables, team
+from .routers import ask, identity, nba, next_action, session, status, tables, team
 from .security import RateLimiter, SessionStore
 from .settings import Settings, from_env
 
@@ -42,7 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.ask_kwargs = None
     errors.install(app)
     app.add_middleware(SecurityMiddleware, settings=settings)
-    for r in (session, ask, nba, identity, status, tables, team):
+    for r in (session, ask, nba, next_action, identity, status, tables, team):
         app.include_router(r.router)
 
     @app.get("/api/health")

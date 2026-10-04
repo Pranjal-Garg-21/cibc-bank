@@ -15,6 +15,7 @@ import { SignIn } from '@/pages/SignIn'
 const Ask = lazy(() => import('@/pages/Ask').then((m) => ({ default: m.Ask })))
 const Shell = lazy(() => import('@/components/Shell').then((m) => ({ default: m.Shell })))
 const Queue = lazy(() => import('@/pages/Queue').then((m) => ({ default: m.Queue })))
+const NextAction = lazy(() => import('@/pages/NextAction').then((m) => ({ default: m.NextAction })))
 const Approvals = lazy(() => import('@/pages/Approvals').then((m) => ({ default: m.Approvals })))
 const DecisionCard = lazy(() => import('@/pages/DecisionCard').then((m) => ({ default: m.DecisionCard })))
 const IdentityQueuePage = lazy(() => import('@/pages/Identity').then((m) => ({ default: m.IdentityQueuePage })))
@@ -68,6 +69,7 @@ function App() {
         <Route index element={<Home />} />
         <Route path="ask" element={<Ask />} />
         <Route path="queue" element={<Guard allow={me.can.my_queue}><Queue /></Guard>} />
+        <Route path="next-action" element={<NextAction />} />
         <Route path="approvals" element={<Guard allow={me.can.approvals}><Approvals /></Guard>} />
         <Route path="team" element={<Guard allow={me.can.manage_agents}><TeamAccounts /></Guard>} />
         <Route path="cases/:recId" element={<DecisionCard />} />

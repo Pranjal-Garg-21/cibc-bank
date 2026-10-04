@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 function navFor(me: Me) {
   return [
     { to: '/queue', label: 'My work queue', show: me.can.my_queue },
+    { to: '/next-action', label: 'Next best action', show: true },
     { to: '/approvals', label: 'Team & approvals', show: me.can.approvals },
     { to: '/team', label: 'Agent accounts', show: me.can.manage_agents },
     { to: '/ask', label: 'Ask', show: me.can.ask },
