@@ -782,3 +782,31 @@ key it stops at once and the run carries on with the features already in gold.
 
 Tests: `tests/test_text_signals.py` (6: point in time, lookback, confidence, verbatim quote, ordering, missing table or
 columns, level never lowered, vulnerability routing, card evidence), `tests/test_nightly.py` updated. 346 pass, 6 skipped.
+
+### Queue rerun on the 4 Oct identity rebuild (manual second-opinion verdicts)
+
+P1's identity was rebuilt with the 3,342 manually checked grey-pair verdicts (`scripts/second_opinion_manual.py`,
+labelled by GPT-Luna-6.1 subagents: 1,487 grey pairs linked; 1,013,152 -> 1,011,960 people) together with a full
+pipeline rerun. `gold.nba_decisions` still held the earlier queue: 82 decisions named golden IDs that no longer
+existed and 75 cases now belonged to another person. Reran `scripts/nightly.py --from queue` (queue --write-gold,
+fairness, monitoring; the text_features stage skipped on purpose, so nothing went to an outside model).
+
+Read-only check of Luna's labels before trusting them: 0 invalid lines, 102 of 102 overlap pairs agreed; every one of
+the 1,483 distinct matches has a compatible DOB (exact, day/month swap or one digit) and a fitting first name (8 via
+nicknames: Will/Guillaume/William, Rick/Richard, Peggy/Margaret, Ry/Ryan, Tony/A); 1,205 matches are the
+surname-change pattern the family guard holds back (same first name, exact DOB, shared phone or postal); a sample of the
+1,139 exact-DOB no-matches are the family pattern (same surname, DOB, postal; different first names).
+
+| Queue (86,059 open cases) | Before | After |
+|---|---:|---:|
+| Cases whose person changed | | 75 |
+| Decisions naming a golden ID not in `c360_customer` | 82 | 8 (the open cases identity cannot tie to anyone; they keep their CRM ID, by design) |
+| Case owner disagrees with `gold.case_customer` | 75 | 0 |
+| Action changed | | 42 |
+
+41 of the 42 changes are cases that waited because contact was blocked by `consent` and are now contacted (20 push,
+10 email, 6 support call, 4 SMS, 1 letter). All 41 had belonged to a person with no CRM record (consent lives only in
+the CRM, so it was unknown and the rules default to no contact); each now belongs to a person with exactly one CRM
+record, whose stated consent applies, so no refusal is overridden. The other change (letter -> agent call) and 32
+risk scores that moved come from the full re-curation, not identity. Agents changed on 118 cases. Fairness and
+monitoring reports regenerated.
