@@ -71,7 +71,8 @@ def agent_queue(con, agent_id: str, as_of: date) -> pd.DataFrame:
 def lead_digest(con, as_of: date) -> dict:
     """For a team lead: where the day's recommendations stand, the digital batch, and the approvals waiting."""
     st = review.status(con, as_of).df()
-    pending = st[(st["approval"] == "pending") & (st["approval_reason"] != "digital_batch")]
+    # an approval waits unless the agent has overridden the recommendation: then there is nothing to approve
+    pending = st[(st["approval"] == "pending") & (st["approval_reason"] != "digital_batch") & (st["agent"] != "overridden")]
     pending = pending.merge(con.execute("""
         SELECT recommendation_id, risk_score, json_extract_string(decision_card, '$.summary') AS summary
         FROM gold.nba_decisions WHERE as_of_date = ?""", [as_of]).df(), on="recommendation_id")

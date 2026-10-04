@@ -90,6 +90,17 @@ def test_states_follow_the_decisions(con):
     assert s["R-WAIT"] == "overridden"
 
 
+def test_an_overridden_recommendation_is_not_approved_or_rejected(con):
+    review.record(con, "R-HB", "AG-1", "overridden", "card_facts_wrong", ts=T0)
+    _rejects(con, "R-HB", "TL-1", "rejected", "card_facts_wrong", match="overridden by its agent")
+    _rejects(con, "R-HB", "TL-1", "approved", match="overridden by its agent")
+    assert _states(con)["R-HB"] == "overridden"
+    # the agent changes their mind: the approval is needed again
+    review.record(con, "R-HB", "AG-1", "accepted", ts=datetime(2026, 9, 28, 10, 0))
+    assert review.record(con, "R-HB", "TL-1", "approved", ts=datetime(2026, 9, 28, 10, 5))["decision"] == "approved"
+    assert _states(con)["R-HB"] == "ready"
+
+
 def test_latest_decision_wins_and_history_is_kept(con):
     review.record(con, "R-CALL", "AG-1", "accepted", ts=T0)
     review.record(con, "R-CALL", "AG-1", "overridden", "too_much_contact", ts=datetime(2026, 9, 28, 11, 0))

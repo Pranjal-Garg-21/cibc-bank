@@ -120,7 +120,8 @@ def case(rec_id: str, request: Request):
             "agent_decision": rec.get("agent_id") == user.agent_id and rbac.has(user.role, "decide"),
             # a second person approves (D5): never the member of staff the recommendation is assigned to
             "approval": bool(rec.get("requires_approval")) and user.role in review.APPROVERS.get(reason, ())
-                        and rec.get("agent_id") != user.agent_id,
+                        and rec.get("agent_id") != user.agent_id
+                        and (rec.get("status") or {}).get("agent") != "overridden",  # nothing left to approve
         },
     })
 

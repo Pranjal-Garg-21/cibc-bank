@@ -10,8 +10,10 @@ only: the latest row of each kind wins and the history is kept. Two kinds:
   (`agent_call`, or a certified agent's `support_call`); optional otherwise (an agent may override a `wait`). An override needs a reason code.
 - approval: `approved` or `rejected`, by a team lead (hardship and vulnerability: also a hardship specialist).
   Required when the recommendation says so (vulnerability, hardship, high balance, the daily digital batch).
-  A rejection needs a reason code. Digital batch recommendations have no agent: the team lead's approval is
-  the only sign-off, done for the whole batch at once (`approve_batch`), minus any cases pulled out of it.
+  A rejection needs a reason code. Once the agent has overridden a recommendation it is no longer approved or
+  rejected (nothing is left to sign off; it leaves the approval lists). Digital batch recommendations have no
+  agent: the team lead's approval is the only sign-off, done for the whole batch at once (`approve_batch`), minus
+  any cases pulled out of it.
 
 A recommendation is carried out only when it is `ready`: approved (or not needing approval) and, for a call,
 accepted by its agent. Writing needs the warehouse write lock: run it from the app or as a stage, never
@@ -107,11 +109,22 @@ def check(rec: Recommendation, user_id: str, role: str | None, decision: str, re
             raise ReviewError(f"{rec.approval_reason} approval needs a {' or '.join(allowed)}, not a {role}")
 
 
+def _agent_decision(con, recommendation_id: str) -> str | None:
+    """The latest agent decision (accepted | overridden) on a recommendation, or None."""
+    row = con.execute("""SELECT decision FROM gold.nba_overrides WHERE recommendation_id = ?
+                         AND decision IN ('accepted', 'overridden') ORDER BY ts DESC LIMIT 1""",
+                      [recommendation_id]).fetchone()
+    return row[0] if row else None
+
+
 def record(con, recommendation_id: str, user_id: str, decision: str, reason_code: str | None = None,
            ts: datetime | None = None) -> dict:
     """Validate one decision and append it to gold.nba_overrides. Returns the row written."""
     rec = _recommendation(con, recommendation_id)
     check(rec, user_id, _role(con, user_id), decision, reason_code)
+    if decision in APPROVAL_DECISIONS and _agent_decision(con, recommendation_id) == "overridden":
+        # the agent has stopped the action: an approval would change nothing, a rejection would count it twice
+        raise ReviewError(f"{recommendation_id} was overridden by its agent: there is nothing to approve or reject")
     row = {"recommendation_id": recommendation_id, "agent_id": user_id, "decision": decision,
            "reason_code": reason_code, "ts": ts or datetime.now()}
     con.execute("INSERT INTO gold.nba_overrides VALUES (?, ?, ?, ?, ?)", list(row.values()))

@@ -74,6 +74,8 @@ def test_lead_digest(con):
     assert list(d["pending"]["recommendation_id"]) == ["R-SUP"]  # individual approvals only, not the batch
     review.approve_batch(con, "TL-1", D, ts=datetime(2026, 9, 28, 7))
     assert agent_view.lead_digest(con, D)["batch_pending"] == 0
+    review.record(con, "R-SUP", "AG-1", "overridden", "hardship_disclosed", ts=datetime(2026, 9, 28, 8))
+    assert agent_view.lead_digest(con, D)["pending"].empty  # overridden by its agent: nothing left to approve
 
 
 def test_case_context_stops_at_the_as_of_date(con):

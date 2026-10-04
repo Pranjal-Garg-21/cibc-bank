@@ -222,6 +222,13 @@ side-by-side panels: **Right treatment**, **Channel**, **Timing**.
 
 ### D11: "needs approval" is independent of what the agent has done
 
+**4 Oct, from click-testing:** the Overview counts already left out recommendations the agent had overridden, but the
+Team & approvals and Hardship approvals lists (`agent_view.lead_digest`) still showed them, and a lead could reject a case
+the agent had already stopped (it then counted twice in decision review, as an override and as a rejection). Now an
+overridden recommendation leaves those lists, the card hides Approve / Reject, and `nba/review.record` refuses an
+approval or rejection on it ("overridden by its agent: there is nothing to approve or reject"). If the agent changes their
+mind and accepts again, the approval is needed again. Tests: `tests/test_review.py`, `tests/test_agent_view.py`.
+
 **Decision.** An approval is *pending* when the recommendation requires one, no approval decision has been recorded, and the
 agent has not overridden it. It does **not** matter whether the agent has accepted yet.
 
