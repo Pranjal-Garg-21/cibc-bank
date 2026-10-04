@@ -129,6 +129,19 @@ def test_only_valid_quotes_survive_and_only_their_sources_are_cited(tmp_path):
     assert r.evidence == ["3 outbound call attempts"] and [c.source_id for c in r.citations] == ["POL-COLL-001"]
 
 
+def test_a_verbatim_quote_cited_to_the_wrong_source_is_credited_to_the_right_one(tmp_path):
+    """BQ-009: the model quoted a policy section word for word but numbered it one source off."""
+    llm, _ = make(tmp_path, reply(evidence=[{"source": "S2", "quote": "3 outbound call attempts"}]))
+    r = answer_question("q", SRC, llm=llm, **ASK)
+    assert not r.not_found and [c.source_id for c in r.citations] == ["POL-COLL-001"]
+
+
+def test_a_misnumbered_quote_found_in_several_sources_is_not_credited(tmp_path):
+    two = [SRC[0], Source("policy", "POL-COLL-009", SRC[0].text, "1.0", "§1")]
+    llm, _ = make(tmp_path, reply(evidence=[{"source": "S9", "quote": "3 outbound call attempts"}]))
+    assert answer_question("q", two, llm=llm, **ASK).not_found  # no source can be picked fairly
+
+
 def test_model_saying_not_found_is_respected(tmp_path):
     llm, _ = make(tmp_path, reply(not_found=True))
     assert answer_question("q", SRC, llm=llm, language="FR", **ASK).answer.startswith("Introuvable")
