@@ -36,8 +36,8 @@ def main() -> None:
         os.environ["UI_DEMO_PASSWORD"] = password
         os.environ["UI_REQUIRE_MFA"] = "0"
         os.environ.setdefault("UI_SESSION_TIMEOUTS", "1")
-        os.environ.setdefault("UI_SESSION_IDLE_MIN", "60")
-        os.environ.setdefault("UI_SESSION_MAX_HOURS", "1")
+        os.environ.setdefault("UI_SESSION_IDLE_MIN", "120")
+        os.environ.setdefault("UI_SESSION_MAX_HOURS", "2")
     if a.dev:
         os.environ["UI_DEV"] = "1"
     if a.ask_llm:
