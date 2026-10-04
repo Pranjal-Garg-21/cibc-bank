@@ -314,3 +314,22 @@ def test_a_string_value_missing_its_opening_quote_is_repaired():
     d = parse_json(bad)
     assert d["answer"] == "Non, la liste ne bloque pas." and d["evidence"][0]["quote"] == "ratio: 3 calls"
     assert d["not_found"] is False and d["conflict_note"] is None and d["n"] == -2
+
+
+def test_conditions_from_the_quotes_are_added_and_ungrounded_ones_are_not(tmp_path):
+    """BQ-026: the model quoted "interest keeps accruing" but left it out of its answer; it lists such conditions
+    separately and they are added only when the quotes hold them."""
+    src = [Source("policy", "POL-COLL-004", "Pay 50% of the regular payment for 3 months; interest keeps accruing; "
+                  "the missed amount is added to the end of the term.", "4.2", "§4.2")]
+    quote = "Pay 50% of the regular payment for 3 months; interest keeps accruing"
+    llm, _ = make(tmp_path, reply(answer="It lasts 3 months at 50% of the payment.",
+                                  evidence=[{"source": "S1", "quote": quote}],
+                                  conditions=["Interest keeps accruing.", "Fees are waived.", "It lasts 3 months"]))
+    r = answer_question("How long, and how much?", src, llm=llm, **ASK)
+    # "Fees are waived" is not in the quote; "It lasts 3 months" is already said
+    assert r.answer == "It lasts 3 months at 50% of the payment. Interest keeps accruing."
+
+
+def test_policy_prompt_asks_for_complete_answers_and_every_source(tmp_path):
+    from trustissues.ask.rag.answer import SYSTEM
+    assert "Complete comes before" in SYSTEM and "quote each of them" in SYSTEM and '"conditions"' in SYSTEM

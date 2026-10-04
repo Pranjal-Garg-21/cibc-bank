@@ -296,9 +296,21 @@ def build_call(question: str, metric_id: str, as_of: date) -> MetricCall | Unsup
     random_only = bool(re.search(r"randomi[sz]ed|champion|challenger", q))
 
     # Shapes no reviewed template expresses: say so rather than answer with a nearby formula.
-    if metric_id == "cure_rate" and re.search(r"certified|certification|pilot|vulnerable", q):
-        return Unsupported("A certification-pilot comparison needs a reviewed variant (assignment-time certification, "
-                           "randomised hardship cases); the generic cure rate would not answer it.")
+    if metric_id == "cure_rate" and re.search(r"certified|certification", q):
+        # BQ-014. Only the pilot randomised which agents got which cases, so only it compares certified agents fairly.
+        hardship = bool(re.search(r"hardship", q))
+        call.variant, call.dimensions = "certification_pilot", ()
+        call.parameters = {"hardship_only": hardship, "observation_end": observation_end}
+        call.notes += [
+            "Randomised pilot only (case_assignment_history.assignment_method = 'randomised_pilot', Jun-Sep 2026): "
+            "agents were assigned at random, so the groups are comparable.",
+            "One row per pilot assignment" + (" of a case flagged as hardship at assignment" if hardship else "")
+            + "; certification as recorded at assignment; cured = cure date within 30 days after assignment; "
+            "assignments less than 30 days before the as-of date are left out, as are insolvency and deceased holds."]
+        return call
+    if metric_id == "cure_rate" and re.search(r"pilot|vulnerable", q):
+        return Unsupported("A pilot or vulnerable-customer comparison other than agent certification has no reviewed "
+                           "variant; the generic cure rate would not answer it.")
     if re.search(r"\bhistor(?:y|ical)\b|\btrend over time\b", q) and metric_id not in ("roll_rate",):
         return Unsupported("Historical state cannot be rebuilt from current-only data for this metric.")
 

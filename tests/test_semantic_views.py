@@ -40,6 +40,10 @@ def con():
         t(ptp_id, case_id, crm_customer_id, account_id, product, agent_id, ptp_created_ts, ptp_due_date,
           prior_broken_ptp_count, ptp_status, status_ts, paid_date, amount_paid_against)""")
     c.execute("CREATE TABLE curated.agents AS SELECT * FROM (VALUES ('AG-1', 'Toronto')) t(agent_id, site)")
+    c.execute("""CREATE TABLE curated.case_assignment_history AS SELECT * FROM (VALUES
+        ('AS-1', 'CS-2', 'AG-2', TIMESTAMP '2026-07-02 09:00', NULL::TIMESTAMP, 'randomised_pilot', 'bucket_move', true,
+         true, 31::BIGINT)) t(assignment_id, case_id, agent_id, assigned_ts, unassigned_ts, assignment_method,
+         assignment_reason, certified_for_vulnerable_flag, hardship_flag_at_assignment, dpd_at_assignment)""")
     c.execute("""CREATE TABLE curated.contact_history AS SELECT * FROM (VALUES
         ('K-1', 'CS-1', 'CRM-WRONG', 'call', 'outbound', TIMESTAMP '2026-07-01 09:00', 9::BIGINT, true, true, 2.4, true,
          false, NULL::VARCHAR)) t(contact_id, case_id, crm_customer_id, channel_resolved, direction, contact_ts_local,
@@ -70,7 +74,7 @@ def rows(con, sql):
 
 
 def test_every_table_has_exactly_p2s_columns_and_types(con):
-    assert semantic_views(con) == 2 + 2 + 1 + 2 + 2 + 1
+    assert semantic_views(con) == 2 + 1 + 2 + 1 + 2 + 2 + 1
     assert semantic_shape(con, "gold_stage") == []
     con.execute("ALTER TABLE gold_stage.semantic_cases ADD COLUMN extra VARCHAR")  # the gate catches drift both ways
     con.execute("ALTER TABLE gold_stage.semantic_payroll DROP COLUMN payroll_delay_days")
@@ -92,6 +96,9 @@ def test_rows_belong_to_p1s_person_not_the_crm_id_on_the_record(con):
     assert rows(con, "SELECT account_id, golden_customer_id, account_status, canonical_bucket FROM gold_stage.semantic_accounts ORDER BY 1") == [
         ("C-1", "G-1", "active", "31-60"), ("L-1", "G-2", "charged_off", "180+")]
     assert rows(con, "SELECT * FROM gold_stage.semantic_payroll") == [("G-2", date(2026, 9, 28), True, 10)]
+    # an assignment carries its case's cure date and holds, so the pilot template needs no join
+    assert rows(con, "SELECT assignment_id, cure_date, insolvency_hold_flag FROM gold_stage.semantic_assignments") == [
+        ("AS-1", date(2026, 9, 1), False)]
 
 
 def test_p2s_certified_metric_runs_on_the_built_tables(con):

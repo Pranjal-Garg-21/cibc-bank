@@ -5,8 +5,9 @@
     decisioning_customer  P3       allow-list history table, the only source the feature store reads
     customer_timeline     P4       contacts, promises, notes, transcripts, offers, payments in time order
     bucket_transitions    P2       each account's bucket at the start and end of each quarter (roll rate)
-    semantic_*            P2       the six tables Ask's certified metrics and SQL fallback read (cases, promises,
-                                   contacts, accounts, snapshots, payroll); shapes from ask/data/semantic.py
+    semantic_*            P2       the seven tables Ask's certified metrics read (cases, assignments, promises,
+                                   contacts, accounts, snapshots, payroll; the SQL fallback reads all but assignments);
+                                   shapes from ask/data/semantic.py
 
 They are materialised as tables (millions of rows, read many times). Shapes follow contracts/interfaces/stubs.sql;
 extra columns are allowed, except in semantic_*, which have exactly P2's columns and types (contract rule Q11).
@@ -270,6 +271,10 @@ def _semantic_sql() -> dict[str, str]:
             {bucket_sql('c.current_dpd')} AS canonical_bucket, c.outcome, c.outcome_date, c.cure_date,
             c.hardship_flag, c.insolvency_hold_flag, c.deceased_hold_flag, c.assignment_method, c.test_cell
             FROM curated.collections_cases c LEFT JOIN gold_stage.case_customer cc USING (case_id)""",
+        "assignments": """SELECT a.assignment_id, a.case_id, a.agent_id, a.assigned_ts, a.unassigned_ts, a.assignment_method,
+            a.assignment_reason, a.certified_for_vulnerable_flag, a.hardship_flag_at_assignment, a.dpd_at_assignment,
+            c.case_open_date, c.cure_date, c.insolvency_hold_flag, c.deceased_hold_flag
+            FROM curated.case_assignment_history a LEFT JOIN gold_stage.semantic_cases c USING (case_id)""",
         "promises": f"""SELECT p.ptp_id, p.case_id, {_owner('p')} AS golden_customer_id, p.account_id, p.product,
             coalesce(a.site, 'self_serve') AS agent_site, c.queue, c.test_cell, c.assignment_method,
             p.ptp_created_ts, p.ptp_due_date, p.prior_broken_ptp_count, p.ptp_status, p.status_ts, p.paid_date,
@@ -305,7 +310,7 @@ def _semantic_sql() -> dict[str, str]:
 
 
 def semantic_views(con) -> int:
-    """gold_stage.semantic_* (6 tables), each cast to exactly the columns and types in P2's SCHEMAS. -> total rows."""
+    """gold_stage.semantic_* (7 tables), each cast to exactly the columns and types in P2's SCHEMAS. -> total rows."""
     from trustissues.ask.data.semantic import SCHEMAS
 
     total = 0

@@ -233,3 +233,12 @@ def test_model_stated_interpretation_reaches_the_card_notes(con):
     assert not any(n.startswith("Interpretation") for n in plain.notes)
     odd = ask(Q, LEAD, as_of_date=AS_OF, con=con, llm=ScriptedLLM(dict(GOOD, assumptions=["x"])))
     assert not any(n.startswith("Interpretation") for n in odd.notes)
+
+
+def test_template_only_assignments_table_is_hidden_from_the_model_and_refused(con):
+    """gold.semantic_assignments serves the certification-pilot template only: the prompt (and so every cached reply)
+    is unchanged, and a query the model writes on it anyway is not run."""
+    assert "semantic_assignments" not in build_system(AS_OF)
+    bad = {"sql": "SELECT COUNT(*) AS n FROM gold.semantic_assignments", "reason": ""}
+    r = run_fallback("How many assignments?", llm=ScriptedLLM(bad, bad), policy=query_policy(LEAD), as_of=AS_OF, con=con)
+    assert r.result is None

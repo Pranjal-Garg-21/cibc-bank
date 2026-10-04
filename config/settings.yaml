@@ -75,9 +75,9 @@ llm:
   base_url: https://openrouter.ai/api/v1
   api_key_env: OPENROUTER_API_KEY               # name of the environment variable (or .env entry) holding the key
   models:
-    # NVIDIA Nemotron 3 Super on OpenRouter. ":free" is the free variant (rate-limited); drop it for the paid one.
-    answer: nvidia/nemotron-3-super-120b-a12b:free   # answers a user reads (policy / customer answers)
-    bulk: nvidia/nemotron-3-super-120b-a12b:free   # bulk jobs (per-note text features); a smaller model can go here later
+    # NVIDIA Nemotron 3 Super on OpenRouter, paid variant since 4 Oct (the ":free" one ran out of its 1,000 calls a day).
+    answer: nvidia/nemotron-3-super-120b-a12b        # answers a user reads (policy / customer answers)
+    bulk: nvidia/nemotron-3-super-120b-a12b          # bulk jobs (per-note text features); a smaller model can go here later
   # Nemotron Super "thinks" before it answers. With thinking on, answers took 40-120 s and often ran out of tokens
   # (broken JSON). With it off the same answer took ~10 s. Measured 2026-10-03; "effort: low" was worse.
   extra_body:

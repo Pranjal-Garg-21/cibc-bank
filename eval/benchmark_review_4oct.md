@@ -69,3 +69,35 @@ expected. Two real faults were found and fixed (BQ-009, BQ-030). Unseen end-to-e
 - BQ-021-style call summaries can name an employer; masking it would need the employer from the customer record, as
   the name masking does (`ui/tiui/security.py` `mask_names`).
 - BQ-014 needs a pilot-specific metric variant (assignment-time certification on randomised hardship cases).
+
+## Follow-up (4 Oct, later): every review answer re-read, BQ-017 reproduced, BQ-014 answered, policy answers complete
+
+Re-run of all 35 on the published warehouse, each answer checked again against the documents, the transcripts and SQL
+on the raw release files.
+
+**The six "review" dev answers are correct.** BQ-002, BQ-016 and BQ-022 were complete. BQ-005, BQ-019 and BQ-026 were
+correct but partial; fixed below.
+
+**BQ-017 stays as is.** The key's reference SQL, run on the raw snapshot files, reproduces the key exactly (auto_loan
+7.44% on 430, card 2,699, ...). The same SQL with `%m/%d/%Y` added gives our numbers exactly (auto_loan 8.15% on 466,
+card 2,892, ...). 418,319 of 12,569,692 rows are month-first and the key drops them. Auto_loan differs by 0.71 points
+against a ±0.5 tolerance, so the scorer fails it; matching would mean dropping those rows on purpose.
+
+**Test questions recomputed from the raw files** (not only read): BQ-008 29.46% (holds left out, as the metric
+definition says; 28.51% with them), BQ-013, BQ-015 (every count and amount to the cent), BQ-025, BQ-027 and BQ-030
+(14,628 to 6,170 outbound calls) all match. BQ-001, 009, 020, 021, 023, 029 and 033 read correctly against their sources.
+
+| Q | Before | After |
+|---|---|---|
+| BQ-014 | "A certification-pilot comparison needs a reviewed variant": no answer, though the tolerance is "direction of effect" | Certified 4.06% (48 of 1,183) vs not certified 2.45% (33 of 1,349), +1.61 points, z = 2.30, p = 0.022: **higher**. `gold.semantic_assignments` (template-only) + `cure_rate` variant `certification_pilot`; unit = one `randomised_pilot` assignment of a case flagged hardship at assignment, certification as recorded at assignment, cured within 30 days after assignment, matured, holds out. Higher under all five definitions tried (all assignments, first per case, case hardship flag, with or without holds) |
+| BQ-019 | "Offer at least one eligible hardship option before asking for payment" | "Acknowledge the hardship, record the hardship_flag with the stated reason, and offer at least one eligible option ... before asking for payment. Not request a payment the customer has said they cannot afford." (all three steps of POL-COLL-004 §4.2; the last added from the `conditions` field, in the policy's own words) |
+| BQ-026 | "3 months, 50%" | "... 3 months ... 50% of the regular payment. Interest keeps accruing. The missed amount is added to the end of the term." |
+| BQ-005 | cites FAQ Q2 only | cites FAQ Q2 and POL-COLL-001 §5.3 |
+
+Policy prompt `rag_answer_v2` (`ask/rag/answer.py`): complete before short, every source that states the answer, and a
+`conditions` list. The model would quote a condition and still leave it out of its answer (BQ-026, with three prompt
+wordings tried); listed apart, it names them, and `grounded_conditions` adds each one only when 80% of its words are in
+the verified quotes and the answer does not already say it.
+
+Dev score unchanged (14 pass, 6 review, 1 fail: BQ-017). Unseen end-to-end set 26/26, uncached and cached, on the paid
+`nvidia/nemotron-3-super-120b-a12b` (`eval/e2e_unseen_report.md`). pytest 1,317 passed, 22 skipped.

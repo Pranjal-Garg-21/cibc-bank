@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 import re
 from datetime import date, timedelta
 from typing import Callable
@@ -196,11 +197,34 @@ def _metric(question, user, as_of, r, con, database, card) -> AnswerCard:
             rows = named
             call.notes.append("Showing only the strategy cells named in the question.")
     res = type(res)(res.columns, stable_rows(res.columns, rows), res.elapsed_ms)
+    if call.variant == "certification_pilot":
+        effect = pilot_effect(res.rows)
+        if effect:
+            call.notes.insert(0, effect)
     if not res.rows:
         return card("No rows matched.", "metric", metric_id=r.metric_id, sql=checked.sql, parameters=q.parameters, certified=True,
                     columns=res.columns, notes=call.notes)
     return card(_csv(res.columns, res.rows), "metric", metric_id=r.metric_id, sql=checked.sql, parameters=q.parameters, certified=True,
                 columns=res.columns, rows=res.rows, notes=call.notes, sources=["gold.semantic_*"])
+
+
+def pilot_effect(rows) -> str | None:
+    """Direction and size of the certification pilot's effect, with a two-proportion z-test (trusted arithmetic on the
+    query's own counts). Rows: (agent_group, metric_value, numerator, denominator)."""
+    by = {r[0]: (int(r[2]), int(r[3])) for r in rows}
+    if "certified" not in by or "not_certified" not in by or not by["certified"][1] or not by["not_certified"][1]:
+        return None
+    (x1, n1), (x0, n0) = by["certified"], by["not_certified"]
+    p1, p0, pooled = x1 / n1, x0 / n0, (x1 + x0) / (n1 + n0)
+    se = math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n0))
+    z = (p1 - p0) / se if se else 0.0
+    p_value = math.erfc(abs(z) / math.sqrt(2))
+    word = "higher" if p1 > p0 else "lower" if p1 < p0 else "the same"
+    verdict = ("unlikely to be chance (p < 0.05)" if p_value < 0.05 else
+               "not distinguishable from chance at this sample size (p >= 0.05)")
+    return (f"Direction of effect: certified agents' 30-day cure rate is {word}: {100 * p1:.2f}% ({x1:,} of {n1:,}) vs "
+            f"{100 * p0:.2f}% ({x0:,} of {n0:,}) for agents not certified, a difference of {100 * (p1 - p0):+.2f} points; "
+            f"two-proportion z = {z:.2f}, p = {p_value:.3f}, {verdict}.")
 
 
 def _drivers(question, user, as_of, r, con, database, card) -> AnswerCard:

@@ -127,3 +127,23 @@ def test_customer_call_path_and_portfolio_groupings_are_preserved():
 
 def test_invalid_explicit_snapshot_date_returns_unsupported():
     assert isinstance(build_call("Delinquency rate as of 2026-02-31", "delinquency_rate", AS_OF), Unsupported)
+
+
+def test_certified_agent_cure_questions_use_the_randomised_pilot():
+    """BQ-014. Only the pilot randomised agents to cases, so only it compares certified agents fairly."""
+    call = build_call("In the randomised pilot, do agents certified for vulnerable customers achieve a higher 30-day "
+                      "cure rate on hardship cases?", "cure_rate", AS_OF)
+    assert isinstance(call, MetricCall) and call.variant == "certification_pilot" and call.dimensions == ()
+    assert call.parameters == {"hardship_only": True, "observation_end": "2026-09-29"}
+    assert build_call("Do certified agents cure more cases?", "cure_rate", AS_OF).parameters["hardship_only"] is False
+    # a vulnerable-customer or pilot question that is not about agent certification still has no reviewed variant
+    assert isinstance(build_call("What is the cure rate of vulnerable customers in September 2026?", "cure_rate", AS_OF),
+                      Unsupported)
+
+
+def test_pilot_effect_states_direction_size_and_chance():
+    rows = [("certified", 4.0575, 48, 1183), ("not_certified", 2.4463, 33, 1349)]
+    note = service.pilot_effect(rows)
+    assert "is higher" in note and "+1.61 points" in note and "z = 2.30" in note and "unlikely to be chance" in note
+    assert "not distinguishable from chance" in service.pilot_effect([("certified", 5., 1, 20), ("not_certified", 0., 0, 20)])
+    assert service.pilot_effect([("certified", 5., 1, 20)]) is None  # one group alone has no comparison

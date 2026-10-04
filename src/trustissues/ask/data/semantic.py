@@ -12,6 +12,15 @@ SCHEMAS = {
         "hardship_flag": "BOOLEAN", "insolvency_hold_flag": "BOOLEAN", "deceased_hold_flag": "BOOLEAN",
         "assignment_method": "VARCHAR", "test_cell": "VARCHAR",
     },
+    # One row per case assignment, with the case's cure date and holds carried on the row so the pilot template needs
+    # no join. Certification and hardship are as recorded at assignment time, not the agent's or case's state today.
+    "gold.semantic_assignments": {
+        "assignment_id": "VARCHAR", "case_id": "VARCHAR", "agent_id": "VARCHAR", "assigned_ts": "TIMESTAMP",
+        "unassigned_ts": "TIMESTAMP", "assignment_method": "VARCHAR", "assignment_reason": "VARCHAR",
+        "certified_for_vulnerable_flag": "BOOLEAN", "hardship_flag_at_assignment": "BOOLEAN",
+        "dpd_at_assignment": "BIGINT", "case_open_date": "DATE", "cure_date": "DATE",
+        "insolvency_hold_flag": "BOOLEAN", "deceased_hold_flag": "BOOLEAN",
+    },
     "gold.semantic_promises": {
         "ptp_id": "VARCHAR", "case_id": "VARCHAR", "golden_customer_id": "VARCHAR",
         "account_id": "VARCHAR", "product": "VARCHAR", "agent_site": "VARCHAR", "queue": "VARCHAR",
@@ -62,5 +71,9 @@ def bucket_sql(column: str) -> str:
             f"WHEN {column}<=90 THEN '61-90' WHEN {column}<=120 THEN '91-120' "
             f"WHEN {column}<=150 THEN '121-150' WHEN {column}<=180 THEN '151-180' ELSE '180+' END")
 
+
+# Read by reviewed metric templates only. Not shown to the SQL fallback model and refused there (sql_fallback.py), so
+# its prompt and every cached reply stay as they were.
+TEMPLATE_ONLY = frozenset({"gold.semantic_assignments"})
 
 SQL_DIR = Path(__file__).parent / "metric_sql"

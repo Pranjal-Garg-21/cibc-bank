@@ -1,165 +1,165 @@
 {
   "question_sha256": "e7c1132d924fd017d76df2695371ad69882a9e70d98fe98c8656231d2229cb81",
   "model": {
-    "answer": "nvidia/nemotron-3-super-120b-a12b:free",
-    "bulk": "nvidia/nemotron-3-super-120b-a12b:free"
+    "answer": "nvidia/nemotron-3-super-120b-a12b",
+    "bulk": "nvidia/nemotron-3-super-120b-a12b"
   },
   "uncached": {
     "M01": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 1.339
+      "seconds": 2.632
     },
     "M02": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.992
+      "seconds": 2.288
     },
     "M03": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.587
+      "seconds": 1.828
     },
     "M04": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.591
+      "seconds": 1.499
     },
     "M05": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.919
+      "seconds": 3.471
     },
     "M06": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.578
+      "seconds": 2.358
     },
     "M07": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.682
+      "seconds": 1.055
     },
     "M08": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 0.447
+      "seconds": 2.716
     },
     "D01": {
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 1.111
+      "seconds": 2.602
     },
     "D02": {
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 2.033
+      "seconds": 2.229
     },
     "S01": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 4.458
+      "seconds": 6.601
     },
     "S02": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 2.147
+      "seconds": 4.554
     },
     "S03": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 1.942
+      "seconds": 13.504
     },
     "S04": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 2.709
+      "seconds": 7.814
     },
     "P01": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 1.17
+      "seconds": 4.842
     },
     "P02": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 2.347
+      "seconds": 8.004
     },
     "P03": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 1.029
+      "seconds": 6.678
     },
     "C01": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_customer",
-      "seconds": 1.53
+      "seconds": 4.461
     },
     "C02": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 0.465
+      "seconds": 1.191
     },
     "C03": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 0.502
+      "seconds": 1.808
     },
     "R01": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 0.424
+      "seconds": 2.185
     },
     "R02": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 0.486
+      "seconds": 1.078
     },
     "R03": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 0.43
+      "seconds": 1.316
     },
     "R04": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 24.913
+      "seconds": 6.368
     },
     "U01": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 0.391
+      "seconds": 1.065
     },
     "U02": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 0.922
+      "seconds": 2.87
     }
   },
   "cached": {
@@ -167,115 +167,115 @@
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.085
+      "seconds": 0.052
     },
     "M02": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.083
+      "seconds": 0.114
     },
     "M03": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.079
+      "seconds": 0.052
     },
     "M04": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.08
+      "seconds": 0.053
     },
     "M05": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.103
+      "seconds": 0.07
     },
     "M06": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.084
+      "seconds": 0.057
     },
     "M07": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.082
+      "seconds": 0.054
     },
     "M08": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 0.001
+      "seconds": 0.0
     },
     "D01": {
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 0.638
+      "seconds": 0.466
     },
     "D02": {
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 0.502
+      "seconds": 0.394
     },
     "S01": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.081
+      "seconds": 0.053
     },
     "S02": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.201
+      "seconds": 0.059
     },
     "S03": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.107
+      "seconds": 0.071
     },
     "S04": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.252
+      "seconds": 0.161
     },
     "P01": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 0.003
+      "seconds": 0.002
     },
     "P02": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 0.003
+      "seconds": 0.002
     },
     "P03": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 0.002
+      "seconds": 0.001
     },
     "C01": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_customer",
-      "seconds": 0.036
+      "seconds": 0.025
     },
     "C02": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 0.009
+      "seconds": 0.008
     },
     "C03": {
       "failures": [],
@@ -305,19 +305,19 @@
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.169
+      "seconds": 0.11
     },
     "U01": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 0.001
+      "seconds": 0.0
     },
     "U02": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 0.001
+      "seconds": 0.0
     }
   },
   "model_calls": [

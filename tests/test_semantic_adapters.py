@@ -24,7 +24,7 @@ def con():
     workbook.close()
     types={'text':'VARCHAR','int':'BIGINT','date':'DATE','timestamp':'TIMESTAMP','double':'DOUBLE','boolean':'BOOLEAN'}
     for table in ['collections_cases','agents','promises_to_pay','contact_history','card_accounts','loan_accounts',
-                  'deposit_accounts','account_monthly_snapshot']:
+                  'deposit_accounts','account_monthly_snapshot','case_assignment_history']:
         fields=', '.join(f'"{col["Column"]}" {types[kind(col["Type"])]}' for col in schema[table])
         c.execute(f'CREATE TABLE curated.{table} ({fields})')
     yield c

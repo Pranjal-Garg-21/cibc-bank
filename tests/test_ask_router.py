@@ -122,7 +122,8 @@ def test_bq010_out_of_hours_by_province():
 
 def test_certification_pilot_is_not_answered_with_generic_cure_rate():
     c = call("In the randomised pilot, do agents certified for vulnerable customers achieve a higher 30-day cure rate on hardship cases?")
-    assert isinstance(c, Unsupported) and "pilot" in c.reason.lower()
+    assert c.variant == "certification_pilot"  # its own reviewed template, never the generic cure rate
+    assert isinstance(call("Does the pilot change the cure rate in September 2026?"), Unsupported)
 
 
 def test_dispute_without_comparison_asks():

@@ -43,8 +43,10 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
         raise ValueError("Unknown metric")
     if metric_id == "out_of_hours_share" and dimensions != ("province",):
         raise ValueError("out_of_hours_share requires grouping by province")
-    if variant not in ({"default", "cohort_30d"} if metric_id == "cure_rate" else {"default"}):
+    if variant not in ({"default", "cohort_30d", "certification_pilot"} if metric_id == "cure_rate" else {"default"}):
         raise ValueError("Unsupported metric variant")
+    if variant == "certification_pilot" and dimensions:
+        raise ValueError("The certification pilot is grouped by agent certification only")
     if len(set(dimensions)) != len(dimensions) or len(dimensions) > 3:
         raise ValueError("Invalid grouping dimensions")
     allowed = DIMENSIONS[FAMILIES[metric_id]]
@@ -61,7 +63,7 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
         if d == "prior_broken_ptp_count" and cap_at is not None:
             expr = f"least({expr}, {cap_at})"
         grouped.append(f'{expr} AS "{d}"')
-    name = "cure_rate_cohort" if variant == "cohort_30d" else metric_id
+    name = {"cohort_30d": "cure_rate_cohort", "certification_pilot": "cure_rate_pilot"}.get(variant, metric_id)
     sql = (SQL_DIR / f"{name}.sql").read_text(encoding="utf-8")
     sql = sql.replace("{group_select}", ", ".join(grouped) + (", " if grouped else ""))
     sql = sql.replace("{group_by}", "GROUP BY " + ", ".join(str(i+1) for i in range(len(grouped))) if grouped else "")
@@ -74,7 +76,7 @@ def render_metric(metric_id: str, *, parameters: dict[str, object], dimensions: 
     for key, value in parameters.items():
         if value is not None and not isinstance(value, (str, int, float, bool, date, datetime)):
             raise ValueError(f"Non-scalar parameter: {key}")
-        if key in {"random_only", "exclude_holds"} and not isinstance(value, bool):
+        if key in {"random_only", "exclude_holds", "hardship_only"} and not isinstance(value, bool):
             raise ValueError(f"Boolean parameter required: {key}")
         if key in {"start_dpd_min", "start_dpd_max"} and (type(value) is not int or value < 0):
             raise ValueError(f"Non-negative integer parameter required: {key}")

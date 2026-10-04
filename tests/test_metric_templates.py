@@ -189,3 +189,31 @@ def test_dispute_periods_boundaries_and_compact_labels(con):
         render_metric('out_of_hours_share',parameters={'start':START})
     with pytest.raises(ValueError,match='ISO'):
         render_metric('out_of_hours_share',parameters={'start':'bad date'},dimensions=('province',))
+
+
+def test_certification_pilot_counts_randomised_hardship_assignments_only(con):
+    """BQ-014: unit = one randomised_pilot assignment; certification and hardship as recorded at assignment."""
+    for aid, method, cert, hardship, assigned, cured, hold in [
+        ('A1', 'randomised_pilot', True, True, datetime(2026, 7, 1), date(2026, 7, 20), False),   # cured in 30 days
+        ('A2', 'randomised_pilot', True, True, datetime(2026, 7, 1), date(2026, 8, 15), False),   # cured too late
+        ('A3', 'randomised_pilot', False, True, datetime(2026, 7, 1), date(2026, 6, 1), False),   # cured before assignment
+        ('A4', 'randomised_pilot', False, True, datetime(2026, 7, 1), None, False),
+        ('A5', 'rule_router', True, True, datetime(2026, 7, 1), date(2026, 7, 5), False),         # not randomised
+        ('A6', 'randomised_pilot', True, False, datetime(2026, 7, 1), date(2026, 7, 5), False),   # not hardship
+        ('A7', 'randomised_pilot', False, True, datetime(2026, 9, 20), date(2026, 9, 21), False), # under 30 days old
+        ('A8', 'randomised_pilot', False, True, datetime(2026, 7, 1), date(2026, 7, 5), True),    # insolvency hold
+    ]:
+        insert(con, 'assignments', assignment_id=aid, case_id='C-' + aid, assignment_method=method,
+               certified_for_vulnerable_flag=cert, hardship_flag_at_assignment=hardship, assigned_ts=assigned,
+               cure_date=cured, insolvency_hold_flag=hold)
+    def run(hardship_only):
+        q = render_metric('cure_rate', variant='certification_pilot',
+                          parameters=dict(hardship_only=hardship_only, observation_end='2026-09-29'))
+        return sorted(execute(validate(q.sql, QueryPolicy('analyst', SCHEMAS)), q.parameters, con=con).rows)
+    assert run(True) == [('certified', 50., 1, 2), ('not_certified', 0., 0, 2)]
+    assert run(False) == [('certified', 100 * 2 / 3, 2, 3), ('not_certified', 0., 0, 2)]
+    with pytest.raises(ValueError):  # grouped by certification only
+        render_metric('cure_rate', variant='certification_pilot', dimensions=('queue',),
+                      parameters=dict(hardship_only=True, observation_end='2026-09-29'))
+    with pytest.raises(ValueError):
+        render_metric('cure_rate', variant='certification_pilot', parameters=dict(hardship_only='yes', observation_end='2026-09-29'))

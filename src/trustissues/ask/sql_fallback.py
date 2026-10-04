@@ -18,9 +18,12 @@ from sqlglot import exp
 from trustissues.common.llm import LLMError
 
 from .data.execute import QueryResult, QueryTimeout, execute
-from .data.semantic import SCHEMAS
+from .data.semantic import SCHEMAS as _ALL_SCHEMAS, TEMPLATE_ONLY
 from .data.validator import SAFE_FUNCTIONS, QueryPolicy, ValidationError, validate
 from .join_context import prompt_join_context
+
+# The tables the model may see and query: everything but the template-only ones (gold.semantic_assignments).
+SCHEMAS = {t: cols for t, cols in _ALL_SCHEMAS.items() if t not in TEMPLATE_ONLY}
 
 PROMPT_VERSION = "ask_sql_v2"
 
@@ -221,7 +224,8 @@ def run_fallback(question: str, *, llm, policy: QueryPolicy, as_of: date, con=No
     trusted = dict(policy.required_filters)
     for table, preds in as_of_filters(as_of).items():
         trusted[table] = tuple(trusted.get(table, ())) + tuple(preds)
-    policy = dataclasses.replace(policy, required_filters=trusted)
+    tables = {t: cols for t, cols in policy.tables.items() if t not in TEMPLATE_ONLY}
+    policy = dataclasses.replace(policy, tables=tables, required_filters=trusted)
     ctx = {"kind": "sql", "input_text": question, "user_role": policy.role, "user_id": user_id, "sources": []}
     user = f"Question: {question}"
     try:

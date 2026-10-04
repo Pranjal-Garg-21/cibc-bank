@@ -20,6 +20,7 @@ def build_dev_adapters(con, *, development_database: bool = False) -> None:
     # Fail before replacing any views if uniqueness would multiply metric populations.
     for table, keys in {
         "curated.collections_cases": "case_id", "curated.agents": "agent_id",
+        "curated.case_assignment_history": "assignment_id",
         "curated.promises_to_pay": "ptp_id", "curated.contact_history": "contact_id",
         "curated.card_accounts": "card_account_id,snapshot_date",
         "curated.loan_accounts": "loan_id,snapshot_date",
@@ -37,6 +38,10 @@ def build_dev_adapters(con, *, development_database: bool = False) -> None:
             c.hardship_flag,c.insolvency_hold_flag,c.deceased_hold_flag,c.assignment_method,c.test_cell
             FROM curated.collections_cases c LEFT JOIN gold.customer_xref x
             ON x.source_system='crm' AND x.source_key=c.coll_customer_ref AND x.status IN ('linked','singleton')""",
+        "assignments": """SELECT a.assignment_id,a.case_id,a.agent_id,a.assigned_ts,a.unassigned_ts,a.assignment_method,
+            a.assignment_reason,a.certified_for_vulnerable_flag,a.hardship_flag_at_assignment,a.dpd_at_assignment,
+            c.case_open_date,c.cure_date,c.insolvency_hold_flag,c.deceased_hold_flag
+            FROM curated.case_assignment_history a LEFT JOIN gold.semantic_cases c ON c.case_id=a.case_id""",
         "promises": """SELECT p.ptp_id,p.case_id,c.golden_customer_id,p.account_id,p.product,
             coalesce(a.site,'self_serve') AS agent_site,c.queue,c.test_cell,c.assignment_method,
             p.ptp_created_ts,p.ptp_due_date,p.prior_broken_ptp_count,p.ptp_status,p.status_ts,p.paid_date,p.amount_paid_against

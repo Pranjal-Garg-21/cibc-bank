@@ -1,6 +1,6 @@
 # P2 semantic view contracts (proposed for P1/Claude review)
 
-> **Built in the warehouse since 4 Oct (P2 merge).** `factory/gold/views.py` `semantic_views()` builds all six into `gold_stage` and the publish gate copies them to `gold` (contract rule Q11 checks the shapes below exactly). Same column definitions as `semantic_adapters.py`; the person on each row comes from P1's identity, not the CRM ID in the xref: cases from `gold.case_customer`, promises and contacts from their case's person (else their own CRM ID), accounts, snapshots and payroll from `gold.c360_account`. Rows: cases 367,229, promises 238,815, contacts 2,688,337, accounts 1,064,500, snapshots 12,569,692, payroll 579,994. On the published warehouse every certified-metric answer in the benchmark is the same as on the dev database (`run_e.csv`). The dev adapter still works for a separate `*_ask_dev.duckdb` copy; a definition change must go into both. Run the benchmark on the warehouse: `python scripts/run_benchmark.py --database warehouse/trustissues.duckdb`.
+> **Built in the warehouse since 4 Oct (P2 merge).** `factory/gold/views.py` `semantic_views()` builds all seven into `gold_stage` and the publish gate copies them to `gold` (contract rule Q11 checks the shapes below exactly). Same column definitions as `semantic_adapters.py`; the person on each row comes from P1's identity, not the CRM ID in the xref: cases from `gold.case_customer`, promises and contacts from their case's person (else their own CRM ID), accounts, snapshots and payroll from `gold.c360_account`. Rows: cases 367,229, promises 238,815, contacts 2,688,337, accounts 1,064,500, snapshots 12,569,692, payroll 579,994, assignments 423,830 (added 4 Oct for BQ-014). On the published warehouse every certified-metric answer in the benchmark is the same as on the dev database (`run_e.csv`). The dev adapter still works for a separate `*_ask_dev.duckdb` copy; a definition change must go into both. Run the benchmark on the warehouse: `python scripts/run_benchmark.py --database warehouse/trustissues.duckdb`.
 
 These are fixture-tested contracts, not certified real-data products. Exact columns and DuckDB types live in `src/trustissues/ask/data/semantic.py`. P2 owns definitions; P1 supplies identity and publish-gate integration. No worker database is opened by fixture creation.
 
@@ -12,6 +12,7 @@ These are fixture-tested contracts, not certified real-data products. Exact colu
 | `gold.semantic_accounts` | one row per (product, account, snapshot date) | account/customer keys, product/code, status, DPD, reported/canonical buckets, balance, overdue, charge-off date/amount | delinquency, write-off |
 | `gold.semantic_snapshots` | one row per (account, snapshot date) across products; confirm account IDs globally unique | customer key, product/status, DPD, reported/canonical buckets; all history retained | roll rate |
 | `gold.semantic_payroll` | one row per (customer, snapshot date) | customer key, payroll flag, maximum payroll delay across that customer's eligible chequing accounts | payroll delay share |
+| `gold.semantic_assignments` | one row per case assignment (`case_assignment_history`) | assignment/case/agent keys, assigned and unassigned time, method (`randomised_pilot`, `rule_router`, `manual`), reason, certification and hardship **as recorded at assignment**, DPD at assignment; the case's opening date, cure date and holds carried on the row so no join is needed. **Template-only:** hidden from the SQL fallback's prompt and removed from its validator policy (`semantic.TEMPLATE_ONLY`), so that prompt and its cached replies are unchanged | certification pilot (BQ-014) |
 
 Keys are join/scope fields, not personal details for display. The validator restricts non-agent output of entity IDs. All exposed columns require explicit classification approval; new source columns never expand these contracts automatically.
 
@@ -40,6 +41,7 @@ Creation and outcome fields coexist in promises for reporting, not for model fea
 | `payroll_delay_share` | `snapshot_date` | customers with payroll; delay >7 / eligible customers |
 | `roll_rate` | `start_snapshot`, `end_snapshot`, `start_dpd_min`, `start_dpd_max`, `exclude_holds` | paired observed DPD; worse canonical rank; catalogue exclusions optional and disclosed (benchmark reference differs) |
 | `cure_rate` | `start`, `end`, `observation_end` | default: cases open at period start cured within period; `cohort_30d`: matured opening cohort cured within 30 days; both exclude insolvency/deceased holds |
+| `cure_rate` variant `certification_pilot` | `hardship_only`, `observation_end`; no dimensions | one row per `randomised_pilot` assignment (the randomised event), optionally only cases flagged hardship at assignment; cured = cure date within 30 days after assignment; assignments under 30 days old and insolvency/deceased holds left out; grouped certified / not certified. The service adds the direction, the difference and a two-proportion z-test (`service.pilot_effect`) |
 
 Two additional benchmark-specific templates are now available beyond the original 15 metrics:
 
@@ -50,7 +52,7 @@ Two additional benchmark-specific templates are now available beyond the origina
 
 See [Claude/P1 handoff](p2_claude_handoff.md) for wiring, review findings, and pending publication/contract decisions. These additions are fixture-tested; warehouse comparisons remain pending.
 
-BQ-008's cohort variant and default calendar-period cure are implemented separately. BQ-014's certification-at-assignment pilot still needs a reviewed variant. Certification history must not be joined as multiple rows per case. BQ-035 uses reported buckets as its primary answer; mismatch statistics are separate. These are explicitly remaining integration questions, not hidden changes to metric definitions.
+BQ-008's cohort variant and default calendar-period cure are implemented separately. BQ-014's certification pilot is the `certification_pilot` variant over `gold.semantic_assignments` (4 Oct): the unit is the pilot assignment, so no case is multiplied by a join. On 28 Sep: certified 4.06% (48 of 1,183), not certified 2.45% (33 of 1,349), +1.61 points, z = 2.30, p = 0.022. BQ-035 uses reported buckets as its primary answer; mismatch statistics are separate. These are explicitly remaining integration questions, not hidden changes to metric definitions.
 
 ## Ownership and integration
 
