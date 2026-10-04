@@ -1,0 +1,7 @@
+# UI server only (ui/). The backend's own packages come from the repo's requirements.txt.
+fastapi==0.141.1     # API
+uvicorn==0.52.4      # server
+httpx==0.28.1        # tests only (FastAPI TestClient)
+pyotp==2.10.0       # authenticator-app MFA (RFC 6238)
+cryptography==50.0.2 # authenticated encryption for local MFA secrets
+filelock==4.0.9      # serialize credential/MFA updates across the server and administrator CLI
