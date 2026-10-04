@@ -289,6 +289,16 @@ def test_ask_validates_and_limits(client, fake_ask):
     assert codes[:10] == [200] * 10 and codes[10] == 429
 
 
+def test_case_facts_table_is_shown_not_blanked(client, fake_ask):
+    """ask/case_facts.py returns fixed (field, value) pairs: column masking would turn every cell into ***."""
+    fake_ask["card"] = dict(answer="Case CS-1. Queue: mid_stage.", path="case_facts", columns=("field", "value"),
+                            rows=(("queue", "mid_stage"), ("last_contact", "call to 416-555-0123")))
+    csrf = sign_in(client, "A1")
+    body = client.post("/api/ask", json={"question": "queue of case CS-1"}, headers={"X-CSRF-Token": csrf}).json()
+    assert body["rows"][0] == ["queue", "mid_stage"]
+    assert "416-555-0123" not in str(body["rows"])  # values still go through the text scrubber
+
+
 def test_customer_names_in_free_text_follow_the_full_name_column_rule():
     from tiui.security import mask_names
     t = "The customer (Jeanne Andersen) said JEANNE was laid off; Ms. Andersen agreed. Andersenville stays."

@@ -98,7 +98,8 @@ def _promise(con, case_id: str, as_of: date, log: list):
 def _nba(con, case_id: str, as_of: date, user_id: str, role: str, log: list):
     """Today's recommendation for the case. An agent sees only one that is assigned to them; a team lead sees any.
     Returns (row or None, note or None)."""
-    sql = """SELECT agent_id, action, channel, risk_score, requires_approval, approval_reason, decision_card
+    sql = """SELECT agent_id, action, channel, risk_score, requires_approval, approval_reason, decision_card,
+                    recommendation_id
              FROM gold.nba_decisions WHERE case_id = ? AND as_of_date = ? ORDER BY expected_value DESC NULLS LAST LIMIT 1"""
     log.append((sql, [case_id, as_of]))
     try:
@@ -110,11 +111,46 @@ def _nba(con, case_id: str, as_of: date, user_id: str, role: str, log: list):
         # the same words for "none generated" and "assigned to someone else", so an agent learns nothing about others' work
         where = "in your queue" if role == "agent" else "generated"
         return None, f"There is no recommendation for this case {where} for {as_of:%d %B %Y}."
-    return r, None
+    return r + (_review_status(con, r[7], as_of, log),), None
+
+
+def _review_status(con, recommendation_id: str, as_of: date, log: list) -> dict | None:
+    """What people have decided on it so far (nba/review.py: accepted / overridden, approved / rejected)."""
+    from trustissues.nba import review
+    log.append(("-- nba.review.status_of: latest decisions in gold.nba_overrides", [recommendation_id, as_of]))
+    try:
+        return review.status_of(con, recommendation_id, as_of)
+    except duckdb.Error:  # no decisions table on this connection: nothing decided yet
+        return None
+
+
+def _approvers(reason) -> str:
+    from trustissues.nba import review
+    roles = review.APPROVERS.get(reason, ("team_lead",))
+    return " or ".join(r.replace("_", " ") for r in roles)
+
+
+def _state_text(st: dict | None, needs_approval: bool, reason) -> str | None:
+    """The recommendation's state in words, from the review rules; None if nothing applies."""
+    why = (st or {}).get("reason_code")
+    why = f" ({str(why).replace('_', ' ')})" if why else ""
+    state = (st or {}).get("state")
+    if state == "overridden":
+        return f"overridden by the assigned agent{why}: it will not be carried out today"
+    if state == "blocked":
+        return f"rejected at approval{why}: it will not be carried out today"
+    if state == "waiting_approval" or (st is None and needs_approval):
+        label, who = str(reason or "review").replace("_", " "), _approvers(reason)
+        return f"needs a team lead's approval ({label})" if who == "team lead" else f"needs approval by a {who} ({label})"
+    if state == "waiting_agent":
+        return "waiting for the assigned agent to accept or override it"
+    if state == "ready":
+        return "ready to carry out (every sign-off it needs is in)"
+    return None
 
 
 def _nba_text(r) -> tuple[str, list[tuple[str, str]]]:
-    _, action, channel, risk, needs_approval, reason, card_json = r
+    _, action, channel, risk, needs_approval, reason, card_json, _rec_id, st = r
     try:
         card = json.loads(card_json or "{}")
     except ValueError:
@@ -125,14 +161,17 @@ def _nba_text(r) -> tuple[str, list[tuple[str, str]]]:
     if card.get("contact_window"):
         parts.append(f"within {card['contact_window']}")
         rows.append(("contact_window", str(card["contact_window"])))
-    if risk is not None:
-        rows.append(("promise_break_risk", f"{float(risk):.2f}"))
+    if risk is not None:  # the case model's risk (nba/queue.py), not the promise model's
+        rows.append(("risk_not_paid_up_30d", f"{float(risk):.2f}"))
     if needs_approval:
-        parts.append(f"needs a team lead's approval ({str(reason or 'review').replace('_', ' ')})")
         rows.append(("needs_approval", str(reason or "yes")))
+    state = _state_text(st, needs_approval, reason)
+    if state:
+        parts.append(state)
+        rows.append(("status_today", state))
     text = ", ".join(parts)
     if card.get("summary"):
-        text += f". {card['summary']}"
+        text += f". {str(card['summary']).rstrip('.')}"
         rows.append(("why", str(card["summary"])))
     return text, rows
 

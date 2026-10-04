@@ -112,6 +112,26 @@ def test_next_best_action_for_the_assigned_agent_and_for_a_lead(con):
         assert "gold.nba_decisions" in r.sources
 
 
+def test_next_best_action_says_what_people_decided(con):
+    """Linked to nba/review.py: the answer follows the recommendation's state, not only what the queue proposed."""
+    con.execute("""CREATE TABLE gold.nba_overrides (recommendation_id VARCHAR, agent_id VARCHAR, decision VARCHAR,
+                   reason_code VARCHAR, ts TIMESTAMP)""")
+    d = dict(a(con, OWNER, f"next best action on case {CASE}").rows)
+    assert d["status_today"] == "needs a team lead's approval (high balance)"
+    assert d["risk_not_paid_up_30d"] == "0.61" and "promise_break_risk" not in d  # the case model's risk
+    con.execute("INSERT INTO gold.nba_overrides VALUES ('R1', 'AG1', 'overridden', 'customer_already_paid', TIMESTAMP '2026-09-28 09:00:00')")
+    r = a(con, OWNER, f"next best action on case {CASE}")
+    assert "overridden by the assigned agent (customer already paid): it will not be carried out today" in r.answer
+    assert "needs a team lead's approval" not in r.answer
+    con.execute("DELETE FROM gold.nba_overrides")
+    con.execute("""INSERT INTO gold.nba_overrides VALUES ('R1', 'AG1', 'accepted', NULL, TIMESTAMP '2026-09-28 09:00:00'),
+                   ('R1', 'TL1', 'approved', NULL, TIMESTAMP '2026-09-28 09:05:00')""")
+    assert dict(a(con, LEAD, f"next best action on case {CASE}").rows)["status_today"].startswith("ready to carry out")
+    con.execute("UPDATE gold.nba_decisions SET approval_reason = 'hardship'")
+    con.execute("DELETE FROM gold.nba_overrides")
+    assert "needs approval by a team lead or hardship specialist (hardship)" in a(con, OWNER, f"next best action on case {CASE}").answer
+
+
 def test_next_best_action_missing_or_not_yours(con):
     lead = a(con, LEAD, f"next best action for case {CLOSED}")
     assert dict(lead.rows)["next_best_action"] == "none today" and "in your queue" not in lead.answer

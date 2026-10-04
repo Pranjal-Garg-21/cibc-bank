@@ -198,6 +198,18 @@ def status(con, as_of: date):
         FROM ({STATUS_SQL})""", params=[as_of])
 
 
+def status_of(con, recommendation_id: str, as_of: date) -> dict | None:
+    """Where one recommendation stands (approval, agent, state, reason_code), by the same rules as status()."""
+    cur = con.execute(f"""
+        SELECT approval, agent, reason_code,
+               CASE WHEN approval = 'rejected' THEN 'blocked' WHEN agent = 'overridden' THEN 'overridden'
+                    WHEN approval = 'pending' THEN 'waiting_approval' WHEN agent = 'pending' THEN 'waiting_agent'
+                    ELSE 'ready' END AS state
+        FROM ({STATUS_SQL}) WHERE recommendation_id = ?""", [as_of, recommendation_id])
+    row = cur.fetchone()
+    return dict(zip([c[0] for c in cur.description], row)) if row else None
+
+
 def summary(con, start: date, end: date) -> dict:
     """The weekly override review (and monitoring.py's override rate), for recommendations dated start..end."""
     base = f"""

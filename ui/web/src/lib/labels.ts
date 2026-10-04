@@ -106,6 +106,7 @@ export const ANSWER_PATH: Record<string, { label: string; tone: Tone; help: stri
   },
   rag_corpus: { label: 'Policy answer (generated)', tone: 'info', help: 'Written by a language model from policy documents.' },
   rag_customer: { label: 'Case answer (generated)', tone: 'info', help: 'Written by a language model from case records.' },
+  case_facts: { label: 'Case facts', tone: 'ok', help: "Fixed facts read from the case records and today's queue. No language model." },
   refused: { label: 'Refused', tone: 'neutral', help: 'This question is outside what the assistant may answer.' },
   cannot_answer: { label: 'Not answered', tone: 'neutral', help: 'The assistant could not answer reliably.' },
 }

@@ -177,7 +177,14 @@ def ask(body: Question, request: Request):
         names = _customer_names(con, question) if card.path == "rag_customer" else []
     app.access_log.record(action=f"ask:{card.path}", user_id=user.agent_id, role=user.role,
                           object_id=card.metric_id or "", request_id=request.state.request_id)
-    columns, rows = mask_rows(list(card.columns), [list(r) for r in card.rows], user.ask_role)
+    if card.path == "case_facts":
+        # ask/case_facts.py returns fixed (field, value) pairs that are never names, contact details or note text. Column
+        # masking would blank all of them (a "value" column is unclassified, so it fails closed); the values still go
+        # through the text scrubber instead.
+        columns = list(card.columns)
+        rows = [[f, mask_text(str(v), user.ask_role) if v is not None else v] for f, v in card.rows]
+    else:
+        columns, rows = mask_rows(list(card.columns), [list(r) for r in card.rows], user.ask_role)
     out = jsonable(card)
     out.update(columns=columns, rows=jsonable(rows[:500]), truncated=len(rows) > 500)
     lines = (card.answer or "").splitlines()
