@@ -17,6 +17,7 @@ PATH_ROLES = {
     "drivers": {"team_lead", "analyst"},
     "rag_corpus": {"agent", "team_lead", "analyst"},
     "rag_customer": {"agent", "team_lead"},
+    "case_facts": {"agent", "team_lead"},  # one named case: the same people as call questions; analysts see aggregates only
 }
 
 

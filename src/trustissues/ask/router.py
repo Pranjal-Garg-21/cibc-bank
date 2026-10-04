@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .case_facts import FACT_WORDS
 from .catalog import detect_metric, match_metric, plausible_metric_quantity, requests_record_set
 from .requested_shape import requested_shape, requests_entity_count
 
@@ -14,7 +15,7 @@ POLICY_WORDS = (
     r"what (?:must|should|can) (?:the )?agent|call attempts?|calling hours|permitted hours|"
     r"cease|harass\w*|third party|script|payment plan|job|employment|grace|do-not-call)\b"
 )
-CALL_WORDS = r"\b(call|conversation|transcript|spoke|said|agree[ds]?|summari[sz]e)\b"
+CALL_WORDS = r"\b(call|conversation|transcript|spoke|said|says?|agree[ds]?|summari[sz]e)\b"
 # Wording that asks for a rule or an instruction even when it contains analytic words.
 POLICY_ASK = r"\b(how long|how many days|can we|can (?:the )?agent|should|must|is .{1,40} needed|(?:is|are|be) .{0,40}allowed|permitted to|what happens|does .{0,80}(?:prevent|prohibit|permit|allow))\b"
 ANALYTIC = r"\b(how many|how much|how often|number of|count|share|rate|average|mean|fraction|proportion|total|percentage|compare|rank|distribution|breakdown|break down)\b"
@@ -25,7 +26,7 @@ COUNT_WORDS = r"\b(how many|how much|how often|number of|count|share|rate|averag
 
 @dataclass(frozen=True)
 class Route:
-    path: str  # metric | rag_customer | rag_corpus | sql | incident | cannot_answer
+    path: str  # metric | rag_customer | case_facts | rag_corpus | sql | incident | cannot_answer
     metric_id: str | None = None
     case_id: str | None = None
     why: str = ""
@@ -42,6 +43,11 @@ def route(question: str) -> Route:
     # A case ID plus call wording is a customer-specific RAG question; an ID alone is not enough.
     if case and re.search(CALL_WORDS, q, re.I) and not metric:
         return Route("rag_customer", case_id=case[0].upper(), why="case id with call wording")
+    # A case ID with anything but call wording is a question about that one case (status, balance, next action...).
+    # Portfolio metrics cannot be filtered to one case, so a metric word beside a case ID does not make it a metric.
+    if case and not re.search(DRIVER_WORDS, q, re.I) and (
+            any(re.search(p, q, re.I) for p in FACT_WORDS.values()) or not re.search(POLICY_WORDS, q, re.I)):
+        return Route("case_facts", case_id=case[0].upper(), why="case id with a question about the case itself")
     policy = re.search(POLICY_WORDS, q, re.I)
     if policy and (re.search(POLICY_ASK, q, re.I) or not re.search(ANALYTIC, q, re.I)):
         return Route("rag_corpus", why="policy wording")

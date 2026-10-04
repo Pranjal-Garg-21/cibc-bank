@@ -10,6 +10,7 @@ from typing import Callable
 from trustissues.common.interfaces import RagRequest, RagResponse
 
 from . import disclosure, injection, refusal
+from . import case_facts
 from .access import AccessDenied, CaseResolver, check_case, check_path, query_policy
 from .catalog import Unsupported, build_call
 from . import drivers as drivers_mod
@@ -42,7 +43,7 @@ def classify(question: str, llm=None):
     """
     if injection.screen(question) or refusal.check(question):
         return "refused", None
-    if llm is not None and llm_screen.check(question, llm):
+    if llm is not None and route(question).path != "case_facts" and llm_screen.check(question, llm):
         return "refused", None
     r = _route(question, llm)
     return r.path, r.metric_id
@@ -101,7 +102,10 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
     if hit:
         return card(f"I can't help with that. {hit.reason}", "refused", refused=True, refusal_reason=hit.category)
 
-    flagged = llm_screen.check(question, llm) if llm is not None else None
+    # The model screen is skipped for a question the rules place on one named case: that path returns only fixed fields
+    # (never names, contact details or text from notes), so there is nothing for the screen to protect, and it
+    # refused "who is the agent on case X" as a bulk identity pull. Injection and the refusal gate above still apply.
+    flagged = llm_screen.check(question, llm) if llm is not None and route(question).path != "case_facts" else None
     if flagged:
         return card(f"I can't help with that. {flagged[1]}", "refused", refused=True, refusal_reason=f"model_screen:{flagged[0]}")
 
@@ -119,6 +123,15 @@ def ask(question: str, user: UserContext, *, as_of_date: date, con=None, databas
             resp = rag(RagRequest(question, "rag_customer", user.role, user.user_id, as_of_date, owner.golden_customer_id,
                                   case_id=r.case_id))
             return _rag_card(card, "rag_customer", resp)
+        if r.path == "case_facts":
+            if resolver is None or con is None:
+                return card("Case lookups are unavailable: no case resolver or warehouse is connected.", "cannot_answer")
+            check_path(user, "case_facts")  # role first, then the case: a missing and a hidden case read the same
+            owner = check_case(user, r.case_id, resolver)
+            cf = case_facts.lookup(con, r.case_id, question, as_of=as_of_date, assigned_agent_id=owner.assigned_agent_id,
+                                   user_id=user.user_id, role=user.role)
+            return card(cf.answer, "case_facts", sql=cf.sql or None, columns=("field", "value"), rows=tuple(cf.rows),
+                        sources=cf.sources, notes=["A direct lookup of this case's recorded fields; not a metric."] + cf.notes)
         if r.path == "rag_corpus":
             check_path(user, "rag_corpus")
             resp = rag(RagRequest(question, "rag_corpus", user.role, user.user_id, as_of_date))
