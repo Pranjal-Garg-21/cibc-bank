@@ -58,7 +58,7 @@ breaks any of them.
 | N3 | The API holds **no long-lived DuckDB connection**. Each request opens, uses and closes one (§3.1), so the nightly rebuild is never locked out by an idle UI. |
 | N4 | The API writes only through existing write functions (`nba.review.record`, `nba.review.approve_batch`) or existing file interfaces (`data/review/identity_decisions.csv`, using `review_queue.FIELDS`). It never runs its own `INSERT`/`UPDATE` into the warehouse. |
 | N5 | Every backend module is imported **lazily and optionally**. If a teammate's branch is not merged yet (e.g. `trustissues.nba`), the matching endpoints return `501 not_connected` and the screen says so. The UI branch can merge before, after or between the others. |
-| N6 | The Streamlit app in `app/` keeps working, unchanged, until the team decides to retire it. |
+| N6 | ~~The Streamlit app in `app/` keeps working, unchanged, until the team decides to retire it.~~ Retired 4 Oct: `app/` removed when the console was integrated on `main` (`ui_decisions.md` §11). |
 | N7 | UI dependencies are kept out of `pyproject.toml` core deps: Python ones go in `ui/requirements.txt` (or a `ui` extra added by agreement), JS ones in `ui/web/package.json`. |
 
 ---

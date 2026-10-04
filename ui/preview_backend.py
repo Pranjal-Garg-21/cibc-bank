@@ -104,6 +104,15 @@ def case_context(con, case_id, as_of):
                                     "WHERE case_id = ? ORDER BY made DESC", [case_id]).df()}
 
 
+def customer_context(con, customer, as_of):
+    """The person's cases (one row per case in the demo queue) and their hardship offers (none in the demo)."""
+    cases = con.execute("""SELECT f.* FROM demo_src.case_facts f WHERE f.case_id IN
+                           (SELECT case_id FROM gold.nba_decisions WHERE golden_customer_id = ?) ORDER BY f.case_id""",
+                        [customer]).df()
+    offers = con.execute("SELECT NULL::TIMESTAMP AS offered, NULL AS case_id, NULL AS programme WHERE false").df()
+    return {"customer": customer, "cases": cases, "offers": offers}
+
+
 # ------------------------------------------------------------------ nba.review
 def _record(con, rec_id, user_id, decision, reason_code):
     from tiui.deps import AS_OF
@@ -238,7 +247,8 @@ def ask(question, user, *, as_of_date, con=None, **_):
 def install() -> None:
     """Put the stand-ins where `from trustissues.nba import agent_view, review` will find them."""
     agent_view = types.SimpleNamespace(SUPERVISORS=SUPERVISORS, AccessDenied=AccessDenied, agent_queue=agent_queue,
-                                       lead_digest=lead_digest, card=card, case_context=case_context)
+                                       lead_digest=lead_digest, card=card, case_context=case_context,
+                                       customer_context=customer_context)
     review = types.SimpleNamespace(
         REASON_CODES=REASON_LABELS, SAFEGUARD_REASONS=SAFEGUARD_REASONS, APPROVERS=APPROVERS, ReviewError=ReviewError,
         record=record, approve_batch=approve_batch, summary=summary)
@@ -251,7 +261,15 @@ def install() -> None:
     service.ask = ask
     ask_types = types.ModuleType("trustissues.ask.types")
     ask_types.UserContext = UserContext
+    access = types.ModuleType("trustissues.ask.access")
+    access.case_customer_resolver = lambda con, as_of: None  # the stand-in ask() resolves cases itself
     for name, mod in {"trustissues.nba": nba, "trustissues.nba.agent_view": agent_view, "trustissues.nba.review": review,
                       "trustissues.features": feats, "trustissues.features.sources": sources,
-                      "trustissues.ask.service": service, "trustissues.ask.types": ask_types}.items():
+                      "trustissues.ask.service": service, "trustissues.ask.types": ask_types,
+                      "trustissues.ask.access": access}.items():
         sys.modules[name] = mod
+        # `from trustissues.ask import service` reads the package's attribute, not sys.modules, once the real package
+        # has been imported (in a test run that also imported the real modules), so point that at the stand-in too
+        parent, _, child = name.rpartition(".")
+        if parent in sys.modules and parent != "trustissues":
+            setattr(sys.modules[parent], child, mod)

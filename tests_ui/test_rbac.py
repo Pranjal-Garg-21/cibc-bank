@@ -66,9 +66,9 @@ def allowed(me: dict) -> set[str]:
 @pytest.mark.parametrize("sid, expected", [
     ("DEMO-A1", {"overview", "my_queue", "next_action", "case_view", "decide", "ask", "ask_case"}),
     ("DEMO-A2", {"overview", "my_queue", "next_action", "case_view", "decide", "ask", "ask_case"}),
-    ("DEMO-L1", {"overview", "next_action", "case_view", "approvals", "approve_batch", "manage_agents", "identity_review",
+    ("DEMO-L1", {"overview", "next_action", "case_view", "decide", "approvals", "approve_batch", "manage_agents", "identity_review",
                  "decision_review", "status", "tables", "ask", "ask_case", "ask_portfolio"}),
-    ("DEMO-H1", {"overview", "next_action", "case_view", "approvals", "ask", "ask_case"}),
+    ("DEMO-H1", {"overview", "my_queue", "next_action", "case_view", "decide", "approvals", "ask", "ask_case"}),
     ("DEMO-Q1", {"overview", "identity_review", "decision_review", "status", "audit_log", "ask", "ask_portfolio"}),
 ])
 def test_each_role_gets_only_its_own_features(app, sid, expected):
@@ -91,7 +91,7 @@ ENDPOINTS = ["/api/overview", "/api/queue/mine", "/api/queue/digest", "/api/next
 #                A1   L1   H1   Q1
 MATRIX = {
     "/api/overview":              (200, 200, 200, 200),
-    "/api/queue/mine":            (200, 403, 403, 403),
+    "/api/queue/mine":            (200, 403, 200, 403),
     "/api/queue/digest":          (403, 200, 200, 403),
     "/api/next-action/customers": (200, 200, 200, 403),
     "/api/oversight/decisions":   (403, 200, 403, 200),
@@ -208,8 +208,21 @@ def test_specialist_approves_hardship_but_not_batch_or_high_balance(app):
     assert post(h, csrf, REC_BATCH, decision="approved").status_code == 409
     assert post(h, csrf, REC_BIG, decision="approved").status_code == 409
     assert post(h, csrf, REC_HARDSHIP, decision="approved").status_code == 200
-    assert post(h, csrf, REC_CALL, decision="accepted").status_code == 403     # specialists are not call agents
+    assert post(h, csrf, REC_CALL, decision="accepted").status_code == 409     # not theirs: nba.review refuses
     assert h.post("/api/review-batch", json={}, headers={"X-CSRF-Token": csrf}).status_code == 403
+
+
+def test_nobody_approves_a_recommendation_assigned_to_themself(app):
+    """Four eyes (ui_decisions D5, D32): a specialist given a hardship case may decide it but not approve it."""
+    import duckdb
+    con = duckdb.connect(str(app.state.settings.warehouse))
+    con.execute("UPDATE gold.nba_decisions SET agent_id = 'DEMO-H1' WHERE recommendation_id = ?", [REC_HARDSHIP])
+    con.close()
+    h, csrf = sign_in(app, "DEMO-H1")
+    allowed_ = h.get(f"/api/cases/{REC_HARDSHIP}").json()["allowed"]
+    assert allowed_ == {"agent_decision": True, "approval": False}
+    assert post(h, csrf, REC_HARDSHIP, decision="approved").status_code == 409
+    assert post(h, csrf, REC_HARDSHIP, decision="accepted").status_code == 200
 
 
 def test_only_a_team_lead_approves_the_batch(app):

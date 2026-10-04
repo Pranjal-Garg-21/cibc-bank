@@ -13,9 +13,12 @@ tests_ui/         API, security and integration tests
 
 ## Run
 
+Since 4 Oct this console is the project's app (the Streamlit `app/` was removed): `make app` builds the web app if
+`ui/web/dist` is missing and starts `ui/serve.py --demo` (change with `APP_FLAGS=`, e.g. `APP_FLAGS="--demo --ask-llm"`).
+
 ```
-pip install -r ui/requirements.txt          # fastapi, uvicorn (the backend's own deps are already installed)
-cd ui/web && npm ci && npm run build && cd ../..
+pip install -e ".[dev,app]"                  # or: pip install -r ui/requirements.txt (fastapi, uvicorn, pyotp, ...)
+cd ui/web && npm ci && npm run build && cd ../..   # or: make ui-build (Node 20+)
 python ui/accounts.py add AG-1399            # a team lead account (prompts for a password)
 python ui/accounts.py enroll-mfa AG-1399     # verify identity, pair authenticator, save recovery codes
 python ui/serve.py --demo                    # http://127.0.0.1:8000
@@ -49,11 +52,12 @@ the same table but is only a convenience). Each role has its own sign-in tab and
 | Role (`agents.role`) | Tab | Screens | Customers it may open |
 |---|---|---|---|
 | `agent`, `senior_agent` | Agent | Overview, My work queue, Next best action, Policy & case questions | Own recommendations only |
-| `team_lead` | Team lead | Overview, Next best action, Team & approvals, Decision review (own team), Agent accounts, Identity review, Policy & portfolio questions, Data quality | All |
-| `hardship_specialist` | Hardship | Overview, Next best action, Hardship approvals, Policy & case questions | Hardship, vulnerability and support-call cases only |
+| `team_lead` | Team lead | Overview, Next best action, Team & approvals, Decision review (own team), Agent accounts, Identity review, Policy & portfolio questions, Data quality | All (decides the ones assigned to them) |
+| `hardship_specialist` | Hardship | Overview, My work queue, Next best action, Hardship approvals, Policy & case questions | Their own recommendations, and hardship, vulnerability and support-call cases |
 | `qa_analyst` | QA | Overview, Decision review (whole bank), Identity review, Policy & portfolio questions, Data quality, Audit log | None: aggregates only |
 
-Separation of duties: agents decide only their own cases and approve nothing; hardship specialists approve only
+Separation of duties: staff decide only the recommendations assigned to them (agents, hardship specialists and team
+leads are all given some by the queue) and agents approve nothing; hardship specialists approve only
 hardship and vulnerability cases; only team leads approve high balances and the digital batch; QA can approve or
 change nothing and never opens a customer's case. A case a role may not see answers 404, the same as one that does
 not exist. Each overview is assembled on the server for the role, so the browser never receives figures its role may not
@@ -123,20 +127,26 @@ Empty database stubs retain their headers and column structure. The browser is r
 and audit tables, and masks sensitive/unclassified values. Sign in as a team lead; agent accounts cannot browse
 the warehouse. Direct table URLs are preserved through sign-in, for example `/tables/curated/agents`.
 
-Every backend module is imported lazily. A screen whose module is not merged yet shows "not connected" instead of
-failing.
+Every backend module is imported lazily. A screen whose module is missing shows "not connected" instead of
+failing. Since the 4 Oct integration (branch `integrate/ui-web`, `docs/ui_decisions.md` §11) every screen is connected:
 
-| Screen | Needs | On `main` today |
+| Screen | Needs | On `main` |
 |---|---|---|
 | Agent accounts (team leads) | `curated.agents` | works |
 | Identity review (team leads) | `factory.identity` (P1), `gold.identity_review_queue` | works |
 | Data status | `gold._publish_log`, `gold._contract_results`, `reports/` | works |
-| Ask | `trustissues.ask` (P2) | not connected |
-| My queue, Decision card, Team & approvals | `trustissues.nba`, `trustissues.features` (P3) | not connected |
+| Ask | `trustissues.ask` (P2), P4's RAG; the model only with `--ask-llm` | works: metrics and refusals always; policy, case-call and generated-SQL answers with `--ask-llm` and a key |
+| My queue, Decision card, Team & approvals | `trustissues.nba`, `trustissues.features` (P3), `gold.nba_decisions` | works (`make queue` first) |
+
+Ask is wired like the benchmark: case questions go through `case_customer_resolver` (the case's assigned agent, or
+today's queue agent, and their team lead may ask) and P4's handler reads the case's notes and calls through the
+request's own connection. `GET /api/ask/examples` gives each role questions it can ask; an agent's first example is
+about a case in their queue that has a recorded call.
 
 ## Rules this folder follows (design §2)
 
-- Nothing outside `ui/`, `tests_ui/` and `docs/ui_*` is edited by UI work.
+- Nothing outside `ui/`, `tests_ui/` and `docs/ui_*` is edited by UI work (the 4 Oct integration also changed
+  `Makefile`, `pyproject.toml` and removed `app/`).
 - No long-lived warehouse connection: each request opens and closes one, so `make nightly` is never locked out by an
   idle UI. If the nightly job holds the lock, the UI says "Data is being refreshed" (HTTP 503).
 - Writes go only through backend functions (`nba.review.record`, `approve_batch`) or the identity decisions CSV that
@@ -170,7 +180,10 @@ cd ui/web && npm test                        # API auth flow, formatting and CSV
 TI_UI_INTEGRATION=1 python -m pytest tests_ui/test_integration.py -q   # real P2/P3 modules + real warehouse
 ```
 
-The integration tests skip until P2's and P3's modules are importable.
+`make test` runs `tests/` and `tests_ui/` together. The integration tests (5) run only with `TI_UI_INTEGRATION=1` and a
+built warehouse, in a process of their own (some `tests/` keep a read-only connection to the warehouse, and DuckDB then
+refuses the write connection the review test needs; the tests skip and say so); they sign in as real staff of each role and check the queue, card, review, Ask (including a case-call
+question reaching the customer path) and identity screens.
 
 ## Adding shadcn components
 

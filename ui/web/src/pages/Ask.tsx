@@ -1,25 +1,24 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '@/api/client'
-import type { AnswerCard } from '@/api/types'
+import type { AnswerCard, AskExamples } from '@/api/types'
 import { useMe } from '@/auth'
-import { DataTable, ErrorState, NotConnected, PageHeader, Section, StatusBadge } from '@/components/app'
+import { DataTable, ErrorState, NotConnected, Notice, PageHeader, Section, StatusBadge } from '@/components/app'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { isoDate, toCsv } from '@/lib/format'
 import { ANSWER_PATH } from '@/lib/labels'
 
-const EXAMPLES = [
-  'How many promises to pay were broken last month?',
-  'What is the cure rate by delinquency bucket?',
-  'What does the hardship policy say about payment deferrals?',
-]
+// Shown until the server's role-specific examples arrive (GET /api/ask/examples).
+const FALLBACK_EXAMPLES = ['What is the grace period before a promise to pay is considered broken?']
 
 export function Ask() {
   const me = useMe()
   const [question, setQuestion] = useState('')
   const [history, setHistory] = useState<AnswerCard[]>([]) // this page only; never stored in the browser
+  const info = useQuery({ queryKey: ['ask', 'examples'], queryFn: () => api.get<AskExamples>('/api/ask/examples'), enabled: me.features.ask })
+  const examples = info.data?.examples ?? FALLBACK_EXAMPLES
   const ask = useMutation({
     mutationFn: (q: string) => api.post<AnswerCard>('/api/ask', { question: q }),
     onSuccess: (card) => setHistory((h) => [card, ...h].slice(0, 10)),
@@ -38,6 +37,23 @@ export function Ask() {
       {!me.features.ask && (
         <div className="mb-5">
           <NotConnected feature="Questions" owner="P2" />
+        </div>
+      )}
+      {info.data && !info.data.llm_enabled && (
+        <div className="mb-5">
+          <Notice tone="info">
+            The language model is switched off on this server: certified metrics and refusals answer; policy, case and uncertified answers say they need the model.
+          </Notice>
+        </div>
+      )}
+      {info.data?.llm_enabled && !info.data.model_configured && (
+        <div className="mb-5">
+          <Notice tone="warn">No language model key is configured: metric questions and refusals work; policy, case and uncertified answers need the model (cached answers still show).</Notice>
+        </div>
+      )}
+      {info.data?.llm_enabled && !info.data.policy_index && (
+        <div className="mb-5">
+          <Notice tone="warn">The policy index is not built: run python -m trustissues.ask.rag.policy_ingest.</Notice>
         </div>
       )}
       <form
@@ -69,7 +85,7 @@ export function Ask() {
           <div className="text-[13px] text-muted-foreground">
             <p>For example:</p>
             <ul className="mt-1 space-y-0.5">
-              {EXAMPLES.map((ex) => (
+              {examples.map((ex) => (
                 <li key={ex}>
                   <button type="button" className="text-left text-brand hover:text-brand-dark hover:underline" onClick={() => setQuestion(ex)}>
                     {ex}

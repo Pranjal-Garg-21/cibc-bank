@@ -13,6 +13,7 @@ For what the code does and why, see [`docs/documentation.md`](docs/documentation
 | Disk | **about 30 GB free** | Both zips 4.7 GB + extracted data about 9.5 GB + warehouse (raw 5.7 GB, curated adds a similar amount; the final size is not measured yet) |
 | RAM | **16 GB recommended** | Built on a 15.7 GB machine. The raw load peaked around 1.8 GB for the Python process and DuckDB spills to disk when it needs more. 8 GB should work but is untested |
 | Network | one-off ~4.7 GB download | Both zips: the release (2.2 GB) and the voice pack (about 2.5 GB, 2,000 WAV files). The voice pack is needed by the plan (recordings are checksum-verified) but **nothing in the current raw/curated build reads the audio**, so the build works without it for now |
+| Node.js | 20 or newer, with npm | Only to build the web console once (`make ui-build`); the server itself is Python |
 | Packages | see [`requirements.txt`](requirements.txt) | `duckdb`, `pyyaml`, `openpyxl`, `pytest`, `splink`, `scipy`, `pyarrow`, `anthropic`, `huggingface_hub` (pandas comes with splink) |
 
 **Do not put the repo inside a OneDrive / Dropbox / iCloud synced folder** if you can avoid it. The data folder is about 7 GB and the database 10 GB or more; the sync client competes with the build for disk and makes it noticeably slower. If you must, set `WAREHOUSE_DIR` to a folder outside the synced area (section 5).
@@ -29,6 +30,9 @@ pip install -e ".[dev]"
 ```
 
 `pip install -e` installs the `trustissues` package from `src/` so `python -m trustissues...` works from anywhere. `pip install -r requirements.txt` also works for the packages alone, but then you must set `PYTHONPATH=src`.
+
+For the web console (`ui/`, the app since 4 Oct): `pip install -e ".[dev,app]"` adds FastAPI, uvicorn and the sign-in
+packages, and `make ui-build` builds the React app into `ui/web/dist`. Then `make app` (see `ui/README.md` for accounts).
 
 Once, for the Ask router (P2): `python scripts/setup_router.py` downloads its local metric matcher (`BAAI/bge-small-en-v1.5`, ONNX, 65 MB) into `warehouse/cache/router_embeddings/`. At run time it only reads cached files and never downloads. Without it the router still works on its rules alone but places fewer questions, and 5 router tests are skipped with a message saying to run this.
 
@@ -103,7 +107,7 @@ Measured on the reference laptop (12 logical cores, 15.7 GB RAM): all 31 tables 
 
 ```bash
 python scripts/verify_warehouse.py     # exit code 0 = every check passed
-python -m pytest tests -q              # unit tests, a few seconds, no dataset needed
+python -m pytest tests tests_ui -q     # unit tests and the web console's API tests (tests_ui uses a tiny temp warehouse)
 ```
 
 `verify_warehouse.py` checks that every raw table has exactly the row count the release publishes, that all transcript files loaded, that there was no blocking schema drift, and that curated row counts reconcile (raw minus removed duplicates). If your counts differ, your download or unzip was incomplete.

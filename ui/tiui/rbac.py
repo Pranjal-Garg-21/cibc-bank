@@ -37,12 +37,16 @@ ROLES: dict[str, RoleSpec] = {
                       customers="own"),
     "senior_agent": RoleSpec("agent", "agent", frozenset(_COMMON | {"my_queue", "next_action", "case_view", "decide", "ask_case"}),
                              customers="own"),
+    # "decide": a recommendation the queue allocated to the lead themself (nba.review checks it is theirs).
     "team_lead": RoleSpec("team_lead", "team_lead", frozenset(_COMMON | {
-        "next_action", "case_view", "approvals", "approve_batch", "manage_agents", "identity_review", "decision_review",
+        "next_action", "case_view", "decide", "approvals", "approve_batch", "manage_agents", "identity_review", "decision_review",
         "data_quality", "ask_case", "ask_portfolio", "tables"}), approvals=ALL_APPROVALS, customers="all"),
     # Ask role "agent": policy and cases assigned to them only. No portfolio numbers for the support desk.
+    # The queue allocates recommendations to specialists too (1,440 on 28 Sep, 450 of them support calls), so they
+    # work their own queue like an agent (as on the Streamlit pages) besides approving hardship and vulnerability.
     "hardship_specialist": RoleSpec("hardship_specialist", "agent", frozenset(_COMMON | {
-        "next_action", "case_view", "approvals", "ask_case"}), approvals=SUPPORT_APPROVALS, customers="support"),
+        "my_queue", "next_action", "case_view", "decide", "approvals", "ask_case"}), approvals=SUPPORT_APPROVALS,
+        customers="support"),
     "qa_analyst": RoleSpec("qa_analyst", "analyst", frozenset(_COMMON | {
         "identity_review", "decision_review", "data_quality", "audit_log", "ask_portfolio"})),
 }

@@ -24,7 +24,8 @@ link the files that implement it. Record the *reason* and the *alternative you r
 8. [Rejected alternatives](#8-rejected-alternatives)
 9. [Known limits and open questions](#9-known-limits-and-open-questions)
 10. [Where things live](#10-where-things-live)
-11. [Template](#11-template)
+11. [Integration with main (4 Oct)](#11-integration-with-main-4-oct-branch-integrate-ui-web)
+12. [Template](#12-template)
 
 ---
 
@@ -85,7 +86,7 @@ management they must not have). Five dashboards (duplicates senior agent).
 |---|---|---|
 | **Agent / senior agent** | Contact customers and work their own cases | Overview, My work queue, Next best action, Policy & case questions |
 | **Team lead** | Run a team; give the second sign-off on risky actions; keep the team's decisions healthy | Overview, Next best action, Team & approvals, Decision review (own team), Agent accounts, Identity review, Policy & portfolio questions, Data quality, Tables (demo) |
-| **Hardship specialist** | Protect customers in hardship or vulnerable situations | Overview, Next best action, Hardship approvals, Policy & case questions |
+| **Hardship specialist** | Protect customers in hardship or vulnerable situations; work the cases the queue gives them (D32) | Overview, My work queue, Next best action, Hardship approvals, Policy & case questions |
 | **QA analyst** | Check that the system and the staff behave correctly, without acting on customers | Overview, Decision review (whole bank), Identity review, Policy & portfolio questions, Data quality, Audit log |
 
 **Common to all roles:** an Overview as the first screen, the profile and session panel, the session timer, the same theme,
@@ -134,11 +135,12 @@ asserts the two responses are byte-identical.
 
 | Rule | Where enforced |
 |---|---|
-| Agents decide only recommendations assigned to them, and approve nothing | `rbac` (`decide` only for agents) + backend `review.record` |
+| Staff decide only recommendations assigned to them; agents approve nothing | `rbac` (`decide`: agents, specialists and team leads, D32) + backend `review.record` (assigned agent only) |
 | Hardship specialists approve only hardship and vulnerability | backend `APPROVERS` + UI scope (cases outside remit are 404) |
 | Only team leads approve high balances and the digital batch | `approve_batch` capability + backend |
 | QA can change nothing and never opens a case | no `decide`/`approvals`/`case_view`/`next_action` capability |
 | Approvals need a fresh password check (and MFA code when enabled) | `require_reauthentication` (existing control) |
+| Nobody approves a recommendation assigned to themself (D32) | `routers/nba.py` (card flag and `POST /api/review`) |
 
 **Why.** The risky actions in collections (contacting a customer in hardship, a large balance, a bulk send) are exactly the
 ones where one person acting alone causes harm. The design forces a second person, with a *narrower* power than the first.
@@ -165,7 +167,7 @@ These were open questions; a reviewer may overrule them.
 | Question | Default chosen | Reason |
 |---|---|---|
 | Should team leads see only their team's customers? | No: all customers, but **decision review is team-scoped** | The batch is bank-wide. Team scoping applies where the data is the team's own (override behaviour, agent workload). |
-| Do hardship specialists get a work queue? | No: they review and approve | Support calls are assigned to certified agents; specialists' value is the second sign-off. Revisit if specialists are assigned calls. |
+| Do hardship specialists get a work queue? | ~~No: they review and approve~~ **Yes, since 4 Oct (D32)** | Revisited as planned: on the real 28 Sep queue specialists are assigned 1,440 recommendations, 450 of them support calls. |
 | What may a specialist ask in Ask? | Policy and their own cases (Ask role `agent`) | Portfolio numbers are not needed for their job (P3). |
 | May QA look up an individual customer? | No | Aggregates are enough to audit behaviour; fewer customer accesses to protect (P3, P5). |
 
@@ -388,10 +390,11 @@ tabs and the form was submitted with the wrong role. The app correctly refused i
 **Not built.**
 - A **model and fairness monitoring** tab for QA: there is no data source on this branch. The QA overview shows recommendation
   mix and risk-score bands as a stand-in.
-- Hardship specialists have no queue of their own (D8).
 - Real SSO, off-host monitoring and an independent security review (see `ui_security_review.md`).
 
 **Needs confirming with the owners.**
+- P3: the queue assigns 1,027 recommendations on 28 Sep to 10 QA analysts, who by D5 never open a case; should the queue
+  allocate to QA at all? (D32)
 - P3: the real `review.status` semantics for "approval pending" should match D11; run `test_rbac.py` against the real module.
 - P2: Ask role for specialists (we map them to `agent`: policy and own cases only); and whether the policy path should
   also scrub names and health details from answer text (tracked separately).
@@ -419,7 +422,67 @@ tabs and the form was submitted with the wrong role. The app correctly refused i
 
 ---
 
-## 11. Template
+## 11. Integration with `main` (4 Oct, branch `integrate/ui-web`)
+
+The console was built on an older `main` (`ebfd6c5`) with stand-ins for P2 and P3. Merged onto `main` (`96699d1`), it
+replaces the Streamlit app (`app/`, removed). Each screen was checked against the real modules and the real warehouse
+(every GET endpoint, each of the five roles: no 5xx) and against what the Streamlit pages did.
+
+### D31: Ask is wired like the benchmark (case resolver, history through the request's connection)
+
+**Decision.** `/api/ask` passes `resolver=case_customer_resolver(con, AS_OF)` on every question and, with `UI_ASK_LLM=1`,
+`rag=make_rag_handler(index, llm, con=con)` built per request; the model client and policy index are built once per process.
+**Replaces.** The UI branch's `make_rag_handler(PolicyIndex.load(), llm)` built once, with no resolver.
+**Why.** Without them every customer-call question answered "Customer lookups are unavailable: no case resolver is connected."
+The handler must read history through the request's own connection (DuckDB refuses a second connection to a file this process
+holds), so it cannot be cached across requests. Same wiring as the Streamlit Ask page and `run_benchmark.py`.
+**Consequence.** An agent asking about a case in today's queue gets an answer from that case's notes and calls; another agent
+is refused with the router's wording. Checked in the browser on 4 Oct with the model on (agent AG-5765, case CS-2026-465948:
+8 items, notes, calls, contacts and promises, all on that case).
+**Where.** `ui/tiui/routers/ask.py`; tests `tests_ui/test_integration.py::test_case_question_reaches_the_customer_path`.
+
+### D32: hardship specialists work their own queue; team leads decide recommendations given to them
+
+**Decision.** `hardship_specialist` gains `my_queue` and `decide`; `team_lead` gains `decide`. A specialist may open any
+recommendation assigned to them (outside that, the support remit of D3 still applies). The card's "accept / override"
+buttons need both the assignment and `decide`.
+**Replaces.** D8's "no queue for specialists".
+**Why.** The real queue assigns recommendations to every staff role that holds cases: on 28 Sep, 1,440 to 83 hardship
+specialists (450 support calls, 990 waits) and 3,540 to 63 team leads. The Streamlit pages let both decide their own (the
+specialist from their queue page, the lead from the card). Without this those recommendations could not be worked in the UI.
+`nba/review.py` still checks every decision (only the assigned member of staff accepts or overrides).
+Because a specialist or lead can now hold a recommendation that needs their own kind of approval, the UI refuses an approval
+or rejection by the person the recommendation is assigned to (the card hides the buttons; the API answers 409). D5's second
+person stays a second person; `nba/review.py` alone would allow it (it checks the approver's role, not who they are).
+**Rejected.** Giving QA analysts a queue (1,027 recommendations are assigned to 10 of them): D5 says QA never opens a case;
+that allocation is a question for P3's queue (whether QA should be allocated cases at all), recorded in §9.
+**Where.** `ui/tiui/rbac.py`, `ui/tiui/routers/nba.py`; tests `test_rbac.py` (capability table, route matrix,
+`test_nobody_approves_a_recommendation_assigned_to_themself`),
+`test_integration.py::test_hardship_specialist_works_own_queue`.
+
+### D33: the decision card shows the person, not just the case
+
+**Decision.** `/api/cases/{id}` also returns `agent_view.customer_context` (all the person's cases and their hardship offers,
+across identity resolution) and the card shows them, with the customer ID, feature snapshot, a "No approval needed" and a
+"Hardship / vulnerable" badge, and a line when there is no quoted evidence.
+**Why.** Parity with the Streamlit Decision Card: safeguards, the 7-day contact cap and hardship history are the person's, and
+the agent needs to see the other cases to understand them. `golden_customer_id` is not a sensitive column; rows still pass
+`_scrub`.
+**Where.** `ui/tiui/routers/nba.py`, `ui/web/src/pages/DecisionCard.tsx`, `ui/preview_backend.py` (stand-in).
+
+### D34: Ask examples come from the server, by role
+
+**Decision.** `GET /api/ask/examples` returns the Streamlit page's examples for the asker's Ask role (each answers on the
+4 Oct warehouse) and, for an agent, a question about a case in their own queue, preferring one with a recorded call. It also
+says whether the model is on, a key is configured and the policy index is built; the page shows a notice for each gap.
+Tables from metric, drivers and SQL answers are shown once: the CSV copy `ask()` writes into `answer` is dropped (its
+`summary:` line is kept).
+**Why.** The UI branch's fixed examples were not answerable for every role (an agent asking a portfolio count is refused).
+**Where.** `ui/tiui/routers/ask.py`, `ui/web/src/pages/Ask.tsx`.
+
+---
+
+## 12. Template
 
 ```
 ### Dn: <short title>

@@ -21,6 +21,7 @@ from ..serialize import jsonable
 router = APIRouter(prefix="/api", tags=["queue"])
 
 REC_ID = r"^[A-Za-z0-9_\-:.]{1,80}$"
+_EMPTY = {"columns": [], "rows": []}
 
 
 def _nba():
@@ -101,19 +102,25 @@ def case(rec_id: str, request: Request):
             raise ApiError(404, "not_found", "No such recommendation.")
         except agent_view.AccessDenied:  # same answer as a recommendation that does not exist: no existence oracle
             raise ApiError(404, "not_found", "No such recommendation.")
-        if user.role == "hardship_specialist" and not (
+        if user.role == "hardship_specialist" and rec.get("agent_id") != user.agent_id and not (
                 rec.get("approval_reason") in rbac.SUPPORT_APPROVALS or rec.get("action") == "support_call"):
             # outside the specialist's remit: same answer as a recommendation that does not exist
             raise ApiError(404, "not_found", "No such recommendation.")
         ctx = agent_view.case_context(con, rec["case_id"], AS_OF)
+        # the person behind the case (identity resolution): all their cases and hardship offers across them, so the
+        # agent sees that safeguards, the 7-day contact limit and hardship history are the person's, not the case's
+        person = agent_view.customer_context(con, rec["golden_customer_id"], AS_OF) \
+            if rec.get("golden_customer_id") else {"customer": None, "cases": _EMPTY, "offers": _EMPTY}
     request.app.state.access_log.record(action="open_case", user_id=user.agent_id, role=user.role, object_id=rec_id,
                                         request_id=request.state.request_id)
     reason = rec.get("approval_reason")
     return _scrub({
-        "recommendation": rec, "context": ctx,
+        "recommendation": rec, "context": ctx, "customer": person,
         "allowed": {
-            "agent_decision": rec.get("agent_id") == user.agent_id,
-            "approval": bool(rec.get("requires_approval")) and user.role in review.APPROVERS.get(reason, ()),
+            "agent_decision": rec.get("agent_id") == user.agent_id and rbac.has(user.role, "decide"),
+            # a second person approves (D5): never the member of staff the recommendation is assigned to
+            "approval": bool(rec.get("requires_approval")) and user.role in review.APPROVERS.get(reason, ())
+                        and rec.get("agent_id") != user.agent_id,
         },
     })
 
@@ -126,6 +133,11 @@ def reasons(request: Request):
         rbac.require(user, "case_view")
     return {"reasons": [{"code": k, "label": v} for k, v in review.REASON_CODES.items()],
             "safeguard_reasons": list(review.SAFEGUARD_REASONS)}
+
+
+def _assignee(con, rec_id: str) -> str | None:
+    row = con.execute("SELECT agent_id FROM gold.nba_decisions WHERE recommendation_id = ?", [rec_id]).fetchone()
+    return row[0] if row else None
 
 
 class DecisionIn(BaseModel):
@@ -147,6 +159,8 @@ def decide(rec_id: str, body: DecisionIn, request: Request):
             require_reauthentication(request)
         _limit(request, user.agent_id)
         try:
+            if body.decision in ("approved", "rejected") and _assignee(con, rec_id) == user.agent_id:
+                raise review.ReviewError("a recommendation is approved by someone other than the person it is assigned to")
             row = review.record(con, rec_id, user.agent_id, body.decision, body.reason_code)
         except review.ReviewError as e:
             request.app.state.access_log.record(action=f"decision:{body.decision}", outcome="refused",

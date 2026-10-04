@@ -123,6 +123,7 @@ export type CaseResponse = {
     [k: string]: unknown
   }
   context: { facts: Record<string, unknown>; contacts: Table; promises: Table }
+  customer: { customer: string | null; cases: Table; offers: Table }
   allowed: { agent_decision: boolean; approval: boolean }
 }
 
@@ -214,3 +215,5 @@ export type DecisionReviewData = {
 }
 export type AuditEvent = { at: string; user_id: string | null; role: string | null; action: string; object_id: string; outcome: string; request_id: string | null }
 export type AuditData = { hours: number; events: AuditEvent[]; total: number; issues: number; actions: string[]; outcomes: string[] }
+
+export type AskExamples = { examples: string[]; llm_enabled: boolean; model_configured: boolean; policy_index: boolean }

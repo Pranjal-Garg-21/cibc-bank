@@ -24,7 +24,7 @@ This is a skeleton, not an exhaustive list. Add files when a new purpose comes u
 | Ask | sqlglot, networkx (join graph), pyahocorasick (refusal gate), Chroma (policy only), LLM | Design §4, P2, P4 |
 | Feature store | Feast registry; offline store on Parquet/DuckDB. No online store: Redis was built and removed (nothing real-time reads it; see `p3_plan.md` step 5) | Design §5 |
 | Model | LightGBM + SHAP | Design §6 |
-| UI | Streamlit multipage app, with a role picker for the demo | Not in docs. Fastest route to a working screen in 36 h |
+| UI | ~~Streamlit multipage app~~ **Web console since 4 Oct: FastAPI + React (Vite, shadcn/ui) in `ui/`**, staff sign-in per role (`docs/tech_stack.md`, `docs/ui_design.md`, `docs/ui_decisions.md`) | Streamlit was the first 36 h route; replaced on 4 Oct |
 | LLM | One wrapper (`common/llm.py`). Model IDs live in config. Use a small model for bulk jobs (text features, identity pairs) and a larger one for answers | Not specified in docs |
 
 **Conventions**
@@ -74,7 +74,7 @@ cibc-trustissues/
 │   ├── features/                 # Layer 3 (§5)
 │   ├── nba/                      # Layer 4 (§6)
 │   └── governance/               # cross-cutting (§7)
-├── app/                          # Streamlit screens (§8)
+├── ui/                           # web console: tiui/ (FastAPI), web/ (React); was app/ (Streamlit, removed 4 Oct)
 ├── scripts/                      # one-off and submission runners (§8)
 └── tests/                        # §8
 ```
@@ -263,7 +263,7 @@ Freeze these shapes in the first 4 hours, as stub tables with the right columns,
 
 ## 8. App, scripts, tests
 
-**`app/`** (Streamlit; owner per page in the Owner column)
+**`app/`** (Streamlit; owner per page in the Owner column). **Removed 4 Oct:** the screens below now live in the web console `ui/` (Ask, My work queue, Decision card, Team & approvals, Identity review, Data status; `ui/README.md`). The table is kept as the original intent.
 
 | File | Owner | Intention |
 |---|---|---|

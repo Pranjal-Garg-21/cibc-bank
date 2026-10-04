@@ -247,7 +247,7 @@ def test_ask_maps_role_and_masks_rows(client, fake_ask):
     assert r.status_code == 200, r.text
     body = r.json()
     assert fake_ask["user"].role == "team_lead" and fake_ask["user"].user_id == "L1"
-    assert fake_ask["kw"] == {}  # no LLM unless UI_ASK_LLM=1
+    assert "llm" not in fake_ask["kw"] and "rag" not in fake_ask["kw"]  # no LLM unless UI_ASK_LLM=1
     assert "ANNA" not in str(body["rows"])
     assert body["path"] == "metric" and body["answer"] == "42 cases"
 

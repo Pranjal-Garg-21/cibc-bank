@@ -4,18 +4,19 @@ PY ?= .venv/bin/python
 # (config/settings.yaml `duckdb:` caps DuckDB itself). Empty where systemd-run is missing. Override: make pipeline CAP=
 CAP ?= $(shell command -v systemd-run >/dev/null 2>&1 && echo systemd-run --user --scope --quiet -p MemoryMax=16G -p MemorySwapMax=2G)
 
-.PHONY: help pipeline features train queue fairness monitoring nightly app test
+.PHONY: help pipeline features train queue fairness monitoring nightly ui-build app test
 
 help:
 	@echo "make pipeline    Layer 1: raw -> curated -> quality (factory/pipeline.py)"
 	@echo "make features    P3 training sets and point-in-time features (promise and case)"
 	@echo "make train       features, the incumbent baseline, both models, action values, Feast registry"
-	@echo "make queue       today's NBA queue into gold.nba_decisions (stop the app first)"
+	@echo "make queue       today's NBA queue into gold.nba_decisions"
 	@echo "make fairness    reports/fairness_report.md"
 	@echo "make monitoring  reports/monitoring.md"
 	@echo "make nightly     pipeline, policy index, text features, queue, fairness, monitoring (scripts/nightly.py)"
-	@echo "make app         the Streamlit app (Ask, Agent queue, Decision card)"
-	@echo "make test        the test suite"
+	@echo "make ui-build    build the web app (ui/web -> ui/web/dist; needs Node 20+)"
+	@echo "make app         the web console: FastAPI + React on http://127.0.0.1:8000 (ui/README.md); APP_FLAGS=--demo"
+	@echo "make test        the test suite (tests/ and the UI's tests_ui/)"
 
 pipeline:
 	$(CAP) $(PY) -m trustissues.factory.pipeline
@@ -45,8 +46,14 @@ monitoring:
 nightly:
 	$(CAP) $(PY) scripts/nightly.py
 
+ui-build:
+	cd ui/web && npm ci && npm run build
+
+# Sign-in accounts first: python ui/accounts.py add <staff id> (ui/README.md). Add --ask-llm to let Ask use the model.
+APP_FLAGS ?= --demo
 app:
-	.venv/bin/streamlit run app/Home.py
+	@test -f ui/web/dist/index.html || $(MAKE) ui-build
+	$(PY) ui/serve.py $(APP_FLAGS)
 
 test:
-	$(PY) -m pytest tests -q
+	$(PY) -m pytest tests tests_ui -q

@@ -45,9 +45,13 @@ function CardView({ data }: { data: CaseResponse }) {
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>Recommendation {rec.recommendation_id}</span>
+            {!!data.customer?.customer && <span>Customer {data.customer.customer}</span>}
+            {!!rec.feature_snapshot_id && <span>Feature snapshot {String(rec.feature_snapshot_id)}</span>}
             <span>Business date {isoDate(rec.as_of_date)}</span>
             {state && <StatusBadge tone={STATE_TONE[state] ?? 'neutral'}>{label(STATE_LABEL, state)}</StatusBadge>}
             {rec.requires_approval && <StatusBadge tone="info">Needs approval: {label(APPROVAL_LABEL, rec.approval_reason)}</StatusBadge>}
+            {!rec.requires_approval && <StatusBadge tone="neutral">No approval needed</StatusBadge>}
+            {(card.support_reason || !!card.hardship_options?.length) && <StatusBadge tone="warn">Hardship / vulnerable</StatusBadge>}
           </span>
         }
         actions={
@@ -103,6 +107,11 @@ function CardView({ data }: { data: CaseResponse }) {
             </Section>
           )}
 
+          {!card.evidence?.length && (
+            <Section title="From notes and calls">
+              <p className="text-sm text-muted-foreground">No quoted signal from this customer's notes or calls in the last 90 days.</p>
+            </Section>
+          )}
           {!!card.evidence?.length && (
             <Section title="From notes and calls" description="Extracted automatically; check before relying on it">
               <ul className="space-y-3 text-sm">
@@ -129,6 +138,20 @@ function CardView({ data }: { data: CaseResponse }) {
           <Section title="Promises to pay" flush>
             <DataTable data={data.context.promises} empty="No promises on record." caption="Promises to pay" />
           </Section>
+          {data.customer && (
+            <Section
+              title="The customer's cases"
+              description="One person across their CRM, card, loan and deposit records. Safeguards, the 7-day contact limit and hardship history are theirs, across all these cases; they are contacted on one case a day at most."
+              flush
+            >
+              <DataTable data={data.customer.cases} empty="No other cases." caption="The customer's cases" />
+            </Section>
+          )}
+          {data.customer && (
+            <Section title="Hardship offers on any of their cases" flush>
+              <DataTable data={data.customer.offers} empty="No hardship offers." caption="Hardship offers" />
+            </Section>
+          )}
           <Section title="Decision history" flush>
             <DataTable data={rec.history} empty="No decisions yet." caption="Decision history" />
           </Section>

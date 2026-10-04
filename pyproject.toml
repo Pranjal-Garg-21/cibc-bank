@@ -12,7 +12,7 @@ dependencies = ["duckdb>=1.1", "pyyaml", "openpyxl", "sqlglot", "networkx", "ran
 [project.optional-dependencies]
 dev = ["pytest"]
 p3 = ["lightgbm", "shap", "scikit-learn", "pandas", "pyarrow", "feast"]
-app = ["streamlit>=1.46"]
+app = ["fastapi>=0.141", "uvicorn>=0.52", "pyotp==2.10.0", "cryptography>=50", "filelock>=4", "httpx>=0.28"]  # ui/ (web console)
 
 [project.scripts]
 ti-load-raw = "trustissues.factory.ingest.load_raw:main"

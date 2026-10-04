@@ -10,9 +10,9 @@ import os
 import duckdb
 import pytest
 
-from conftest import sign_in
 
 pytestmark = pytest.mark.skipif(os.environ.get("TI_UI_INTEGRATION") != "1", reason="set TI_UI_INTEGRATION=1")
+REAL_IDS: dict[str, str] = {}  # role -> the real staff ID signed in for it
 
 
 @pytest.fixture
@@ -27,10 +27,17 @@ def real(tmp_path):
     wh = config.warehouse_path()
     if not wh.exists():
         pytest.skip(f"no warehouse at {wh}")
+    try:  # the review test opens the warehouse for writing, as the server does
+        duckdb.connect(str(wh)).close()
+    except duckdb.Error as e:
+        pytest.skip(f"the warehouse cannot be opened for writing ({type(e).__name__}): another test in this process holds "
+                    "it read-only, or another process holds it. Run: TI_UI_INTEGRATION=1 pytest tests_ui/test_integration.py")
     con = duckdb.connect(str(wh), read_only=True)
     ids = dict(con.execute("""SELECT role, min(agent_id) FROM curated.agents WHERE status = 'active'
                               AND role IN ('agent', 'team_lead', 'qa_analyst') GROUP BY 1""").fetchall())
     con.close()
+    REAL_IDS.clear()
+    REAL_IDS.update(ids)
     from conftest import TEST_PASSWORD
     from tiui.accounts import AccountStore
     accounts = tmp_path / "ui_accounts.json"
@@ -40,6 +47,16 @@ def real(tmp_path):
                  decisions_csv=tmp_path / "identity_decisions.csv", dist_dir=tmp_path / "none")
     with TestClient(create_app(s)) as c:
         yield c, ids
+
+
+def sign_in(c, agent_id: str) -> str:
+    """conftest.sign_in picks the tab from the tiny test warehouse's IDs; here the tab is the real role's portal."""
+    import conftest
+    from tiui import rbac
+    for role, sid in REAL_IDS.items():
+        if sid == agent_id:
+            conftest.ROLE_TAB[agent_id] = rbac.ROLES[role].portal
+    return conftest.sign_in(c, agent_id)
 
 
 def test_queue_card_and_review_with_real_modules(real):
@@ -68,6 +85,8 @@ def test_ask_with_real_module(real):
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["path"] in ("refused", "metric", "sql", "rag_customer", "rag_corpus", "cannot_answer", "drivers")
+        if body["columns"]:  # the table is shown; the CSV copy ask() puts in `answer` is not sent twice
+            assert not body["answer"].startswith(",".join(body["columns"]))
     assert body["refused"] is True
 
 
@@ -80,3 +99,56 @@ def test_identity_with_real_queue(real):
     for rec in (p["record_a"], p["record_b"]):
         phone = next((f["value"] for f in rec if f["field"] == "phone"), "")
         assert "+1" not in phone  # phones only ever leave the server masked
+
+
+def _queue_staff(role: str) -> tuple[str, str, str]:
+    """(staff ID, a recommendation of theirs today, its case) for the active member of staff in `role` with the most
+    recommendations today."""
+    from trustissues.common import config
+    con = duckdb.connect(str(config.warehouse_path()), read_only=True)
+    try:
+        return con.execute("""SELECT d.agent_id, min(d.recommendation_id), arg_min(d.case_id, d.recommendation_id)
+                              FROM gold.nba_decisions d JOIN curated.agents a USING (agent_id)
+                              WHERE d.as_of_date = ? AND a.role = ? AND a.status = 'active'
+                              GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT 1""", [config.AS_OF_DATE, role]).fetchone()
+    finally:
+        con.close()
+
+
+def _add_account(c, role: str, sid: str) -> None:
+    from conftest import TEST_PASSWORD
+    from tiui.accounts import AccountStore
+    AccountStore(c.app.state.settings.accounts_file).set_password(sid, TEST_PASSWORD)
+    REAL_IDS[role] = sid
+
+
+def test_case_question_reaches_the_customer_path(real):
+    """An agent asking about a case in today's queue is resolved (case_customer_resolver), not 'no case resolver'."""
+    c, _ = real
+    sid, _, _ = _queue_staff("agent")
+    _add_account(c, "agent", sid)
+    csrf = sign_in(c, sid)
+    ex = c.get("/api/ask/examples").json()
+    q = c.get("/api/queue/mine").json()["queue"]
+    mine = {r[q["columns"].index("case_id")] for r in q["rows"]}
+    assert any(case in ex["examples"][0] for case in mine)  # a case in the agent's own queue is offered
+    r = c.post("/api/ask", json={"question": ex["examples"][0]}, headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "no case resolver" not in body["answer"]
+    assert body["path"] == "rag_customer", body
+
+
+def test_hardship_specialist_works_own_queue(real):
+    c, _ = real
+    sid, rec_id, _ = _queue_staff("hardship_specialist")
+    _add_account(c, "hardship_specialist", sid)
+    sign_in(c, sid)
+    q = c.get("/api/queue/mine")
+    assert q.status_code == 200, q.text
+    assert rec_id in [r[q.json()["queue"]["columns"].index("recommendation_id")] for r in q.json()["queue"]["rows"]]
+    card = c.get(f"/api/cases/{rec_id}")
+    assert card.status_code == 200, card.text
+    assert card.json()["allowed"]["agent_decision"] is True
+    assert card.json()["allowed"]["approval"] is False  # four eyes: never approves their own recommendation
+    assert "case_id" in card.json()["customer"]["cases"]["columns"]  # the person's cases across identity
