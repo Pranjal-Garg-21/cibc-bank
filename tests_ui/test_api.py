@@ -228,6 +228,8 @@ def fake_ask(monkeypatch):
 
     def ask(question, user, *, as_of_date, con=None, **kw):
         seen["user"], seen["kw"] = user, kw
+        if "card" in seen:  # a test may supply the card's fields
+            return AnswerCard(question, as_of_date=as_of_date, **seen["card"])
         return AnswerCard(question, "42 cases", "metric", as_of_date, metric_id="m1", columns=("province", "first_name", "cases"),
                           rows=(("ON", "ANNA", 42),))
 
@@ -252,9 +254,45 @@ def test_ask_maps_role_and_masks_rows(client, fake_ask):
     assert body["path"] == "metric" and body["answer"] == "42 cases"
 
 
+PII = "Call 416-555-0123 or anna.b@example.com; DOB 1980-01-02; card 4111 1111 1111 1111"
+
+
+def test_ask_scrubs_identifiers_from_answer_text_notes_and_sql(client, fake_ask):
+    """Customer-history and generated answers are free text: the column masking never sees them (review item 4)."""
+    fake_ask["card"] = dict(answer=f"The customer said: {PII}. Agreed $110 on 2026-09-25 for CS-2026-465948.",
+                            path="rag_customer", notes=[f"From the call: {PII}"],
+                            sql="SELECT * FROM t WHERE phone = '416-555-0123'")
+    csrf = sign_in(client, "A1")
+    body = client.post("/api/ask", json={"question": "what did they say"}, headers={"X-CSRF-Token": csrf}).json()
+    text = " ".join([body["answer"], *body["notes"], body["sql"]])
+    for raw in ("416-555-0123", "anna.b@example.com", "1980-01-02", "4111 1111 1111 1111"):
+        assert raw not in text, raw
+    assert "[PHONE]" in body["answer"] and "[EMAIL]" in body["notes"][0]
+    assert "$110 on 2026-09-25 for CS-2026-465948" in body["answer"]  # amounts, dates and case IDs stay readable
+
+
+def test_ask_does_not_resend_the_table_as_csv_text(client, fake_ask):
+    """ask() writes the rows as CSV into `answer`; that copy would bypass column masking, so only the table is sent."""
+    fake_ask["card"] = dict(answer="summary: cases moved from 1 to 2\nprovince,first_name,cases\nON,ANNA,42",
+                            path="sql", columns=("province", "first_name", "cases"), rows=(("ON", "ANNA", 42),))
+    csrf = sign_in(client, "L1")
+    body = client.post("/api/ask", json={"question": "cases by name"}, headers={"X-CSRF-Token": csrf}).json()
+    assert body["answer"] == "Cases moved from 1 to 2"
+    assert "ANNA" not in str(body)
+
+
 def test_ask_validates_and_limits(client, fake_ask):
     csrf = sign_in(client, "A1")
     h = {"X-CSRF-Token": csrf}
     assert client.post("/api/ask", json={"question": "x" * 501}, headers=h).status_code == 422
     codes = [client.post("/api/ask", json={"question": "count cases"}, headers=h).status_code for _ in range(11)]
     assert codes[:10] == [200] * 10 and codes[10] == 429
+
+
+def test_customer_names_in_free_text_follow_the_full_name_column_rule():
+    from tiui.security import mask_names
+    t = "The customer (Jeanne Andersen) said JEANNE was laid off; Ms. Andersen agreed. Andersenville stays."
+    assert mask_names(t, ["JEANNE ANDERSEN"], "agent") == \
+        "The customer (J*** A***) said J*** was laid off; Ms. A*** agreed. Andersenville stays."
+    assert "Jeanne" not in mask_names(t, ["JEANNE ANDERSEN"], "team_lead")
+    assert mask_names(t, [], "agent") == t

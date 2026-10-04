@@ -141,7 +141,8 @@ failing. Since the 4 Oct integration (branch `integrate/ui-web`, `docs/ui_decisi
 Ask is wired like the benchmark: case questions go through `case_customer_resolver` (the case's assigned agent, or
 today's queue agent, and their team lead may ask) and P4's handler reads the case's notes and calls through the
 request's own connection. `GET /api/ask/examples` gives each role questions it can ask; an agent's first example is
-about a case in their queue that has a recorded call.
+about a case in their queue that has a recorded call. Answer text is masked like the table: identifiers are
+scrubbed and the case customer's name is masked per role (`docs/ui_decisions.md` D35).
 
 ## Rules this folder follows (design §2)
 
@@ -180,8 +181,9 @@ cd ui/web && npm test                        # API auth flow, formatting and CSV
 TI_UI_INTEGRATION=1 python -m pytest tests_ui/test_integration.py -q   # real P2/P3 modules + real warehouse
 ```
 
-`make test` runs `tests/` and `tests_ui/` together. The integration tests (5) run only with `TI_UI_INTEGRATION=1` and a
-built warehouse, in a process of their own (some `tests/` keep a read-only connection to the warehouse, and DuckDB then
+`make test` runs `tests/` and `tests_ui/` together. The integration tests (7) run only with `TI_UI_INTEGRATION=1` and a
+built warehouse (`RUN_LLM_TESTS=1` adds one that calls the model: a real case answer carries no phone, email,
+card number, date of birth or the customer's name), in a process of their own (some `tests/` keep a read-only connection to the warehouse, and DuckDB then
 refuses the write connection the review test needs; the tests skip and say so); they sign in as real staff of each role and check the queue, card, review, Ask (including a case-call
 question reaching the customer path) and identity screens.
 

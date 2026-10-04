@@ -172,6 +172,7 @@ export type Status = {
   rules: { rule_id: string; title: string; blocking: boolean; violations: number; total: number; passed: boolean }[]
   row_counts: Record<string, number>
   reports: { name: string; title: string; modified: string }[]
+  ask_model: { enabled: boolean; key_configured: boolean }
 }
 
 // /api/next-action: gold.nba_decisions by customer

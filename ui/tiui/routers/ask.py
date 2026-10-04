@@ -10,6 +10,7 @@ Without those two, a customer-call question answers "no case resolver is connect
 """
 from __future__ import annotations
 
+import re
 import threading
 
 import duckdb
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 from .. import rbac
 from ..deps import AS_OF, current_user, warehouse
 from ..errors import ApiError, not_connected
-from ..security import clean_text, mask_rows
+from ..security import clean_text, mask_names, mask_rows, mask_text
 from ..serialize import jsonable
 
 router = APIRouter(prefix="/api", tags=["ask"])
@@ -142,6 +143,24 @@ def examples(request: Request):
             "policy_index": index is not None}
 
 
+_CASE_ID = re.compile(r"\bCS-\d{4}-\d+\b", re.IGNORECASE)
+
+
+def _customer_names(con, question: str) -> list[str]:
+    """Full names of the people behind the cases named in the question (gold.case_customer -> gold.c360_customer).
+    The model's case answer quotes notes and calls, which name the customer; scrub() cannot know names, so they are
+    masked by name like the table's full_name column."""
+    cases = sorted({c.upper() for c in _CASE_ID.findall(question)})
+    if not cases:
+        return []
+    try:
+        return [r[0] for r in con.execute(
+            f"""SELECT DISTINCT p.full_name FROM gold.case_customer c JOIN gold.c360_customer p USING (golden_customer_id)
+                WHERE c.case_id IN ({", ".join("?" for _ in cases)}) AND p.full_name IS NOT NULL""", cases).fetchall()]
+    except duckdb.Error:
+        return []
+
+
 @router.post("/ask")
 def ask(body: Question, request: Request):
     service, UserContext = _ask_module()
@@ -155,19 +174,26 @@ def ask(body: Question, request: Request):
                            {"Retry-After": str(wait)})
         card = service.ask(question, UserContext(user.agent_id, user.ask_role), as_of_date=AS_OF, con=con,
                            **_ask_kwargs(app, con))
+        names = _customer_names(con, question) if card.path == "rag_customer" else []
     app.access_log.record(action=f"ask:{card.path}", user_id=user.agent_id, role=user.role,
                           object_id=card.metric_id or "", request_id=request.state.request_id)
     columns, rows = mask_rows(list(card.columns), [list(r) for r in card.rows], user.ask_role)
     out = jsonable(card)
     out.update(columns=columns, rows=jsonable(rows[:500]), truncated=len(rows) > 500)
     lines = (card.answer or "").splitlines()
-    if card.columns and lines:
-        # ask() writes the rows as CSV into `answer` (after a "summary:" line when it has one); the masked table is
-        # shown instead, so keep only the summary. A plain-text answer is left alone.
-        summary = lines[0].removeprefix("summary:").strip().capitalize() if lines[0].startswith("summary:") else ""
-        header = lines[1 if summary else 0] if len(lines) > (1 if summary else 0) else ""
-        if header == ",".join(card.columns):
-            out["answer"] = summary
+    if card.columns and lines and (len(lines) > 1 or lines[0] == ",".join(card.columns)):
+        # ask() writes the rows as CSV into `answer` (after a "summary:" line when it has one). The column-masked table
+        # is shown instead, so only the summary is kept: the CSV copy would bypass the column masking.
+        out["answer"] = lines[0].removeprefix("summary:").strip().capitalize() if lines[0].startswith("summary:") else ""
+    # Free text (customer-history and generated answers, notes, the SQL and its bound values) can carry identifiers the
+    # column masking never sees: the same scrubber as the Streamlit page (mask_answer_card -> text_controls.scrub)
+    # replaces phones, emails, dates of birth, card and ID numbers. Case IDs, amounts and dates are left alone.
+    out["answer"] = mask_names(mask_text(out["answer"], user.ask_role), names, user.ask_role)
+    out["notes"] = [mask_names(mask_text(n, user.ask_role), names, user.ask_role) for n in out["notes"]]
+    if out.get("sql"):
+        out["sql"] = mask_text(out["sql"], user.ask_role)
+    out["parameters"] = {k: mask_text(v, user.ask_role) if isinstance(v, str) else v
+                         for k, v in (out.get("parameters") or {}).items()}
     return out
 
 

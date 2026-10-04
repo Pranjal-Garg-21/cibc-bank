@@ -33,6 +33,12 @@ export function StatusPage() {
                 note: s.rules.some((r) => !r.passed && r.blocking) ? 'A blocking rule failed' : 'No blocking failures',
               },
               { label: 'Customers (golden records)', value: int(s.row_counts.c360_customer) },
+              {
+                label: 'Ask language model',
+                value: s.ask_model.enabled ? (s.ask_model.key_configured ? 'On' : 'On, no key') : 'Off',
+                tone: s.ask_model.enabled && s.ask_model.key_configured ? 'ok' : 'warn',
+                note: s.ask_model.enabled ? undefined : 'Metrics only; start with --ask-llm',
+              },
             ]}
           />
           <Section title="Data-contract rules" description="Blocking rules stop the publish; warnings are reported" flush>

@@ -480,6 +480,29 @@ Tables from metric, drivers and SQL answers are shown once: the CSV copy `ask()`
 **Why.** The UI branch's fixed examples were not answerable for every role (an agent asking a portfolio count is refused).
 **Where.** `ui/tiui/routers/ask.py`, `ui/web/src/pages/Ask.tsx`.
 
+### D35: Ask's free text is masked like its tables; Ask only reads
+
+**Decision.** Before an answer leaves the server, its text (`answer`, `notes`, the SQL and string parameters) goes through
+`governance.masking.mask_text` (P4's `scrub()`: phones, emails, dates of birth, card and ID numbers), and on case answers
+the name of the person behind the named case (`gold.case_customer` -> `gold.c360_customer.full_name`) is masked word by word
+as the role masks a `full_name` column: agent `J***`, team lead `***`, analyst `[NAME]`. When a table is returned, the CSV
+copy `ask()` writes into `answer` is never sent (it would bypass the column masking); only a `summary:` line is kept.
+Missing masking code fails closed (`***`).
+**Replaces.** Rows-only masking (`mask_rows`).
+**Why.** Review of the merge (4 Oct): rag_customer and SQL answers are free text. Checked on the real warehouse with the
+model on: an agent's call summary named the customer in full ("the customer (Jeanne Andersen) confirmed her identity");
+`scrub()` cannot know names. Now "the customer (J*** A***)". Case IDs, amounts and dates are untouched.
+**Also confirmed.** Ask opens the warehouse read-only (`warehouse(settings)`, `read_only=True`); the only writers are
+`POST /api/review/{id}` and `POST /api/review-batch` (one request at a time, process-wide lock); identity decisions go to a
+CSV and the UI's audit to `warehouse/ui_audit.duckdb`. `LLM()` reads the `llm:` block of `config/settings.yaml`
+(`common/llm.py`), the same as the benchmark. Whether the model is on shows on the Ask page and on Data status.
+**Checked.** One question of each kind per Ask role, model on (agent AG-1003, team lead AG-1399, analyst AG-1304): metric
+(agent refused by role; lead and analyst get the certified table), policy (all three), own case (agent and their lead
+answered, analyst refused by role), someone else's case and a missing case (identical: "Case not found or not visible.").
+**Where.** `ui/tiui/routers/ask.py`, `ui/tiui/security.py` (`mask_text`, `mask_names`), `ui/tiui/routers/status.py`;
+tests `test_api.py` (text, CSV, names), `test_integration.py` (identical refusals; with `RUN_LLM_TESTS=1`, a real case
+answer has no phone, email, card, DOB or the customer's name).
+
 ---
 
 ## 12. Template

@@ -140,6 +140,11 @@ merged without conflicts. What the integration needed (details and reasons: `doc
 - [x] Tests: the real-warehouse integration tests signed in on the wrong tab (stale since the four-tab sign-in); fixed, and
   two added (case question reaches the customer path; specialist works own queue). `preview_backend.install()` also
   replaces the package attributes, so the preview stand-ins work in a run that imported the real modules first.
+- [x] Review of `routers/ask.py` (5 points): resolver and per-request RAG handler with the request's connection (D31);
+  `UI_ASK_LLM` shown on the Ask page and on Data status; answer text, notes and SQL scrubbed and the case customer's name
+  masked by role (D35; the name was showing in full); Ask reads only, the NBA review routes are the only writers, `LLM()`
+  uses the `llm:` block. There is no `tests_integration/` folder in the repo: its checks are in
+  `tests_ui/test_integration.py` (`TI_UI_INTEGRATION=1`, plus `RUN_LLM_TESTS=1` for the one that calls the model).
 - [ ] Team (P3): the queue allocates 1,027 recommendations to 10 QA analysts, who by design never open a case. Should
   the queue allocate to QA at all?
 - [ ] P2: in one of two unseen e2e runs S03 failed: the model's SQL (a `COUNT(*) FILTER (WHERE p.case_id IS NULL)`) was

@@ -221,6 +221,36 @@ def mask_rows(columns, rows, role: str, table: str | None = None) -> tuple[list[
     return [pol[i][0] for i in keep], out
 
 
+def mask_text(text: str | None, role: str) -> str | None:
+    """Identifiers inside free text (phones, emails, dates of birth, card and ID numbers) replaced by P2's
+    governance.masking.mask_text, i.e. P4's text_controls.scrub(). Fails closed: without it the text is withheld."""
+    if text is None:
+        return None
+    try:
+        from trustissues.governance.masking import mask_text as _mask
+        return _mask(text, role)
+    except Exception:  # noqa: BLE001  (missing module or unknown role: never send unscrubbed text)
+        return MASK if text else text
+
+
+def mask_names(text: str | None, names, role: str) -> str | None:
+    """Each word (2+ letters) of the given full names, wherever it appears in the text, masked as the role's masking
+    masks a full_name column: agent "J***", team lead "***", analyst (drop) "[NAME]". Fails closed to "***"."""
+    if not text or not names:
+        return text
+    words = sorted({w for n in names for w in re.findall(r"[^\W\d_][\w'-]*", n or "") if len(w) >= 2}, key=len, reverse=True)
+    if not words:
+        return text
+    try:
+        from trustissues.governance.masking import partial, policy_for
+        action = policy_for(["full_name"], role)[0].action
+    except Exception:  # noqa: BLE001
+        action, partial = "mask", None
+    sub = {"partial": lambda w: partial("full_name", w), "drop": lambda w: "[NAME]"}.get(action, lambda w: MASK)
+    pattern = re.compile(r"\b(" + "|".join(re.escape(w) for w in words) + r")\b", re.IGNORECASE)
+    return pattern.sub(lambda m: sub(m.group(0)), text)
+
+
 def mask_record(record: dict, role: str, table: str | None = None) -> dict:
     cols, rows = mask_rows(list(record), [list(record.values())], role, table)
     return dict(zip(cols, rows[0]))

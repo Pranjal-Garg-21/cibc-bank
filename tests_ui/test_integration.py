@@ -152,3 +152,61 @@ def test_hardship_specialist_works_own_queue(real):
     assert card.json()["allowed"]["agent_decision"] is True
     assert card.json()["allowed"]["approval"] is False  # four eyes: never approves their own recommendation
     assert "case_id" in card.json()["customer"]["cases"]["columns"]  # the person's cases across identity
+
+
+CALL = "Summarise the most recent recorded call on case {}: what did the customer say and agree to?"
+
+
+def _other_case(agent_id: str) -> str:
+    """A real case that is neither assigned to nor queued for this agent today."""
+    from trustissues.common import config
+    con = duckdb.connect(str(config.warehouse_path()), read_only=True)
+    try:
+        return con.execute("""SELECT min(case_id) FROM gold.case_customer WHERE case_id NOT IN
+                                  (SELECT case_id FROM gold.nba_decisions WHERE as_of_date = ? AND agent_id = ?)
+                              AND case_id NOT IN (SELECT case_id FROM curated.case_assignment_history WHERE agent_id = ?)""",
+                           [config.AS_OF_DATE, agent_id, agent_id]).fetchone()[0]
+    finally:
+        con.close()
+
+
+def test_someone_elses_case_and_a_missing_case_read_the_same(real):
+    """No existence oracle: a case the agent may not see and one that does not exist get identical answers."""
+    c, _ = real
+    sid, _, _ = _queue_staff("agent")
+    _add_account(c, "agent", sid)
+    csrf = sign_in(c, sid)
+    other, missing = (c.post("/api/ask", json={"question": CALL.format(case)}, headers={"X-CSRF-Token": csrf}).json()
+                      for case in (_other_case(sid), "CS-2026-999999"))
+    assert other["path"] == missing["path"] == "refused"
+    assert other["answer"] == missing["answer"]
+    assert other["refusal_reason"] == missing["refusal_reason"]
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LLM_TESTS") != "1", reason="calls the language model: set RUN_LLM_TESTS=1")
+def test_case_answer_carries_no_raw_identifiers(real):
+    """With the model on, an agent's case answer quotes notes and calls: no phone, email, DOB or card number, and the
+    customer's name only as the role's partial mask."""
+    import re
+    c, _ = real
+    c.app.state.settings = __import__("dataclasses").replace(c.app.state.settings, ask_llm=True)
+    sid, _, _ = _queue_staff("agent")
+    _add_account(c, "agent", sid)
+    csrf = sign_in(c, sid)
+    q = c.get("/api/ask/examples").json()["examples"][0]
+    body = c.post("/api/ask", json={"question": q}, headers={"X-CSRF-Token": csrf}).json()
+    assert body["path"] == "rag_customer", body
+    text = " ".join([body["answer"], *body["notes"]])
+    assert not re.search(r"\(?\d{3}\)?[ .-]?\d{3}[ .-]\d{4}", text), text          # phone
+    assert not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text), text                  # email
+    assert not re.search(r"\b(?:\d[ -]?){13,19}\b", text), text                  # card number
+    assert not re.search(r"(?i)(dob|date of birth|born)\W+\d{4}-\d{2}-\d{2}", text), text
+    from trustissues.common import config
+    con = duckdb.connect(str(config.warehouse_path()), read_only=True)
+    case = re.search(r"CS-\d{4}-\d+", q).group(0)
+    name = con.execute("""SELECT p.full_name FROM gold.case_customer c JOIN gold.c360_customer p USING (golden_customer_id)
+                          WHERE c.case_id = ?""", [case]).fetchone()[0]
+    con.close()
+    for word in name.split():
+        if len(word) >= 2:
+            assert not re.search(rf"(?i)\b{re.escape(word)}\b", text), (word, text)

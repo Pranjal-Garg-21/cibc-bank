@@ -69,7 +69,14 @@ def status(request: Request):
         "rules": [dict(zip(("rule_id", "title", "blocking", "violations", "total", "passed"), r)) for r in rules],
         "row_counts": counts,
         "reports": _reports(s.reports_dir),
+        "ask_model": _ask_model(s),
     })
+
+
+def _ask_model(settings) -> dict:
+    """Whether Ask may use the language model (UI_ASK_LLM=1) and whether a key is configured for the `llm:` block."""
+    from .ask import _model_configured
+    return {"enabled": bool(settings.ask_llm), "key_configured": _model_configured()}
 
 
 @router.get("/reports/{name}")
