@@ -1,6 +1,6 @@
 {
     "link_type": "dedupe_only",
-    "probability_two_random_records_match": 5.069980556624101e-07,
+    "probability_two_random_records_match": 5.069994648182215e-07,
     "retain_matching_columns": true,
     "retain_intermediate_calculation_columns": true,
     "additional_columns_to_retain": [
@@ -14,7 +14,7 @@
         "name_key"
     ],
     "sql_dialect": "duckdb",
-    "linker_uid": "4q41gpmx",
+    "linker_uid": "mq2a10p9",
     "em_convergence": 0.0001,
     "max_iterations": 25,
     "match_weight_column_prefix": "mw_",
@@ -62,7 +62,7 @@
                 {
                     "sql_condition": "first_name_l = first_name_r AND last_name_l = last_name_r AND NOT first_is_initial_l",
                     "label_for_charts": "first and last exact",
-                    "m_probability": 0.48280943179213925,
+                    "m_probability": 0.48280860854343416,
                     "u_probability": 4.011919859671959e-06,
                     "fix_m_probability": false,
                     "fix_u_probability": false,
@@ -72,7 +72,7 @@
                 {
                     "sql_condition": "first_name_l = last_name_r AND last_name_l = first_name_r",
                     "label_for_charts": "first and last swapped",
-                    "m_probability": 0.030374042927586366,
+                    "m_probability": 0.030370710678518226,
                     "u_probability": 9.905974962152984e-08,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -80,7 +80,7 @@
                 {
                     "sql_condition": "last_name_l = last_name_r AND (first_is_initial_l OR first_is_initial_r) AND first_initial_l = first_initial_r",
                     "label_for_charts": "surname exact, initial matches",
-                    "m_probability": 0.4631266448352019,
+                    "m_probability": 0.4631312444773578,
                     "u_probability": 2.4418228281707108e-05,
                     "fix_m_probability": false,
                     "fix_u_probability": false,
@@ -90,7 +90,7 @@
                 {
                     "sql_condition": "last_name_l = last_name_r AND jaro_winkler_similarity(first_name_l, first_name_r) >= 0.9",
                     "label_for_charts": "surname exact, first name close",
-                    "m_probability": 2.55374489309563e-05,
+                    "m_probability": 2.5303060408276246e-05,
                     "u_probability": 5.943584977291791e-07,
                     "fix_m_probability": false,
                     "fix_u_probability": false,
@@ -100,15 +100,15 @@
                 {
                     "sql_condition": "(name_key_l IS NOT NULL AND name_key_r IS NOT NULL AND len(list_filter(string_split(name_key_l, ' '), t -> length(t) > 1)) >= 1 AND list_has_all(string_split(name_key_r, ' '), list_filter(string_split(name_key_l, ' '), t -> length(t) > 1)) AND (len(list_filter(string_split(name_key_l, ' '), t -> length(t) > 1)) >= 3 OR coalesce(list_bool_or(list_transform(list_filter(string_split(name_key_l, ' '), t -> length(t) = 1), t -> list_bool_or(list_transform(list_filter(string_split(name_key_r, ' '), u -> NOT list_contains(list_filter(string_split(name_key_l, ' '), t -> length(t) > 1), u)), u -> left(u, 1) = t)))), false))) OR (name_key_r IS NOT NULL AND name_key_l IS NOT NULL AND len(list_filter(string_split(name_key_r, ' '), t -> length(t) > 1)) >= 1 AND list_has_all(string_split(name_key_l, ' '), list_filter(string_split(name_key_r, ' '), t -> length(t) > 1)) AND (len(list_filter(string_split(name_key_r, ' '), t -> length(t) > 1)) >= 3 OR coalesce(list_bool_or(list_transform(list_filter(string_split(name_key_r, ' '), t -> length(t) = 1), t -> list_bool_or(list_transform(list_filter(string_split(name_key_l, ' '), u -> NOT list_contains(list_filter(string_split(name_key_r, ' '), t -> length(t) > 1), u)), u -> left(u, 1) = t)))), false)))",
                     "label_for_charts": "same name words, split differently",
-                    "m_probability": 0.007423154456356816,
-                    "u_probability": 3.150100037964649e-05,
+                    "m_probability": 0.007416816395857984,
+                    "u_probability": 3.1649590004078784e-05,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "jaro_winkler_similarity(last_name_l, last_name_r) >= 0.92 AND (first_name_l = first_name_r OR ((first_is_initial_l OR first_is_initial_r) AND first_initial_l = first_initial_r))",
                     "label_for_charts": "surname close, first name matches",
-                    "m_probability": 0.0029538177726597856,
+                    "m_probability": 0.002953578424140488,
                     "u_probability": 4.358628983347313e-06,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -116,7 +116,7 @@
                 {
                     "sql_condition": "first_name_l = first_name_r OR ((first_is_initial_l OR first_is_initial_r) AND first_initial_l = first_initial_r)",
                     "label_for_charts": "first name or initial matches, surname differs",
-                    "m_probability": 0.0055186630411047394,
+                    "m_probability": 0.005518659723959884,
                     "u_probability": 0.025427399480976443,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -124,8 +124,8 @@
                 {
                     "sql_condition": "last_name_l = last_name_r",
                     "label_for_charts": "surname exact, first name differs",
-                    "m_probability": 0.007145810038640477,
-                    "u_probability": 0.0007981739325754767,
+                    "m_probability": 0.007152847603405283,
+                    "u_probability": 0.000798124402700666,
                     "fix_m_probability": false,
                     "fix_u_probability": false,
                     "tf_adjustment_column": "last_name",
@@ -134,8 +134,8 @@
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "different",
-                    "m_probability": 0.0006228976873797721,
-                    "u_probability": 0.9737094433906963,
+                    "m_probability": 0.0006222310929180643,
+                    "u_probability": 0.9737093443309467,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
@@ -155,7 +155,7 @@
                 {
                     "sql_condition": "dob_l = dob_r",
                     "label_for_charts": "exact",
-                    "m_probability": 0.9981318795962207,
+                    "m_probability": 0.9981346476688596,
                     "u_probability": 4.3700394147184276e-05,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -163,7 +163,7 @@
                 {
                     "sql_condition": "(year(dob_l) = year(dob_r) AND month(dob_l) = day(dob_r) AND day(dob_l) = month(dob_r))",
                     "label_for_charts": "day/month swapped",
-                    "m_probability": 0.0006579511630965748,
+                    "m_probability": 0.0006519403255697811,
                     "u_probability": 1.704146644349657e-05,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -171,7 +171,7 @@
                 {
                     "sql_condition": "abs(date_diff('day', dob_l, dob_r)) <= 31",
                     "label_for_charts": "within a month",
-                    "m_probability": 0.001126595233228892,
+                    "m_probability": 0.0011298343786195287,
                     "u_probability": 0.0031538523837805733,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -186,7 +186,7 @@
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "different",
-                    "m_probability": 8.357400745374062e-05,
+                    "m_probability": 8.357762695095983e-05,
                     "u_probability": 0.9958931753145078,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -207,7 +207,7 @@
                 {
                     "sql_condition": "list_has_any(phones_l, phones_r)",
                     "label_for_charts": "a full phone in common",
-                    "m_probability": 0.6819372340888645,
+                    "m_probability": 0.6819372273056385,
                     "u_probability": 7.569662420496072e-07,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -215,14 +215,14 @@
                 {
                     "sql_condition": "(phone_mask_regex_l IS NOT NULL AND list_bool_or(list_transform(phones_r, p -> regexp_full_match(p, phone_mask_regex_l)))) OR (phone_mask_regex_r IS NOT NULL AND list_bool_or(list_transform(phones_l, p -> regexp_full_match(p, phone_mask_regex_r))))",
                     "label_for_charts": "masked digits fit",
-                    "m_probability": 0.2814700471682628,
+                    "m_probability": 0.28147004463233466,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "different",
-                    "m_probability": 0.0365927187428727,
+                    "m_probability": 0.03659272806202687,
                     "u_probability": 0.999999243033758,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -243,7 +243,7 @@
                 {
                     "sql_condition": "postal_l = postal_r",
                     "label_for_charts": "exact",
-                    "m_probability": 0.995806452908673,
+                    "m_probability": 0.9958069032228999,
                     "u_probability": 2.0089190985678665e-06,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -251,7 +251,7 @@
                 {
                     "sql_condition": "fsa_l = fsa_r",
                     "label_for_charts": "same FSA",
-                    "m_probability": 5.612774197746121e-21,
+                    "m_probability": 5.5992423478411375e-21,
                     "u_probability": 0.00261043969965655,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -259,7 +259,7 @@
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "different",
-                    "m_probability": 0.004193547091327084,
+                    "m_probability": 0.00419309677710007,
                     "u_probability": 0.9973875513812449,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -280,7 +280,7 @@
                 {
                     "sql_condition": "jaro_winkler_similarity(employer_l, employer_r) >= 0.9",
                     "label_for_charts": "jaro_winkler >= 0.9",
-                    "m_probability": 0.9964431017783331,
+                    "m_probability": 0.9964431015261438,
                     "u_probability": 0.0020726328266177873,
                     "fix_m_probability": false,
                     "fix_u_probability": false
@@ -288,7 +288,7 @@
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "different",
-                    "m_probability": 0.0035568982216669038,
+                    "m_probability": 0.003556898473856194,
                     "u_probability": 0.9979273671733823,
                     "fix_m_probability": false,
                     "fix_u_probability": false

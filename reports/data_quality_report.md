@@ -600,7 +600,7 @@ Every day of the last year, per series (contacts by channel, cases by product, p
 
 **Affected:** 58 of 516 (11.2%) · **Tables:** `contact_history`, `collections_cases`, `external` · **Severity:** info
 
-*Evidence:* ECO-0715, REL-0926, INC-0914, INC-0923.
+*Evidence:* ECO-0715, INC-0923, REL-0926, INC-0914.
 
 **Handling (context, not a defect).** Detected automatically and matched to the operations log: the event lists the table and its dates overlap the episode (one day of lag allowed). Long events (layoffs, a policy) explain volume changes only. Section A checks each logged event directly.
 
