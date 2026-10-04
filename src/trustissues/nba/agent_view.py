@@ -1,5 +1,5 @@
-"""Data for the Agent Queue and Decision Card pages (app/pages). Plain functions, no Streamlit, so they are tested
-like the rest of nba/. Reads gold.nba_decisions and gold.nba_overrides (written by nba/queue.py --write-gold and
+"""Data for the Agent Queue and Decision Card screens (the web console, ui/tiui/routers/nba.py). Plain functions, so
+they are tested like the rest of nba/. Reads gold.nba_decisions and gold.nba_overrides (written by nba/queue.py --write-gold and
 nba/review.py) and the case's own history through features/sources.py (no PII, no protected attributes).
 
 Who sees what (demo scope, from agents.role): an agent sees the recommendations assigned to them; team leads,

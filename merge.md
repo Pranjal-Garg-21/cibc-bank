@@ -116,3 +116,38 @@ Link-ups:
 
 Tests after the merge: 970 passed, 6 skipped (`main` before: 357 passed, 6 skipped; P2 adds 613 tests). After the two decisions: 967 passed, 6 skipped (P2's 6 `test_quality` tests removed with the code they tested; 3 added). The 6 skips are P4's policy-search tests that need `python -m trustissues.ask.rag.policy_ingest`, as on `main`.
 - [x] BQ-017 (roll rate by product) explained, 4 Oct. It failed against the answer key with counts about 7% higher in every product. The key's reference SQL parses `month_end_date` with `%Y-%m-%d`, `%d/%m/%Y`, `%Y%m%d` only; 418,319 raw snapshot rows are month-first (`03/31/2024`) and come out NULL, so it drops them. P1's curation reads them (D9). The reference with `%m/%d/%Y` added gives our numbers exactly (auto_loan 466, card 2,892, chequing 538, mortgage 209, personal_loan 781, student_loc 8, unsecured_loc 311). Our answer stays; roll-rate answers carry a note saying so (`catalog.py`).
+
+---
+
+## 7. Web console (`origin/ui/banking-polish-security`) onto main (4 Oct, branch `integrate/ui-web`)
+
+The UI branch was built on `ebfd6c5` (116 commits behind) and only adds files (`ui/`, `tests_ui/`, `docs/ui_*`), so it
+merged without conflicts. What the integration needed (details and reasons: `docs/ui_decisions.md` §11, D31-D34):
+
+- [x] Streamlit retired: `app/`, `tests/test_app.py` (3 AppTest tests), `.streamlit/` removed. `make app` serves `ui/`
+  (builds `ui/web/dist` first if missing); `make test` runs `tests` and `tests_ui`; pyproject extra `app` holds the UI's
+  server packages. `scripts/nightly.py` and `nba/agent_view.py` docstrings point at the console.
+- [x] Ask (`ui/tiui/routers/ask.py`): `resolver=case_customer_resolver(con, AS_OF)` on every question and, with
+  `UI_ASK_LLM=1`, `make_rag_handler(index, llm, con=con)` per request. Before: customer-call questions answered "no case
+  resolver is connected". Role examples from the server (`/api/ask/examples`), notices when the model, key or policy
+  index is missing, and tables are no longer repeated as CSV text.
+- [x] Decision card: the person's cases and hardship offers (`agent_view.customer_context`), customer ID, feature
+  snapshot, hardship/vulnerable badge, "no quoted evidence" line, as on the Streamlit card.
+- [x] Roles: hardship specialists get My work queue and decide their own recommendations; team leads decide the ones
+  assigned to them (the real queue allocates 1,440 and 3,540 on 28 Sep). `nba/review.py` still checks every decision,
+  and the UI refuses an approval by the person the recommendation is assigned to (four eyes; `review.py` alone allows it:
+  P3 may want the same rule in `review.check`).
+- [x] Tests: the real-warehouse integration tests signed in on the wrong tab (stale since the four-tab sign-in); fixed, and
+  two added (case question reaches the customer path; specialist works own queue). `preview_backend.install()` also
+  replaces the package attributes, so the preview stand-ins work in a run that imported the real modules first.
+- [x] Review of `routers/ask.py` (5 points): resolver and per-request RAG handler with the request's connection (D31);
+  `UI_ASK_LLM` shown on the Ask page and on Data status; answer text, notes and SQL scrubbed and the case customer's name
+  masked by role (D35; the name was showing in full); Ask reads only, the NBA review routes are the only writers, `LLM()`
+  uses the `llm:` block. There is no `tests_integration/` folder in the repo: its checks are in
+  `tests_ui/test_integration.py` (`TI_UI_INTEGRATION=1`, plus `RUN_LLM_TESTS=1` for the one that calls the model).
+- [ ] Team (P3): the queue allocates 1,027 recommendations to 10 QA analysts, who by design never open a case. Should
+  the queue allocate to QA at all?
+- [ ] P2: in one of two unseen e2e runs S03 failed: the model's SQL (a `COUNT(*) FILTER (WHERE p.case_id IS NULL)`) was
+  rejected by the validator with "Entity identifiers cannot be displayed for this role" although no identifier is
+  displayed; the rerun passed 26/26. Worth a look at the identifier rule for aggregates.
+

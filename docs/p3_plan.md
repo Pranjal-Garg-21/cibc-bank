@@ -158,7 +158,7 @@ python -m trustissues.nba.actions                   # step 7 + calibration from 
 python -m trustissues.nba.queue                     # NBA: one decision per open case (add --write-gold to write gold.nba_decisions)
 python -m trustissues.nba.fairness                  # reports/fairness_report.md (after train and queue)
 python -m trustissues.governance.monitoring         # reports/monitoring.md, and snapshot() for the Data Quality page
-streamlit run app/Home.py                           # the app: Agent queue and Decision card pages (needs --write-gold)
+make app                                            # web console (ui/): My work queue, Decision card, approvals (needs --write-gold)
 python -m pytest tests -q
 ```
 
@@ -177,7 +177,7 @@ python -m pytest tests -q
 | Monitoring | `governance/monitoring.py` → `reports/monitoring.md` and `snapshot()` (a dict for the Data Quality page): realised AUC and calibration by month for ours and the bank's models, score and feature drift (PSI) against a like-for-like reference, the bank's own PSI, queue mix, override rate once review decisions exist, P1 identity reviews and P4 text-feature accuracy once those exist. Found a live-scoring bug on its first run, see "Monitoring (3 Oct)" |
 | Submission text | `docs/p3_submission_text.md` rewritten 3 Oct to match what is built (claims checked against the code and the 28 Sep numbers; promise coach, event re-scoring, LLM card wording, language rule and off-policy evaluation removed or labelled next), plus a "changes from the design" table for the README |
 | Morning run | `scripts/nightly.py` (`make nightly`): Layer 1 pipeline, P4 text features (skipped until built), queue written to `gold.nba_decisions`, fairness, monitoring. P3 stages take 47 s; timings logged to `warehouse/p3/nightly.log` |
-| Pages | `app/pages/2_Agent_Queue.py`, `app/pages/3_Decision_Card.py` on `nba/agent_view.py` (data, tested without Streamlit) and `nba/review.py` (decisions). `gold.nba_decisions` written to the warehouse for 28 Sep (86,059 rows). See "Agent Queue and Decision Card pages (3 Oct)" |
+| Pages | Web console (`ui/`, since 4 Oct; was `app/pages/2_Agent_Queue.py`, `3_Decision_Card.py` in Streamlit): `ui/tiui/routers/nba.py` on `nba/agent_view.py` (data, tested on its own) and `nba/review.py` (decisions). `gold.nba_decisions` written to the warehouse for 28 Sep (86,059 rows). See "Agent Queue and Decision Card pages (3 Oct)" |
 | Case model | `features/build_case_training_set.py`, `features/sql/case_state.sql`, `nba/train.py --case`: AUC 0.838 vs the bank's `cure_30d` 0.725 |
 
 New facts from the data (add to §2):
@@ -433,6 +433,10 @@ promise model trained on promises before 30 Jun), so the models were not retrain
 the last 30 days 2.08 → 2.20 per case on average, cases with a call-response rate 64.4% → 67.2%, 588 decisions changed.
 
 ### Agent Queue and Decision Card pages (3 Oct)
+
+**4 Oct: superseded by the web console** (`ui/`, FastAPI + React; `make app`). It reads the same functions
+(`nba/agent_view.py`, `nba/review.py`), keeps the card's person view (all their cases and hardship offers), and lets
+hardship specialists work their own queue (`docs/ui_decisions.md` §11). The Streamlit notes below are history.
 
 `streamlit run app/Home.py` (install with `pip install -e ".[app]"`; `.streamlit/config.toml` turns off Streamlit's
 usage statistics). The pages read `gold.nba_decisions`, so the queue must have been written to the warehouse first:

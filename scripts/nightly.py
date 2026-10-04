@@ -16,7 +16,8 @@ Stages, in order (each runs as its own process, so connections and memory do not
     fairness       reports/fairness_report.md (nba/fairness.py)
     monitoring     reports/monitoring.md (governance/monitoring.py)
 
-The queue writes to the warehouse, so nothing else may hold it open (stop the app: streamlit holds the write lock).
+The queue writes to the warehouse, so nothing else may hold it open. The web console (ui/) opens a connection per
+request only, so it can stay up: while a stage holds the file it answers "Data is being refreshed".
 Retraining is not nightly: `make train` rebuilds the training sets, features and both models. Each stage's time is
 printed and appended to warehouse/p3/nightly.log; the run stops at the first stage that fails.
 """
