@@ -10,7 +10,7 @@ import pyotp
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import TEST_PASSWORD, sign_in
+from uikit import TEST_PASSWORD, sign_in
 from tiui.accounts import AccountStore
 from tiui.main import create_app
 from tiui.security import SessionStore, csv_safe

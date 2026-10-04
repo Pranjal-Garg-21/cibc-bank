@@ -10,7 +10,7 @@ import types
 import pandas as pd
 import pytest
 
-from conftest import PAIR_1, PAIR_2, PAIR_3, sign_in
+from uikit import PAIR_1, PAIR_2, PAIR_3, sign_in
 
 
 def test_sign_in_page_reveals_no_staff(client):

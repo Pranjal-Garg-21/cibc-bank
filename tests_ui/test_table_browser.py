@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import duckdb
 
-from conftest import sign_in
+from uikit import sign_in
 
 
 def test_table_browser_requires_team_lead_demo(client):

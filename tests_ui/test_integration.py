@@ -38,7 +38,7 @@ def real(tmp_path):
     con.close()
     REAL_IDS.clear()
     REAL_IDS.update(ids)
-    from conftest import TEST_PASSWORD
+    from uikit import TEST_PASSWORD
     from tiui.accounts import AccountStore
     accounts = tmp_path / "ui_accounts.json"
     for sid in ids.values():
@@ -51,7 +51,7 @@ def real(tmp_path):
 
 def sign_in(c, agent_id: str) -> str:
     """conftest.sign_in picks the tab from the tiny test warehouse's IDs; here the tab is the real role's portal."""
-    import conftest
+    import uikit as conftest
     from tiui import rbac
     for role, sid in REAL_IDS.items():
         if sid == agent_id:
@@ -116,7 +116,7 @@ def _queue_staff(role: str) -> tuple[str, str, str]:
 
 
 def _add_account(c, role: str, sid: str) -> None:
-    from conftest import TEST_PASSWORD
+    from uikit import TEST_PASSWORD
     from tiui.accounts import AccountStore
     AccountStore(c.app.state.settings.accounts_file).set_password(sid, TEST_PASSWORD)
     REAL_IDS[role] = sid

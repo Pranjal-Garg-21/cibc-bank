@@ -1,7 +1,7 @@
 """Two sign-in roles, and agent passwords set by their team lead."""
 from __future__ import annotations
 
-from conftest import TEST_PASSWORD, sign_in
+from uikit import TEST_PASSWORD, sign_in
 
 AGENT_PW = "agent-pass-" + TEST_PASSWORD[-8:]
 

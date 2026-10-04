@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import duckdb
 
-from conftest import PAIR_1, TEST_PASSWORD, sign_in
+from uikit import PAIR_1, TEST_PASSWORD, sign_in
 
 from tiui.security import RateLimiter, SessionStore, csv_safe, mask_phone, mask_rows
 
