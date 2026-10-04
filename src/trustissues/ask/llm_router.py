@@ -15,7 +15,7 @@ from trustissues.common.llm import LLMError
 from .catalog import TRIGGERS
 from .router import Route
 
-PROMPT_VERSION = "ask_route_v1"
+PROMPT_VERSION = "ask_route_v2"
 PROFILES = REPO_ROOT / "config" / "metric_match_profiles.json"
 
 
@@ -34,7 +34,8 @@ def build_system() -> str:
         "possibly by a breakdown or period). Give its metric_id.\n"
         "- rag_corpus: asks what a policy, regulation or procedure says or requires (rules, approvals, limits, "
         "what an agent should do or say).\n"
-        "- sql: asks for a plain count or breakdown of current cases or accounts that no metric below covers.\n"
+        "- sql: asks for a count, total, share, rate or average over cases, promises, contacts or accounts that no "
+        "metric below covers (for example a share of payment links clicked, or an amount overdue by product).\n"
         "- cannot_answer: anything else, including unrelated topics or questions you are unsure about.\n"
         "A question about how many cases or accounts exist, by queue, product or bucket, is sql. Only choose metric when "
         "one definition clearly matches the quantity asked for; if two are plausible, choose cannot_answer.\n"

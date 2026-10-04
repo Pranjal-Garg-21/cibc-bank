@@ -77,6 +77,8 @@ def route(question: str) -> Route:
         if metric:
             return Route("drivers", metric_id=metric, why=f"change in {metric}")
         return Route("incident", why="explanation needs metric evidence plus cited incident records")
+    if metric == "cure_rate" and re.search(r"\b(?:average|mean|median)\s+(?:number\s+of\s+)?days\b|\bdays\s+to\s+cure\b", q, re.I):
+        return Route("sql", why="days to cure is a duration, not the cure rate")
     if metric:
         return Route("metric", metric_id=metric, why=f"trigger for {metric}")
     if re.search(COUNT_WORDS, q, re.I):

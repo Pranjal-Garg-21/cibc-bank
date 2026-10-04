@@ -29,12 +29,15 @@ PROMPT_VERSION = "ask_sql_v2"
 
 TABLE_NOTES = {
     "gold.semantic_cases": "one row per collections case. Open case = outcome IS NULL. reported_bucket is the STORED "
-                           "delinquency bucket (use it for 'current bucket'); canonical_bucket is recomputed from current_dpd.",
-    "gold.semantic_promises": "one row per promise to pay. Count only ptp_status IN ('kept','partially_kept','broken') as resolved.",
+                           "delinquency bucket (use it for 'current bucket'); canonical_bucket is recomputed from current_dpd. "
+                           "total_overdue is the amount overdue on the case; days_to_cure is days from opening to cure_date.",
+    "gold.semantic_promises": "one row per promise to pay. Count only ptp_status IN ('kept','partially_kept','broken') as resolved. "
+                              "ptp_channel is the channel the promise was taken on ('call', 'ivr', 'web', 'app', 'sms_reply').",
     "gold.semantic_contacts": "one row per contact attempt. channel is 'call', 'sms', 'email', ...; 'calls' means channel = 'call'. "
                               "direction is 'outbound' or 'inbound'; contact_ts_local is local time; "
                               "within_permitted_hours_flag is supplied by the source (use it, do not recompute); "
-                              "dispute_raised_flag marks a dispute raised on the contact.",
+                              "dispute_raised_flag marks a dispute raised on the contact; payment_link_sent_flag marks a contact "
+                              "that carried a payment link and link_clicked_flag whether that link was clicked.",
     "gold.semantic_accounts": "one row per account at snapshot_date (current state only).",
     "gold.semantic_snapshots": "month-end history per account.",
     "gold.semantic_payroll": "payroll deposit timing per customer.",
@@ -162,7 +165,7 @@ def column_hint(err: str) -> str:
 # result that reads like a fact ("0 accounts in default"), so the value is checked before the query runs.
 LABEL_COLUMNS = frozenset({
     "reported_bucket", "canonical_bucket", "queue", "outcome", "primary_product", "product", "product_code", "channel",
-    "direction", "province", "agent_site", "ptp_status", "account_status", "assignment_method", "test_cell"})
+    "direction", "province", "agent_site", "ptp_status", "account_status", "assignment_method", "test_cell", "ptp_channel"})
 
 
 def _distinct(policy: QueryPolicy, con, database, table: str, column: str) -> set:

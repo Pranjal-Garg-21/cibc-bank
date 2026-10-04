@@ -10,7 +10,7 @@ SCHEMAS = {
         "assigned_agent_id": "VARCHAR", "current_dpd": "BIGINT", "reported_bucket": "VARCHAR",
         "canonical_bucket": "VARCHAR", "outcome": "VARCHAR", "outcome_date": "DATE", "cure_date": "DATE",
         "hardship_flag": "BOOLEAN", "insolvency_hold_flag": "BOOLEAN", "deceased_hold_flag": "BOOLEAN",
-        "assignment_method": "VARCHAR", "test_cell": "VARCHAR",
+        "assignment_method": "VARCHAR", "test_cell": "VARCHAR", "total_overdue": "DOUBLE", "days_to_cure": "BIGINT",
     },
     # One row per case assignment, with the case's cure date and holds carried on the row so the pilot template needs
     # no join. Certification and hardship are as recorded at assignment time, not the agent's or case's state today.
@@ -26,7 +26,7 @@ SCHEMAS = {
         "account_id": "VARCHAR", "product": "VARCHAR", "agent_site": "VARCHAR", "queue": "VARCHAR",
         "test_cell": "VARCHAR", "assignment_method": "VARCHAR", "ptp_created_ts": "TIMESTAMP",
         "ptp_due_date": "DATE", "prior_broken_ptp_count": "BIGINT", "ptp_status": "VARCHAR",
-        "status_ts": "TIMESTAMP", "paid_date": "DATE", "amount_paid_against": "DOUBLE",
+        "status_ts": "TIMESTAMP", "paid_date": "DATE", "amount_paid_against": "DOUBLE", "ptp_channel": "VARCHAR",
     },
     "gold.semantic_contacts": {
         "contact_id": "VARCHAR", "case_id": "VARCHAR", "golden_customer_id": "VARCHAR",
@@ -34,6 +34,7 @@ SCHEMAS = {
         "contact_hour_local": "BIGINT", "rpc_flag": "BOOLEAN", "ptp_made_flag": "BOOLEAN",
         "contact_cost_cad": "DOUBLE", "within_permitted_hours_flag": "BOOLEAN",
         "dispute_raised_flag": "BOOLEAN", "province": "VARCHAR", "agent_site": "VARCHAR",
+        "payment_link_sent_flag": "BOOLEAN", "link_clicked_flag": "BOOLEAN",
     },
     "gold.semantic_accounts": {
         "account_id": "VARCHAR", "golden_customer_id": "VARCHAR", "snapshot_date": "DATE",

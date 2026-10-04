@@ -1,6 +1,10 @@
 """Run the benchmark through ask() and write the four-column submission CSV.
 
     python scripts/run_benchmark.py --database path/to/dev_ask_dev.duckdb --out submission.csv [--split dev]
+
+The submission (released + 19:00 extras, model on, published warehouse):
+    python scripts/run_benchmark.py --database warehouse/trustissues.duckdb --llm \
+        --extra eval/benchmark_questions_extra.csv --out submission/benchmark_answers.csv
 """
 from __future__ import annotations
 
@@ -21,8 +25,11 @@ def main() -> None:
     ap.add_argument("--llm", action="store_true", help="use the language model: policy answers and the SQL fallback")
     ap.add_argument("--no-cache", action="store_true", help="bypass the LLM response cache: every model call is made fresh")
     ap.add_argument("--only", nargs="*", help="question ids to run")
+    ap.add_argument("--extra", nargs="*", default=[], help="more question files in the same format (the 19:00 4 Oct release)")
     a = ap.parse_args()
     qs = B.read_questions(maple_data_dir() / "data" / "benchmark_questions.csv")
+    for extra in a.extra:
+        qs += B.read_questions(Path(extra))
     if a.split != "all":
         qs = [q for q in qs if q["split"] == a.split]
     if a.only:
@@ -42,6 +49,7 @@ def main() -> None:
         rows = B.run(qs, con=con, **kw)
     finally:
         con.close()
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     B.write_submission(rows, Path(a.out))
     print(f"wrote {len(rows)} rows to {a.out}")
 

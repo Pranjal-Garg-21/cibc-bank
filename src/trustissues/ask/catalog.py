@@ -42,6 +42,8 @@ DIM_WORDS: list[tuple[str, str]] = [
     (r"\bby primary product\b", "primary_product"),
     (r"\bby (?:customer )?province\b", "province"),
     (r"\bby queue\b", "queue"),
+    (r"\bby (?:the )?(?:promise|ptp) channel\b|\bby the channel (?:the|each) promise was (?:taken|made|created) on\b",
+     "ptp_channel"),
     (r"\bby channel\b", "channel"),
     (r"\bby current bucket\b|\bby bucket\b", "reported_bucket"),
     (r"champion.{0,40}challenger|test cell|\bby strategy\b", "test_cell"),

@@ -147,3 +147,20 @@ def test_pilot_effect_states_direction_size_and_chance():
     assert "is higher" in note and "+1.61 points" in note and "z = 2.30" in note and "unlikely to be chance" in note
     assert "not distinguishable from chance" in service.pilot_effect([("certified", 5., 1, 20), ("not_certified", 0., 0, 20)])
     assert service.pilot_effect([("certified", 5., 1, 20)]) is None  # one group alone has no comparison
+
+
+def test_days_to_cure_is_a_duration_not_the_cure_rate():
+    """BQ-111: 'average number of days to cure' was answered with the cure rate (a percentage)."""
+    r = router.route("For cases that cured between 1 July and 28 September 2026, what was the average number of days "
+                     "to cure, by primary product?")
+    assert r.path == "sql"
+    assert router.route("What was the cure rate for cases opened in August 2026?").path == "metric"
+
+
+def test_promise_kept_rate_by_the_channel_the_promise_was_taken_on():
+    """BQ-112: the promise's own channel (ptp_channel), not the contact channel."""
+    call = build_call("What was the promise-kept rate for promises due between 1 and 20 September 2026, by the channel "
+                      "the promise was taken on?", "promise_kept_rate", AS_OF)
+    assert isinstance(call, MetricCall) and call.dimensions == ("ptp_channel",)
+    assert build_call("Promise-kept rate by promise channel in September 2026", "promise_kept_rate", AS_OF).dimensions == ("ptp_channel",)
+    assert isinstance(build_call("Promise-kept rate by channel in September 2026", "promise_kept_rate", AS_OF), Unsupported)

@@ -12,7 +12,7 @@ METRICS = frozenset({"roll_rate", "cure_rate", "promise_kept_rate", "broken_prom
                      "delinquency_rate", "write_off_rate", "average_dpd", "contact_attempts_per_case",
                      "payroll_delay_share", "out_of_hours_share", "dispute_count"})
 DIMENSIONS = {
-    "promises": {x: x for x in ("product", "agent_site", "queue", "test_cell", "prior_broken_ptp_count")},
+    "promises": {x: x for x in ("product", "agent_site", "queue", "test_cell", "prior_broken_ptp_count", "ptp_channel")},
     "contacts": {x: x for x in ("channel", "contact_hour_local", "province", "agent_site")},
     "cases": {x: x for x in ("primary_product", "queue", "province", "reported_bucket", "canonical_bucket")},
     "accounts": {x: x for x in ("product", "product_code")},

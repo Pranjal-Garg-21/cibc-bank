@@ -21,12 +21,12 @@ def con():
         c.execute(f"CREATE SCHEMA {s}")
     c.execute("""CREATE TABLE curated.collections_cases AS SELECT * FROM (VALUES
         ('CS-1', 'card', 'early', 'ON', 'AG-1', 45::BIGINT, '31-60', NULL, NULL::DATE, NULL::DATE, false, false, false,
-         'random', 'A', 'CRM-WRONG', DATE '2026-08-01'),
+         'random', 'A', 'CRM-WRONG', DATE '2026-08-01', 120.0, NULL::BIGINT),
         ('CS-2', 'loan', 'late', 'QC', 'AG-2', 200::BIGINT, '180+', 'cured', DATE '2026-09-01', DATE '2026-09-01', true,
-         false, false, 'rules', 'B', 'CRM-2', DATE '2026-07-01'))
+         false, false, 'rules', 'B', 'CRM-2', DATE '2026-07-01', 0.0, 62::BIGINT))
         t(case_id, primary_product, queue, province_code, assigned_agent_id, current_dpd, current_bucket, outcome,
           outcome_date, cure_date, hardship_flag, insolvency_hold_flag, deceased_hold_flag, assignment_method, test_cell,
-          coll_customer_ref, case_open_date)""")
+          coll_customer_ref, case_open_date, total_overdue, days_to_cure)""")
     # CS-1 names a CRM ID that belongs to someone else: P1's case_customer gives it to the account holder G-1
     c.execute("""CREATE TABLE gold_stage.case_customer AS SELECT * FROM (VALUES ('CS-1', 'G-1'), ('CS-2', 'G-2'))
         t(case_id, golden_customer_id)""")
@@ -34,11 +34,11 @@ def con():
         ('crm|CRM-WRONG', 'G-9'), ('crm|CRM-2', 'G-2'), ('crm|CRM-3', 'G-3')) t(node_id, golden_customer_id)""")
     c.execute("""CREATE TABLE curated.promises_to_pay AS SELECT * FROM (VALUES
         ('P-1', 'CS-1', 'CRM-WRONG', 'C-1', 'card', 'AG-1', TIMESTAMP '2026-07-01 10:00', DATE '2026-07-10', 0::BIGINT,
-         'kept', TIMESTAMP '2026-07-10 12:00', DATE '2026-07-10', 50.0),
+         'kept', TIMESTAMP '2026-07-10 12:00', DATE '2026-07-10', 50.0, 'ivr'),
         ('P-2', NULL, 'CRM-3', 'L-1', 'loan', 'AG-X', TIMESTAMP '2026-07-02 10:00', DATE '2026-07-12', 1::BIGINT,
-         'broken', TIMESTAMP '2026-07-13 00:00', NULL::DATE, 0.0))
+         'broken', TIMESTAMP '2026-07-13 00:00', NULL::DATE, 0.0, 'call'))
         t(ptp_id, case_id, crm_customer_id, account_id, product, agent_id, ptp_created_ts, ptp_due_date,
-          prior_broken_ptp_count, ptp_status, status_ts, paid_date, amount_paid_against)""")
+          prior_broken_ptp_count, ptp_status, status_ts, paid_date, amount_paid_against, ptp_channel)""")
     c.execute("CREATE TABLE curated.agents AS SELECT * FROM (VALUES ('AG-1', 'Toronto')) t(agent_id, site)")
     c.execute("""CREATE TABLE curated.case_assignment_history AS SELECT * FROM (VALUES
         ('AS-1', 'CS-2', 'AG-2', TIMESTAMP '2026-07-02 09:00', NULL::TIMESTAMP, 'randomised_pilot', 'bucket_move', true,
@@ -46,9 +46,9 @@ def con():
          assignment_reason, certified_for_vulnerable_flag, hardship_flag_at_assignment, dpd_at_assignment)""")
     c.execute("""CREATE TABLE curated.contact_history AS SELECT * FROM (VALUES
         ('K-1', 'CS-1', 'CRM-WRONG', 'call', 'outbound', TIMESTAMP '2026-07-01 09:00', 9::BIGINT, true, true, 2.4, true,
-         false, NULL::VARCHAR)) t(contact_id, case_id, crm_customer_id, channel_resolved, direction, contact_ts_local,
+         false, NULL::VARCHAR, 'PL-1', true)) t(contact_id, case_id, crm_customer_id, channel_resolved, direction, contact_ts_local,
          contact_hour_local, rpc_flag, ptp_made_flag, contact_cost_cad, within_permitted_hours_flag, dispute_raised_flag,
-         agent_site)""")
+         agent_site, payment_link_id, link_clicked_flag)""")
     c.execute("""CREATE TABLE gold_stage.c360_account AS SELECT * FROM (VALUES
         ('C-1', 'G-1'), ('L-1', 'G-2'), ('D-1', 'G-2'), ('D-2', 'G-2')) t(account_id, golden_customer_id)""")
     c.execute("""CREATE TABLE curated.card_accounts AS SELECT * FROM (VALUES
@@ -89,8 +89,11 @@ def test_rows_belong_to_p1s_person_not_the_crm_id_on_the_record(con):
     # a promise on a case belongs to the case's person; with no case, to its own CRM ID
     assert rows(con, "SELECT ptp_id, golden_customer_id, agent_site, queue FROM gold_stage.semantic_promises ORDER BY 1") == [
         ("P-1", "G-1", "Toronto", "early"), ("P-2", "G-3", "self_serve", None)]
-    assert rows(con, "SELECT golden_customer_id, province, agent_site FROM gold_stage.semantic_contacts") == [
-        ("G-1", "ON", "self_serve")]
+    assert rows(con, "SELECT golden_customer_id, province, agent_site, payment_link_sent_flag, link_clicked_flag "
+                     "FROM gold_stage.semantic_contacts") == [("G-1", "ON", "self_serve", True, True)]
+    assert rows(con, "SELECT case_id, total_overdue, days_to_cure FROM gold_stage.semantic_cases ORDER BY 1") == [
+        ("CS-1", 120.0, None), ("CS-2", 0.0, 62)]
+    assert rows(con, "SELECT ptp_id, ptp_channel FROM gold_stage.semantic_promises ORDER BY 1") == [("P-1", "ivr"), ("P-2", "call")]
     # accounts and snapshots: the holder in c360_account
     assert rows(con, "SELECT DISTINCT golden_customer_id FROM gold_stage.semantic_snapshots") == [("G-1",)]
     assert rows(con, "SELECT account_id, golden_customer_id, account_status, canonical_bucket FROM gold_stage.semantic_accounts ORDER BY 1") == [

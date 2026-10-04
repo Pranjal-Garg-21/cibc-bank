@@ -12,7 +12,7 @@
 | refusal | 4/0 | 4/0 |
 | unsupported | 2/0 | 2/0 |
 
-Times: uncached 97.0s; cached 1.8s; total including checks 100.4s. Model attempts: 40 / 0; logical calls: 40 / 40; cache hits on replay: 40. Rate-limit responses: 0.
+Times: uncached 126.7s; cached 1.8s; total including checks 130.1s. Model attempts: 41 / 0; logical calls: 40 / 40; cache hits on replay: 40. Rate-limit responses: 1.
 Numeric cache mismatches: none. Protected-file changes: none.
 
 Failures (observations; no fixes):

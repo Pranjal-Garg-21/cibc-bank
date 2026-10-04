@@ -35,7 +35,8 @@ def build_dev_adapters(con, *, development_database: bool = False) -> None:
         "cases": f"""SELECT c.case_id,x.golden_customer_id,c.case_open_date,c.primary_product,c.queue,
             c.province_code AS province,c.assigned_agent_id,c.current_dpd,c.current_bucket AS reported_bucket,
             {bucket_sql('c.current_dpd')} AS canonical_bucket,c.outcome,c.outcome_date,c.cure_date,
-            c.hardship_flag,c.insolvency_hold_flag,c.deceased_hold_flag,c.assignment_method,c.test_cell
+            c.hardship_flag,c.insolvency_hold_flag,c.deceased_hold_flag,c.assignment_method,c.test_cell,
+            c.total_overdue,c.days_to_cure
             FROM curated.collections_cases c LEFT JOIN gold.customer_xref x
             ON x.source_system='crm' AND x.source_key=c.coll_customer_ref AND x.status IN ('linked','singleton')""",
         "assignments": """SELECT a.assignment_id,a.case_id,a.agent_id,a.assigned_ts,a.unassigned_ts,a.assignment_method,
@@ -44,13 +45,15 @@ def build_dev_adapters(con, *, development_database: bool = False) -> None:
             FROM curated.case_assignment_history a LEFT JOIN gold.semantic_cases c ON c.case_id=a.case_id""",
         "promises": """SELECT p.ptp_id,p.case_id,c.golden_customer_id,p.account_id,p.product,
             coalesce(a.site,'self_serve') AS agent_site,c.queue,c.test_cell,c.assignment_method,
-            p.ptp_created_ts,p.ptp_due_date,p.prior_broken_ptp_count,p.ptp_status,p.status_ts,p.paid_date,p.amount_paid_against
+            p.ptp_created_ts,p.ptp_due_date,p.prior_broken_ptp_count,p.ptp_status,p.status_ts,p.paid_date,p.amount_paid_against,
+            p.ptp_channel
             FROM curated.promises_to_pay p LEFT JOIN gold.semantic_cases c ON c.case_id=p.case_id
             LEFT JOIN curated.agents a ON a.agent_id=p.agent_id""",
         "contacts": """SELECT h.contact_id,h.case_id,c.golden_customer_id,
             coalesce(h.channel_v2,h.channel) AS channel,h.direction,h.contact_ts_local,h.contact_hour_local,
             h.rpc_flag,h.ptp_made_flag,h.contact_cost_cad,h.within_permitted_hours_flag,h.dispute_raised_flag,
-            c.province,coalesce(h.agent_site,'self_serve') AS agent_site
+            c.province,coalesce(h.agent_site,'self_serve') AS agent_site,
+            h.payment_link_id IS NOT NULL AS payment_link_sent_flag,h.link_clicked_flag
             FROM curated.contact_history h LEFT JOIN gold.semantic_cases c ON c.case_id=h.case_id""",
         "accounts": f"""SELECT a.card_account_id AS account_id,x.golden_customer_id,a.snapshot_date,'card' AS product,
             a.product_code,a.account_status,a.dpd,a.dpd_bucket AS reported_bucket,{bucket_sql('a.dpd')} AS canonical_bucket,

@@ -9,157 +9,157 @@
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 2.632
+      "seconds": 2.381
     },
     "M02": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 2.288
+      "seconds": 1.998
     },
     "M03": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 1.828
+      "seconds": 1.956
     },
     "M04": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 1.499
+      "seconds": 1.122
     },
     "M05": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 3.471
+      "seconds": 1.691
     },
     "M06": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 2.358
+      "seconds": 1.659
     },
     "M07": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 1.055
+      "seconds": 1.767
     },
     "M08": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 2.716
+      "seconds": 1.158
     },
     "D01": {
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 2.602
+      "seconds": 2.004
     },
     "D02": {
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 2.229
+      "seconds": 2.153
     },
     "S01": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 6.601
+      "seconds": 6.528
     },
     "S02": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 4.554
+      "seconds": 6.811
     },
     "S03": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 13.504
+      "seconds": 29.055
     },
     "S04": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 7.814
+      "seconds": 10.144
     },
     "P01": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 4.842
+      "seconds": 14.38
     },
     "P02": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 8.004
+      "seconds": 8.614
     },
     "P03": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 6.678
+      "seconds": 5.019
     },
     "C01": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_customer",
-      "seconds": 4.461
+      "seconds": 5.019
     },
     "C02": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 1.191
+      "seconds": 4.717
     },
     "C03": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 1.808
+      "seconds": 3.315
     },
     "R01": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 2.185
+      "seconds": 1.799
     },
     "R02": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 1.078
+      "seconds": 1.348
     },
     "R03": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 1.316
+      "seconds": 1.625
     },
     "R04": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 6.368
+      "seconds": 6.512
     },
     "U01": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 1.065
+      "seconds": 1.044
     },
     "U02": {
       "failures": [],
       "pii_hits": [],
       "path": "cannot_answer",
-      "seconds": 2.87
+      "seconds": 2.884
     }
   },
   "cached": {
@@ -167,13 +167,13 @@
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.052
+      "seconds": 0.056
     },
     "M02": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.114
+      "seconds": 0.108
     },
     "M03": {
       "failures": [],
@@ -185,25 +185,25 @@
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.053
+      "seconds": 0.05
     },
     "M05": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.07
+      "seconds": 0.074
     },
     "M06": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.057
+      "seconds": 0.053
     },
     "M07": {
       "failures": [],
       "pii_hits": [],
       "path": "metric",
-      "seconds": 0.054
+      "seconds": 0.051
     },
     "M08": {
       "failures": [],
@@ -215,19 +215,19 @@
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 0.466
+      "seconds": 0.478
     },
     "D02": {
       "failures": [],
       "pii_hits": [],
       "path": "drivers",
-      "seconds": 0.394
+      "seconds": 0.397
     },
     "S01": {
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.053
+      "seconds": 0.054
     },
     "S02": {
       "failures": [],
@@ -245,7 +245,7 @@
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.161
+      "seconds": 0.167
     },
     "P01": {
       "failures": [],
@@ -263,19 +263,19 @@
       "failures": [],
       "pii_hits": [],
       "path": "rag_corpus",
-      "seconds": 0.001
+      "seconds": 0.002
     },
     "C01": {
       "failures": [],
       "pii_hits": [],
       "path": "rag_customer",
-      "seconds": 0.025
+      "seconds": 0.023
     },
     "C02": {
       "failures": [],
       "pii_hits": [],
       "path": "refused",
-      "seconds": 0.008
+      "seconds": 0.006
     },
     "C03": {
       "failures": [],
@@ -305,7 +305,7 @@
       "failures": [],
       "pii_hits": [],
       "path": "sql",
-      "seconds": 0.11
+      "seconds": 0.112
     },
     "U01": {
       "failures": [],
@@ -323,10 +323,10 @@
   "model_calls": [
     {
       "logical_calls": 40,
-      "provider_attempts": 40,
+      "provider_attempts": 41,
       "provider_successes": 40,
       "cache_hits": 0,
-      "rate_limits": 0,
+      "rate_limits": 1,
       "call_errors": 0,
       "retry_backoffs": []
     },
