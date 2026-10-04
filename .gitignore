@@ -7,6 +7,12 @@ warehouse/
 # Secrets and env
 .env
 
+# Identity second opinion by hand (scripts/second_opinion_manual.py). The exported shards hold unmasked names, dates of
+# birth and phone numbers: everything in this folder stays local except the verdicts, which hold only a pair hash, the
+# verdict and a generic reason, and are shared so every machine can import the same judgements.
+data/review/second_opinion/*
+!data/review/second_opinion/verdicts_*.jsonl
+
 # Python
 __pycache__/
 *.pyc

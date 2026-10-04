@@ -14,11 +14,14 @@ a grey pair links only if its verdict says match; anything else goes to human re
 Export: one JSON line per pair {pair_key, node_a, node_b, record_a, record_b, splink_probability, overlap}. Pairs are
 dealt round-robin (each shard gets the same mix of easy and hard pairs). With --overlap N, each shard also gets N pairs
 of the next shard, marked overlap = true, so two labellers judge them blind and their agreement can be measured.
-The files hold unmasked names, dates of birth and phone numbers: data/review/second_opinion/ is gitignored.
+The shard files hold unmasked names, dates of birth and phone numbers: everything in data/review/second_opinion/ is
+gitignored except verdicts_*.jsonl, which hold no record text (pair hash, verdict, generic reason) and are committed so
+every machine imports the same judgements.
 
 Import: every verdicts_*.jsonl line is {pair_key, match, probability, deciding_fields, reason}. Nothing is written
 unless every line is valid (known pair_key, match a boolean, probability 0-1 and on the same side of 0.5 as match,
-deciding_fields from FIELDS, a reason). A pair judged twice that the labellers disagree on is stored as no match
+deciding_fields from FIELDS, a reason). A verdict for a pair this build does not call grey is skipped and counted
+(Splink is retrained each build and can move a pair out of the grey zone). A pair judged twice that the labellers disagree on is stored as no match
 (it goes to human review), and the agreement rate is printed. Pairs nobody judged stay 'unavailable' (human review).
 """
 from __future__ import annotations
@@ -102,6 +105,32 @@ def combine(lines: list[dict]) -> tuple[dict[str, dict], dict]:
     return out, {"judged_twice": twice, "agreed": agree}
 
 
+def read_verdicts(files: list[Path], known: set[str]) -> tuple[list[dict], list[str], int]:
+    """(valid lines, errors, skipped). A verdict for a pair this build does not call grey is skipped, not an error:
+    Splink is retrained on every build, and a pair near 0.80 or 0.95 can move out of the grey zone (2 of 3,342 on the
+    4 Oct rebuild), so verdicts shared from another machine or an earlier build must still import. A malformed line is
+    an error, and any error means nothing is written."""
+    lines, errors, skipped = [], [], 0
+    for path in files:
+        for n, raw in enumerate(path.open(encoding="utf-8"), 1):
+            if not raw.strip():
+                continue
+            try:
+                line = json.loads(raw)
+            except json.JSONDecodeError:
+                errors.append(f"{path.name}:{n}: not JSON")
+                continue
+            if isinstance(line, dict) and line.get("pair_key") not in known:
+                skipped += 1
+                continue
+            why = validate(line, known)
+            if why:
+                errors.append(f"{path.name}:{n}: {why}")
+            else:
+                lines.append(line)
+    return lines, errors, skipped
+
+
 def write_verdicts(con, pairs: list[dict], verdicts: dict[str, dict], labeller: str) -> int:
     version = config.settings()["identity"]["llm_prompt_version"]
     con.execute("""CREATE TABLE IF NOT EXISTS identity.llm_verdicts (pair_key VARCHAR, node_a VARCHAR, node_b VARCHAR,
@@ -148,23 +177,11 @@ def main(argv: list[str] | None = None) -> int:
 
     con = connect(read_only=a.dry_run)
     pairs = grey_pairs(con)
-    known = {p["pair_key"] for p in pairs}
-    lines, errors = [], []
     files = sorted(a.dir.glob("verdicts_*.jsonl"))
-    for path in files:
-        for n, raw in enumerate(path.open(encoding="utf-8"), 1):
-            if not raw.strip():
-                continue
-            try:
-                line = json.loads(raw)
-            except json.JSONDecodeError:
-                errors.append(f"{path.name}:{n}: not JSON")
-                continue
-            why = validate(line, known)
-            if why:
-                errors.append(f"{path.name}:{n}: {why}")
-            else:
-                lines.append(line)
+    lines, errors, skipped = read_verdicts(files, {p["pair_key"] for p in pairs})
+    if skipped:
+        print(f"{skipped:,} verdicts are for pairs that are not grey in this build (Splink retrains each run and can "
+              "move a pair across 0.80 / 0.95): skipped")
     if not files or errors:
         print("\n".join(errors[:50]) or f"no verdicts_*.jsonl in {a.dir}", file=sys.stderr)
         print(f"{len(errors):,} invalid lines: nothing written", file=sys.stderr)

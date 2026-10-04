@@ -127,3 +127,16 @@ def test_switched_on_the_client_is_asked(con, monkeypatch):
 
 def test_the_shipped_setting_is_off():
     assert config.settings()["identity"]["llm_enabled"] is False
+
+
+def test_verdicts_for_pairs_no_longer_grey_are_skipped_but_bad_lines_still_block(con, tmp_path):
+    """Splink retrains each build, so shared verdicts can name a pair that is not grey here: skip it, import the rest."""
+    key = m.grey_pairs(con)[0]["pair_key"]
+    good = tmp_path / "verdicts_1.jsonl"
+    good.write_text(json.dumps(verdict(key)) + "\n" + json.dumps(verdict("f" * 32)) + "\n")
+    lines, errors, skipped = m.read_verdicts([good], {key})
+    assert [l["pair_key"] for l in lines] == [key] and errors == [] and skipped == 1
+    bad = tmp_path / "verdicts_2.jsonl"
+    bad.write_text(json.dumps({**verdict(key), "match": "yes"}) + "\n" + "not json\n")
+    _, errors, _ = m.read_verdicts([good, bad], {key})
+    assert len(errors) == 2  # malformed lines are still errors, and main() then writes nothing
