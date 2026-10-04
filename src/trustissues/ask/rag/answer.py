@@ -153,13 +153,25 @@ def answer_question(question: str, sources: list[Source], *, llm: LLM, as_of: da
     for ev in d.get("evidence") or []:
         m = re.fullmatch(r"S(\d+)", str(ev.get("source", "")).strip())
         quote = str(ev.get("quote", "")).strip()
-        if not m or not quote or not 1 <= int(m.group(1)) <= len(sources):
+        if not quote:
             continue
-        src = sources[int(m.group(1)) - 1]
-        if _quoted_in(quote, src.text):
-            evidence.append(quote)
-            if src not in used:
-                used.append(src)
+        named = sources[int(m.group(1)) - 1] if m and 1 <= int(m.group(1)) <= len(sources) else None
+        if named is not None and _quoted_in(quote, named.text):
+            src = named
+        else:
+            # The model sometimes numbers the source one off (BQ-009: the policy section quoted word for word, cited as
+            # the next source). The quote is still checked word for word; it is credited to the source that holds it,
+            # only if it is a real passage (20+ characters) and exactly one source holds it, so a fragment or a common
+            # phrase never picks a source at random.
+            if len(_norm(quote)) < 20:
+                continue
+            holders = [x for x in sources if _quoted_in(quote, x.text)]
+            if len(holders) != 1:
+                continue
+            src = holders[0]
+        evidence.append(quote)
+        if src not in used:
+            used.append(src)
     if not d.get("answer") or not evidence:
         return not_found  # an answer nobody can point to is not returned
 

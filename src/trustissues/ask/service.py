@@ -11,6 +11,7 @@ from trustissues.common.interfaces import RagRequest, RagResponse
 
 from . import disclosure, injection, refusal
 from . import case_facts
+from . import incidents
 from .access import AccessDenied, CaseResolver, check_case, check_path, query_policy
 from .catalog import Unsupported, build_call
 from . import drivers as drivers_mod
@@ -241,6 +242,11 @@ def _drivers(question, user, as_of, r, con, database, card) -> AnswerCard:
         return f"{x:{'+' if sign else ''},.0f}" if abs(x) >= 1000 else f"{x:{'+' if sign else ''}.4g}"
     head = (f"summary: {r.metric_id.replace('_', ' ')} moved from {num(rep.total_before)} to {num(rep.total_after)} "
             f"({num(rep.change, True)}).")
+    # an operational cause the segment split cannot see (BQ-030: the dialer outage behind the call drop)
+    recorded = incidents.overlapping(current.start, current.end, as_of)
+    if recorded:
+        head += " " + " ".join(incidents.sentence(i) for i in recorded)
     return card(head + "\n" + _csv(cols, rows), "drivers", metric_id=r.metric_id, certified=r.metric_id != "contact_volume",
-                columns=cols, rows=rows, sources=["gold.semantic_*"], notes=notes + rep.notes,
+                columns=cols, rows=rows, sources=["gold.semantic_*"] + [f"incident:{i.doc_id}" for i in recorded],
+                notes=notes + rep.notes,
                 sql="\n\n".join(f"-- query {i + 1} of {len(rep.queries)}\n{q}" for i, q in enumerate(rep.queries)))
