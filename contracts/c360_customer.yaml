@@ -4,7 +4,7 @@
 # In rule SQL, {g} is the schema being checked (gold_stage before publishing) and {as_of} is AS_OF_DATE.
 
 product: gold.c360_customer
-version: "1.0"
+version: "1.1"   # 1.1 (4 Oct): the ten columns added after 1.0 are described; known exceptions recorded; no rule changed
 id: DC-C360-001
 domain: retail collections and recovery
 business_owner: Head of Collections Data
@@ -35,24 +35,56 @@ schema:
   - {name: match_confidence, type: DOUBLE, description: "lowest link confidence in the cluster; NULL for a singleton"}
   - {name: full_name, type: VARCHAR, sensitivity: direct_pii, description: "survivorship; see full_name_source / full_name_as_of"}
   - {name: date_of_birth, type: DATE, sensitivity: direct_pii, description: "survivorship; see date_of_birth_source / date_of_birth_as_of"}
+  - {name: full_name_source, type: VARCHAR, description: "where the surviving name came from: crm, or the system of the best other record"}
+  - {name: full_name_as_of, type: TIMESTAMP, description: "when that source record was last updated (CRM profile update or extract time, otherwise the other system's as-of time)"}
+  - {name: date_of_birth_source, type: VARCHAR, description: "where the surviving date of birth came from; NULL when no linked source has one (see known_exceptions Q6)"}
+  - {name: date_of_birth_as_of, type: TIMESTAMP, description: "when that source record was last updated"}
+  - {name: survivor_crm_customer_id, type: VARCHAR, sensitivity: none, description: "the CRM record whose values survived into this row; NULL for a person with no CRM record"}
   - {name: segment, type: VARCHAR}
   - {name: province, type: VARCHAR, sensitivity: quasi_identifier}
   - {name: consent_phone, type: VARCHAR, description: "CRM consent_call; most restrictive across CRM duplicates"}
   - {name: consent_sms, type: VARCHAR}
   - {name: consent_email, type: VARCHAR}
   - {name: consent_mail, type: VARCHAR, description: "CRM consent_letter"}
+  - {name: consent_push, type: VARCHAR, description: "push-notification consent; most restrictive across CRM duplicates"}
+  - {name: consent_autodialer, type: VARCHAR, description: "autodialer consent; most restrictive across CRM duplicates"}
   - {name: cease_contact, type: BOOLEAN, description: "true if any source says so"}
   - {name: deceased, type: BOOLEAN}
   - {name: bankruptcy, type: BOOLEAN}
   - {name: open_dispute, type: BOOLEAN}
   - {name: hardship_flag, type: BOOLEAN}
+  - {name: product_count, type: INTEGER, description: "number of linked accounts (0 when none)"}
+  - {name: payroll_delay_days, type: BIGINT, description: "days since the expected payroll date with no payroll credit, after a 2-day processing tolerance (data dictionary); taken from the latest deposit-account snapshot, NULL when the person has no deposit account"}
   - {name: total_balance, type: DOUBLE, description: "money owed: card balance + loan outstanding + overdraft in use"}
   - {name: total_overdue, type: DOUBLE}
   - {name: max_dpd, type: INTEGER, description: "worst over open accounts"}
   - {name: worst_bucket, type: VARCHAR}
   - {name: active_promise_status, type: VARCHAR, description: "status of the most recent promise"}
   - {name: source_systems, type: VARCHAR}
+  - {name: dq_status, type: VARCHAR, description: "'identity_in_review' when an open identity review item involves this person (4,857 on the 4 Oct build), otherwise 'ok'"}
   - {name: refresh_ts, type: TIMESTAMP}
+
+related_products:   # other published gold tables that consumers read; each is checked by Q0 (interface shape) or Q11 (semantic shape)
+  - {name: gold.customer_xref, role: every source record and the golden person it belongs to (Q2)}
+  - {name: gold.decisioning_customer, role: the only table next-best-action scoring may read; no PII, protected attributes or proxies (Q4)}
+  - {name: gold.case_customer, role: which golden person each collections case belongs to}
+  - {name: "gold.semantic_* (cases, contacts, promises, accounts, snapshots, payroll)", role: the six views the Ask layer reads (Q11)}
+
+known_exceptions:   # warnings that fail on the published 4 Oct build, and why; neither blocks publishing and neither is a build error
+  - id: Q6
+    records: 9027   # of 1,011,960 people (0.89%)
+    cause: >-
+      Every one has no date of birth on file; none has an impossible age (none under 18, over 110 or in the future).
+      8,784 are people known only from the bureau file, not linked to any bank customer record, and the bureau
+      file carries a date for almost none of them (54 of 8,845 bureau-linked people with no date); about 240 more
+      are loan-only or CRM-only people whose source field is blank.
+    handling: the value is left NULL and date_of_birth_source says so; nothing is imputed, and age-based logic must treat NULL as unknown
+  - id: Q7
+    records: 18
+    cause: >-
+      Credit-card accounts in credit (the customer overpaid), from -2.37 to -145.11 CAD. The totals still equal the
+      sum of the accounts for all 18; only the 'not negative' half of the rule trips.
+    handling: kept as recorded; a card in credit is valid, so the 'not negative' test is stricter than the data warrants and is left as is
 
 rules:
   # ---------------------------------------------------------------- blocking: publishing stops if any fails
