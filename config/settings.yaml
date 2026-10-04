@@ -20,6 +20,10 @@ identity:
     dob_name_postal: 0.98
   max_crm_per_cluster: 5    # more CRM records than this in one person is a conflict
   max_dob_spread_days: 400  # DOBs further apart than this inside one cluster are "clearly different"
+  # Off-switch for the LLM second opinion (factory/identity/second_opinion.py). false: nothing is sent to any provider;
+  # grey pairs without a verdict go to human review. Grey pairs hold unmasked PII and no provider is agreed yet
+  # (merge.md §3). Manual verdicts: scripts/second_opinion_manual.py.
+  llm_enabled: false
   llm_model: claude-opus-5-5    # second opinion on grey-zone pairs (the plan allows a smaller model for bulk jobs)
   llm_effort: low               # a yes/no judgement on two short records
   llm_workers: 8                # parallel requests

@@ -86,3 +86,44 @@ def test_verdicts_replace_unavailable_rows_as_the_llm_step_would_write_them(con)
     rows = con.execute("SELECT node_a, match, status, model FROM identity.llm_verdicts ORDER BY node_a").fetchall()
     assert rows == [("crm|1", True, "ok", "manual:luna"), ("crm|2", False, "ok", "manual:luna"),
                     ("crm|3", None, "unavailable", None)]  # not judged: stays with human review
+
+
+# ---- the off-switch on the LLM step (identity.llm_enabled) ------------------------------------------
+class SpyClient:
+    """Stands in for the Anthropic client; records whether anything was sent."""
+    def __init__(self):
+        self.calls = 0
+
+
+def _settings(monkeypatch, enabled):
+    from trustissues.factory.identity import second_opinion
+    s = config.settings()
+    monkeypatch.setattr(second_opinion.config, "settings",
+                        lambda: {**s, "identity": {**s["identity"], "llm_enabled": enabled}})
+    return second_opinion
+
+
+def test_switched_off_nothing_is_sent_and_every_pair_goes_to_review(con, monkeypatch):
+    so = _settings(monkeypatch, False)
+    spy = SpyClient()
+    monkeypatch.setattr(so, "_ask", lambda *a, **k: (setattr(spy, "calls", spy.calls + 1), {"status": "ok"})[1])
+    monkeypatch.setattr(so, "_client", lambda: pytest.fail("no client may be created while llm_enabled is false"))
+    out = so.build(con, client=spy)  # even an explicitly passed client is not used
+    assert spy.calls == 0 and out["asked"] == 0 and out["unavailable"] == 3
+    assert {r[0] for r in con.execute("SELECT reason FROM identity.llm_verdicts").fetchall()} == {
+        "llm_enabled is false (merge.md §3)"}
+
+
+def test_switched_on_the_client_is_asked(con, monkeypatch):
+    so = _settings(monkeypatch, True)
+    spy = SpyClient()
+
+    def ask(client, model, effort, text):
+        client.calls += 1
+        return {"status": "ok", "match": False, "probability": 0.1, "deciding_fields": ["name"], "reason": "x", "model": "m"}
+    monkeypatch.setattr(so, "_ask", ask)
+    assert so.build(con, client=spy)["asked"] == 3 and spy.calls == 3
+
+
+def test_the_shipped_setting_is_off():
+    assert config.settings()["identity"]["llm_enabled"] is False

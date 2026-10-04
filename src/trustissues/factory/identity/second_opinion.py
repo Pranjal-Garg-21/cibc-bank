@@ -10,6 +10,11 @@ Gate (plan §3.3): a grey pair links only when Splink is in the band AND the LLM
 human review with both explanations. No credentials, an API error, or the cost guard -> status
 'unavailable': the pair goes to human review and the records stay separate (the safe default).
 Verdicts are cached by a hash of the serialised pair + prompt version, so a rerun never re-asks.
+
+Off-switch: `identity.llm_enabled` (default false). While it is false no client is created and nothing is sent: every
+grey pair without a verdict is marked 'unavailable' and goes to human review. The pairs hold unmasked names, dates of
+birth and phone numbers, and the team has not agreed which provider may receive them (merge.md §3). Verdicts can still
+come from labellers through scripts/second_opinion_manual.py.
 """
 from __future__ import annotations
 
@@ -105,9 +110,13 @@ def build(con, client=None) -> dict:
 
     over = todo[s["llm_max_pairs"]:]
     todo = todo[:s["llm_max_pairs"]]
-    client = client if client is not None else (_client() if todo else None)
+    enabled = s.get("llm_enabled", False)
+    client = client if client is not None else (_client() if todo and enabled else None)
     results: list[tuple] = []
-    if client is not None and todo:
+    if not enabled:
+        results = [(k, a, b, t, {"status": "unavailable", "reason": "llm_enabled is false (merge.md §3)"})
+                   for k, a, b, t in todo]
+    elif client is not None and todo:
         first = _ask(client, s["llm_model"], s["llm_effort"], todo[0][3])
         if first["status"] != "ok":  # one probe: do not fire thousands of calls that will all fail
             print(f"second opinion unavailable: {first['reason']}")
