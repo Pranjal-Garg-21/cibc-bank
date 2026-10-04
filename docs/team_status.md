@@ -54,7 +54,7 @@ Everything built is on `main` except `config/sensitivity.yaml` (generated; run `
 
 ## 5c. Not started (Layer 1, owned by P1)
 
-Running `mapping_assistant.py` against the API (written and tested offline; needs `OPENROUTER_API_KEY`), checksum verification of the voice recordings (dropped for now), and a single end-to-end timed pipeline run. **Ask Anushka before starting any of them.**
+Running `mapping_assistant.py` against the API (written and tested offline; goes through `common/llm.py`, needs `OPENROUTER_API_KEY` in `.env`), checksum verification of the voice recordings (dropped for now), and a single end-to-end timed pipeline run. **Ask Anushka before starting any of them.**
 
 ## 6. Before you run anything
 

@@ -38,6 +38,7 @@ def test_bq017_roll_rate_params():
     assert c.metric_id == "roll_rate"
     assert c.parameters["start_snapshot"] == date(2026, 3, 31) and c.parameters["end_snapshot"] == date(2026, 6, 30)
     assert (c.parameters["start_dpd_min"], c.parameters["start_dpd_max"]) == (1, 30)
+    assert any("month-first" in n for n in c.notes)  # why our counts exceed the answer key's (it drops those rows)
 
 
 def test_bq012_card_delinquency():

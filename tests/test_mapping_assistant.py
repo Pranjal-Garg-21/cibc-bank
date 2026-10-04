@@ -5,6 +5,8 @@ import pytest
 
 from trustissues.factory.curate import mapping_assistant as ma
 
+REAL_POST = ma._post  # before the autouse fixture swaps it for a guard
+
 
 @pytest.fixture(autouse=True)
 def offline(tmp_path, monkeypatch):
@@ -110,3 +112,21 @@ def test_evaluate_measures_agreement_with_hand_built_mappings(tmp_path):
     ma.propose(call=True, sources=SOURCES, path=path, post=fake_model(ANSWERS))
     e = ma.evaluate(path)
     assert e["proposed"] == 3 and e["agree"] == 3  # segment, gender_code, current_balance are in REFERENCE, all right
+
+
+def test_the_real_call_goes_through_common_llm_on_the_bulk_tier(monkeypatch, tmp_path):
+    """Provider, key and model come from the shared `llm:` section (merge.md §3); a stand-in backend, no network."""
+    from trustissues.common import llm as shared
+    seen = {}
+
+    class Backend:
+        def complete(self, **kw):
+            seen.update(kw)
+            return '{"mappings": []}'
+
+    real_llm = shared.LLM
+    monkeypatch.setattr(shared, "LLM", lambda: real_llm(Backend(), cache=shared.ResponseCache(tmp_path / "c.sqlite"),
+                                                        models={"bulk": "bulk-model"}))
+    assert REAL_POST("map these columns") == '{"mappings": []}'
+    assert seen["model"] == "bulk-model" and seen["user"] == "map these columns" and seen["system"] == ma.SYSTEM
+    assert ma.model() == shared.config.settings()["llm"]["models"]["bulk"]

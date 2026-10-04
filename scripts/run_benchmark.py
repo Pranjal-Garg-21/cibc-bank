@@ -7,13 +7,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import duckdb
+
 from trustissues.common.config import maple_data_dir
 from trustissues.ask import benchmark as B
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--database", required=True, help="DuckDB file holding the gold.semantic_* views (read-only)")
+    ap.add_argument("--database", required=True, help="the warehouse (or an *_ask_dev.duckdb copy) with gold.semantic_*, read-only")
     ap.add_argument("--out", default="submission.csv")
     ap.add_argument("--split", choices=["dev", "test", "all"], default="all")
     ap.add_argument("--llm", action="store_true", help="use the language model: policy answers and the SQL fallback")
@@ -25,6 +27,8 @@ def main() -> None:
         qs = [q for q in qs if q["split"] == a.split]
     if a.only:
         qs = [q for q in qs if q["question_id"] in a.only]
+    # read-only: case questions are resolved on it (asked as the case's agent) and the RAG paths read through it
+    con = duckdb.connect(str(Path(a.database)), read_only=True)
     kw = {}
     if a.llm:
         from trustissues.common.llm import LLM
@@ -33,8 +37,11 @@ def main() -> None:
         llm = LLM()
         if a.no_cache:
             llm.cache = None
-        kw = {"llm": llm, "rag": make_rag_handler(PolicyIndex.load(), llm)}
-    rows = B.run(qs, database=Path(a.database), **kw)
+        kw = {"llm": llm, "rag": make_rag_handler(PolicyIndex.load(), llm, con=con)}
+    try:
+        rows = B.run(qs, con=con, **kw)
+    finally:
+        con.close()
     B.write_submission(rows, Path(a.out))
     print(f"wrote {len(rows)} rows to {a.out}")
 

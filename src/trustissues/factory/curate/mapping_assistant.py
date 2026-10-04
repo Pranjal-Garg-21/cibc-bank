@@ -26,8 +26,9 @@ Governance:
   - Responses are cached by a hash of the request, so a rerun never pays twice; every call is logged to
     data/mappings/llm_calls.jsonl (prompt version, model, request hash, columns, outcome).
 
-Provider: OpenRouter's OpenAI-compatible chat API with NVIDIA Nemotron 3 Super (config `mapping_assistant`). When the
-team's shared common/llm.py is merged, `_post` should be replaced by it (see merge.md).
+Provider: every call goes through the team's common/llm.py on the `bulk` tier, so provider, endpoint, key, model and
+extra body come from the shared `llm:` section in config/settings.yaml (moved there at the P2 merge, merge.md §3). This
+module keeps its own `--call` switch, key check, cost guard (`max_batches`), request cache and call log.
 """
 from __future__ import annotations
 
@@ -45,6 +46,7 @@ from pathlib import Path
 import yaml
 
 from trustissues.common import config
+from trustissues.common.llm import LLMError
 
 MAPPINGS_DIR = config.REPO_ROOT / "data" / "mappings"
 MAPPINGS_CSV = MAPPINGS_DIR / "column_mappings.csv"
@@ -66,7 +68,7 @@ def settings() -> dict:
 
 def api_key() -> str | None:
     """From the environment, else from the repo's .env (KEY=VALUE lines). Never logged, never written."""
-    name = settings()["api_key_env"]
+    name = config.settings()["llm"]["api_key_env"]
     if os.environ.get(name):
         return os.environ[name]
     env = config.REPO_ROOT / ".env"
@@ -242,43 +244,29 @@ def build_batches(sources: list[SourceColumn], tables: list[str] | None = None, 
             prompt = PROMPT.format(catalogue=catalogue, table=table,
                                    columns=json.dumps([c.payload() for c in chunk], ensure_ascii=False, indent=1))
             b = Batch(table, chunk, prompt)
-            b.request_hash = hashlib.sha256(json.dumps([s["model"], s["prompt_version"], prompt]).encode()).hexdigest()
+            b.request_hash = hashlib.sha256(json.dumps([model(), s["prompt_version"], prompt]).encode()).hexdigest()
             batches.append(b)
     return batches
 
 
-# --------------------------------------------------------------------------- LLM call (OpenRouter, OpenAI-compatible)
+# --------------------------------------------------------------------------- LLM call (common/llm.py)
 
-class LLMError(Exception):
-    pass
+SYSTEM = "You map source columns to C360 targets for a bank's data team. Reply with the JSON object asked for, only."
 
 
-def _post(prompt: str, key: str) -> str:
-    """One chat completion. Returns the message text. Retries 429 / 5xx / timeouts with backoff."""
-    import httpx
+def model() -> str:
+    """The shared `llm:` section's bulk model: provider, key, model and extra body are set there and nowhere else."""
+    return config.settings()["llm"]["models"]["bulk"]
+
+
+def _post(prompt: str, key: str | None = None) -> str:
+    """One call through common/llm.py (shared provider, retries, response cache). Returns the reply text.
+    `key` is unused: llm.py reads the same environment variable; it stays so tests can inject `post(prompt, key)`."""
+    from trustissues.common.llm import LLM
+
     s = settings()
-    body = {"model": s["model"], "temperature": s.get("temperature", 0), "max_tokens": s["max_tokens"],
-            "response_format": {"type": "json_object"},
-            "messages": [{"role": "user", "content": prompt}], **(s.get("extra_body") or {})}
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-               "X-Title": "trustissues mapping assistant"}
-    last = None
-    for attempt in range(s["max_retries"] + 1):
-        try:
-            r = httpx.post(f"{s['base_url'].rstrip('/')}/chat/completions", json=body, headers=headers,
-                           timeout=s["timeout_secs"])
-            if r.status_code == 200:
-                msg = r.json()["choices"][0]["message"]
-                return msg.get("content") or ""
-            if r.status_code in (401, 403):
-                raise LLMError(f"HTTP {r.status_code}: key rejected")  # never retried
-            last = f"HTTP {r.status_code}: {r.text[:200]}"
-            if r.status_code not in (408, 409, 429) and r.status_code < 500:
-                break
-        except httpx.HTTPError as e:
-            last = f"{e.__class__.__name__}: {e}"
-        time.sleep(min(2 ** attempt * 2, 30))
-    raise LLMError(last or "unknown error")
+    return LLM().complete(system=SYSTEM, user=prompt, prompt_version=s["prompt_version"], tier="bulk",
+                          max_tokens=s["max_tokens"], temperature=s.get("temperature", 0)).text
 
 
 def parse_response(text: str, batch: Batch, catalogue: dict) -> list[dict]:
@@ -341,7 +329,7 @@ def _log_call(batch: Batch, outcome: str, secs: float) -> None:
     s = settings()
     MAPPINGS_DIR.mkdir(parents=True, exist_ok=True)
     with open(CALL_LOG, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "model": s["model"],
+        f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "model": model(),
                             "prompt_version": s["prompt_version"], "request_hash": batch.request_hash,
                             "table": batch.table, "columns": [c.column for c in batch.columns],
                             "outcome": outcome, "secs": round(secs, 1)}) + "\n")
@@ -403,7 +391,7 @@ def propose(call: bool, tables: list[str] | None = None, post=None, sources: lis
     if post is None:
         key = api_key()
         if not key:
-            raise LLMError(f"no API key: set {s['api_key_env']} in the environment or in .env")
+            raise LLMError(f"no API key: set {config.settings()['llm']['api_key_env']} in the environment or in .env")
         post = _post
     catalogue = targets()
 
@@ -435,7 +423,7 @@ def propose(call: bool, tables: list[str] | None = None, post=None, sources: lis
             existing[(c.table, c.column)] = {
                 "source_table": c.table, "source_column": c.column, "source_type": c.type, "sensitivity": c.sensitivity,
                 "proposed_target": m["target"], "proposed_transform": m["transform"], "confidence": m["confidence"],
-                "reason": m["reason"], "model": s["model"], "prompt_version": s["prompt_version"],
+                "reason": m["reason"], "model": model(), "prompt_version": s["prompt_version"],
                 "dictionary_hash": c.dictionary_hash, "status": "proposed",
                 **{k: old.get(k, "") for k in REVIEW_FIELDS if k != "status"}}
             res.columns += 1

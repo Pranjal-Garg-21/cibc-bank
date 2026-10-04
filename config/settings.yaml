@@ -125,18 +125,12 @@ p3:
 mapping_assistant:
   # AI column-mapping assistant (factory/curate/mapping_assistant.py). Sends column METADATA only (names, types,
   # descriptions), never data; examples of PII / protected / proxy columns are withheld. Nothing is sent without --call.
-  # To be replaced by the team's shared `llm:` section and common/llm.py when that is merged (merge.md).
-  base_url: https://openrouter.ai/api/v1         # OpenRouter, OpenAI-compatible chat API
-  api_key_env: OPENROUTER_API_KEY                # name of the env variable (or .env entry) holding the key; never the key itself
-  model: nvidia/nemotron-3-super-120b-a12b       # NVIDIA Nemotron 3 Super
-  extra_body:
-    reasoning: {enabled: false}                  # thinking off: a mapping is a short judgement; thinking made replies slow
+  # Calls go through common/llm.py on the `bulk` tier: provider, endpoint, key, model and thinking-off come from the
+  # shared `llm:` section above (moved there at the P2 merge, 4 Oct). Only the assistant's own knobs stay here.
   temperature: 0
   max_tokens: 4000
   batch_size: 25                                 # columns per request (one table at a time)
   workers: 4                                     # parallel requests
   max_batches: 100                               # cost guard: about 1,400 columns -> ~70 batches
-  timeout_secs: 120
-  max_retries: 3
   prompt_version: mapping_v1
   cache_file: cache/mapping_llm_cache.jsonl      # relative to the warehouse folder

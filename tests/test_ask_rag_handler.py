@@ -128,3 +128,17 @@ def test_a_path_that_cannot_run_says_why_not_that_the_sources_lack_it():
     card = ask("What is the grace period before a promise to pay is considered broken?", UserContext("L1", "team_lead"),
                as_of_date=AS_OF, rag=down)
     assert card.path == "rag_corpus" and card.answer == "I could not answer this: language model unavailable: no key."
+
+
+def test_benchmark_asks_a_case_question_as_the_cases_agent(con, tmp_path):
+    """A team lead outside the agent's team may not read the customer, so the runner asks as the case's agent."""
+    from trustissues.ask import benchmark
+    reply = {"answer": "Promised $95 on 14 Oct.", "not_found": False, "confidence": 0.9, "conflict_note": None,
+             "evidence": [{"source": "S4", "quote": "inbound | Promise to pay | promise made"}]}
+    llm, be = make_llm(tmp_path, reply)
+    qs = [{"question_id": "Q1", "question_text": Q.format(CASE), "as_of_date": AS_OF.isoformat()}]
+    rows = benchmark.run(qs, con=con, rag=rag_handler.make_rag_handler("IDX", llm, con=con))
+    assert rows[0]["answer"] == "Promised $95 on 14 Oct." and rows[0]["refused"] == "false"
+    assert rows[0]["sql_or_sources"] == "contact:C-9"  # answered, so asked as AG-NOW: P4 refuses benchmark-lead
+    assert benchmark.case_asker(con, Q.format(CASE), AS_OF)[0] == UserContext("AG-NOW", "agent")
+    assert benchmark.case_asker(con, "What is the grace period?", AS_OF)[0] is None  # not a case question

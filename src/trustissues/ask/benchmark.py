@@ -27,11 +27,43 @@ def read_questions(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def run(questions: list[dict], *, user: UserContext = BENCHMARK_USER, **ask_kwargs) -> list[dict]:
-    """One submission row per input question, in input order. The router never sees metric_id or gold."""
+def case_asker(con, question: str, as_of: date) -> tuple[UserContext | None, object]:
+    """(user, resolver) for a question about a case: the agent the case is assigned to on the as-of date, else the
+    agent today's queue sends to it. That is who would really ask it; a team lead outside the agent's team may not
+    read the customer's history (P4's re-check). (None, resolver) when the question names no case or nobody holds it."""
+    from .access import case_customer_resolver
+    from .router import route
+
+    resolver = case_customer_resolver(con, as_of)
+    r = route(question)
+    if r.path != "rag_customer" or not r.case_id:
+        return None, resolver
+    owner = resolver(r.case_id)
+    agent = owner and (owner.assigned_agent_id or owner.queue_agent_id)
+    return (UserContext(agent, "agent") if agent else None), resolver
+
+
+def _has_case_customer(con) -> bool:
+    return bool(con.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'gold' "
+                            "AND table_name = 'case_customer'").fetchone()[0])
+
+
+def run(questions: list[dict], *, user: UserContext = BENCHMARK_USER, con=None, **ask_kwargs) -> list[dict]:
+    """One submission row per input question, in input order. The router never sees metric_id or gold.
+
+    `con` is passed to ask() for the queries. When it is a warehouse (it has gold.case_customer), case questions are
+    also asked as the case's agent and resolved on it (`case_asker`); everything else is asked as `user`.
+    """
     rows = []
     for q in questions:
-        card = ask(q["question_text"], user, as_of_date=date.fromisoformat(q["as_of_date"]), **ask_kwargs)
+        as_of = date.fromisoformat(q["as_of_date"])
+        asker, kw = user, dict(ask_kwargs)
+        if con is not None:
+            kw["con"] = con
+            if _has_case_customer(con):
+                agent, kw["resolver"] = case_asker(con, q["question_text"], as_of)
+                asker = agent or user
+        card = ask(q["question_text"], asker, as_of_date=as_of, **kw)
         answer = card.answer
         if card.notes and card.path in ("metric", "sql"):
             answer += "\n" + "\n".join(f"note: {n}" for n in card.notes)

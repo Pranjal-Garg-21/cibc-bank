@@ -319,6 +319,10 @@ def build_call(question: str, metric_id: str, as_of: date) -> MetricCall | Unsup
         lo, hi = (int(rng[1]), int(rng[2])) if rng else (1, 30)
         call.parameters = {"start_snapshot": periods[0].start, "end_snapshot": periods[1].start,
                            "start_dpd_min": lo, "start_dpd_max": hi, "exclude_holds": False}
+        # Measured 4 Oct: 418,319 snapshot rows date their month-end month-first (03/31/2026). Curation reads them;
+        # a parser that only knows day-first drops them, and BQ-017's reference SQL does (accounts 733 vs 781 etc.).
+        call.notes.append("Includes snapshot rows whose month-end date is written month-first (e.g. 03/31/2026); "
+                          "they are 418,319 of 12,569,692 rows, so a count that skips them is lower.")
     elif metric_id == "average_dpd":
         call.parameters = {}
         call.notes.append("Open cases only, as of the as-of date.")
