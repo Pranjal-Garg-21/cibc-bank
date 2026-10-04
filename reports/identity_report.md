@@ -66,7 +66,7 @@ Routing: >= 0.95 link, 0.8-0.95 grey zone (LLM, then a person), < 0.8 not stored
 
 | LLM second opinion | pairs |
 |---|---|
-| ok | 3,342 |
+| ok | 3,340 |
 | unavailable | 1 |
 
 | accepted link method | links |
