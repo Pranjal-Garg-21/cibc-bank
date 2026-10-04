@@ -87,6 +87,12 @@ def _lineage(scope: Scope, column: exp.Column) -> set[tuple[str, str]]:
     raise ValidationError(f"Cannot resolve column lineage: {column.sql()}")
 
 
+def _only_filters_an_aggregate(column: exp.Column) -> bool:
+    """True for an identifier used only in the condition of `AGG(...) FILTER (WHERE ...)`: it selects rows, it is not shown."""
+    where = column.find_ancestor(exp.Where)
+    return isinstance(where, exp.Where) and isinstance(where.parent, exp.Filter)
+
+
 def validate(sql: str, policy: QueryPolicy) -> ValidatedQuery:
     if policy.role not in {"agent", "team_lead", "analyst"}:
         raise ValidationError("Unknown role")
@@ -171,7 +177,7 @@ def validate(sql: str, policy: QueryPolicy) -> ValidatedQuery:
             for column in projection.find_all(exp.Column):
                 if any(c in IDENTIFIER_COLUMNS for _, c in _lineage(root, column)):
                     # Aggregated IDs (COUNT DISTINCT case_id) are useful and do not reveal identities.
-                    if not isinstance(column.find_ancestor(exp.AggFunc), exp.Count):
+                    if not isinstance(column.find_ancestor(exp.AggFunc), exp.Count) and not _only_filters_an_aggregate(column):
                         raise ValidationError("Entity identifiers cannot be displayed for this role")
 
     # Wrap physical scans, not the outer result: WHERE/OR/subqueries cannot remove the trusted scope.

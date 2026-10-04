@@ -107,3 +107,15 @@ def test_join_edges_and_derived_identifier_leak():
         validate("SELECT queue,sum(current_dpd) OVER () FROM gold.semantic_cases", policy("team_lead"))
     with pytest.raises(ValidationError):
         validate("SELECT count(*) FROM gold.semantic_cases GROUP BY case_id", policy("team_lead"))
+
+
+def test_identifier_used_only_in_an_aggregate_filter_is_allowed_but_not_shown():
+    ok = ("SELECT count(*) FILTER (WHERE p.case_id IS NULL) AS none_yet, count(*) AS n "
+          "FROM gold.semantic_cases c LEFT JOIN gold.semantic_promises p ON c.case_id=p.case_id")
+    for role in ("analyst", "team_lead"):
+        validate(ok, policy(role))
+    for leak in ("SELECT max(case_id) FILTER (WHERE queue='late') FROM gold.semantic_cases",
+                 "SELECT max(case_id) FROM gold.semantic_cases WHERE queue='late'",
+                 "SELECT case_id FROM gold.semantic_cases WHERE queue='late'"):
+        with pytest.raises(ValidationError):
+            validate(leak, policy())
