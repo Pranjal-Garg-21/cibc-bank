@@ -42,7 +42,7 @@ Everything built is on `main` except `config/sensitivity.yaml` (generated; run `
 
 ## 5. Identity and gold: built (new)
 
-`gold.customer_xref` (every source customer once → 1,013,152 people), `gold.identity_review_queue`, `gold.customer_relationship`, `gold.c360_customer`, `gold.c360_account` are built on Anushka's machine. Rebuild yours with `python -m trustissues.factory.pipeline --from text_controls` (about 8 minutes after curated; needs `pip install splink scipy pyarrow`). Results, rules and measured precision: [`identity.md`](identity.md) and `reports/identity_report.md`.
+`gold.customer_xref` (every source customer once → 1,011,960 people since the 4 Oct rebuild with the manual verdicts), `gold.identity_review_queue`, `gold.customer_relationship`, `gold.c360_customer`, `gold.c360_account` are built on Anushka's machine. Rebuild yours with `python -m trustissues.factory.pipeline --from text_controls` (about 8 minutes after curated; needs `pip install splink scipy pyarrow`). Results, rules and measured precision: [`identity.md`](identity.md) and `reports/identity_report.md`.
 
 **For everyone joining collections data to customers:** in about 0.3% of collections cases the listed accounts belong to one customer while `coll_customer_ref` names a different, real customer (the IDs differ by one character, almost certainly a typo). Use `gold.case_customer`: it gives the account holder's golden ID, the named customer's, and a `case_customer_mismatch` flag.
 

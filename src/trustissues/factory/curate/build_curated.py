@@ -234,8 +234,12 @@ def curate_table(con, name: str, schema: dict, curate_cfg: dict) -> dict:
 
     inner = f"SELECT {', '.join(q(c) for c in data_cols + META)} FROM raw.{q(name)}"
     body = f"SELECT {', '.join(sel)} FROM ({inner}) r"
-    # dedupe on _row_hash, earliest ingest wins
-    dedup = f"SELECT * FROM ({body}) QUALIFY row_number() OVER (PARTITION BY _row_hash ORDER BY _ingested_at) = 1"
+    # dedupe on _row_hash, earliest ingest wins. The window is only needed when a hash repeats: on 14.8M
+    # loan_instalments rows it needed more than the 9 GB DuckDB cap (4 Oct), while a distinct count spills to disk.
+    # The release has no exact duplicates, so normally the rows pass straight through.
+    repeats = con.execute(f"SELECT count(*) - count(DISTINCT _row_hash) FROM raw.{q(name)}").fetchone()[0]
+    dedup = (f"SELECT * FROM ({body}) QUALIFY row_number() OVER (PARTITION BY _row_hash ORDER BY _ingested_at) = 1"
+             if repeats else body)
 
     if ident:
         # the standardise functions take text; a source column may be typed (external.subject_dob_reported is a DATE)

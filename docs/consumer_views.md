@@ -36,7 +36,7 @@ These were open in [`interfaces.md`](interfaces.md) or the plan. Each is a worki
 | Table | Rows | For | Notes |
 |---|---|---|---|
 | `gold.promises_enriched` | 238,815 | P3, P2 | Stub columns in agreed order (creation-time, then outcome). Extras: `crm_customer_id`, `owner_resolved_by`, `case_customer_mismatch`, `dq_kept_but_underpaid`. 19 promises have no owner |
-| `gold.customer_safeguards` | 1,013,152 | P3 rules engine | Never a model input. 67,763 vulnerable; 50,990 with a hard stop |
+| `gold.customer_safeguards` | 1,011,960 | P3 rules engine | Never a model input. 67,727 vulnerable; 50,978 with a hard stop |
 | `gold.decisioning_customer` | 14,860,128 | P3 feature store | Allow-list of 21 columns. The build fails if the columns drift; a test and contract rule Q4 check them against `config/sensitivity.yaml` |
 | `gold.customer_timeline` | 4,808,959 | P4 RAG, agent screen | Contacts 2.69M, notes 710k, promises 239k, payments 1.11M, offers 40k, transcripts 24,914. Events up to AS_OF_DATE only. `text` holds only eligible, masked text; `summary` describes the event |
 | `gold.bucket_transitions` | 10,933,834 | P2 roll rate | One row per account per quarter-to-quarter step |

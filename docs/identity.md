@@ -1,6 +1,6 @@
 # Identity resolution and the golden record
 
-**Status: built and run on the real data (2026-10-03).** Every one of the 3,487,885 source customers is in `gold.customer_xref` exactly once, resolved to **1,013,152 people**. `gold.c360_customer` (one row per person) and `gold.c360_account` (1,844,500 accounts) are built from it. The numbers below come from [`../reports/identity_report.md`](../reports/identity_report.md), which is regenerated on every run; if they disagree, the report is right.
+**Status: built and run on the real data (2026-10-03; rebuilt 2026-10-04 with the manual second-opinion verdicts).** Every one of the 3,487,885 source customers is in `gold.customer_xref` exactly once, resolved to **1,011,960 people** (1,013,152 before the 3,342 manual verdicts were applied). `gold.c360_customer` (one row per person) and `gold.c360_account` (1,844,500 accounts) are built from it. The numbers below come from [`../reports/identity_report.md`](../reports/identity_report.md), which is regenerated on every run; if they disagree, the report is right.
 
 Design of record: [`p1_design_sections.md`](p1_design_sections.md) §4–5 and [`implementation_plan.md`](implementation_plan.md) §3.3–3.4. This file records what was built, what the data showed, and where the build departs from the design.
 
@@ -29,7 +29,7 @@ Needs the curated build first, and `splink`, `scipy`, `pyarrow` (in `requirement
 | Human decisions | `identity/review_queue.py` | `identity.human_decisions` from `data/review/identity_decisions.csv` | Empty so far |
 | Cluster | `identity/cluster.py` | `identity.clusters`, `identity.golden_id_registry`, `gold.customer_xref` | 3.03M links accepted, 2 refused for conflicts. 56 s |
 | Review queue | `identity/review_queue.py` | `gold.identity_review_queue` | 4,154 open pairs |
-| Gold | `gold/build_c360.py` | `gold.c360_account`, `gold.c360_customer` | 1,844,500 accounts, 1,013,152 people. 42 s |
+| Gold | `gold/build_c360.py` | `gold.c360_account`, `gold.c360_customer` | 1,844,500 accounts, 1,011,960 people (4 Oct rebuild). 42 s |
 | Report | `identity/evaluate.py` | `reports/identity_report.md` | |
 
 ## 3. What the data showed
