@@ -642,7 +642,7 @@ checks:
     status: review
     sql: "select (select count(*) from gold.identity_review_queue), (select count(*) from gold.identity_review_queue) + (select count(*) from identity.accepted_links)"
     evidence: "select string_agg(reason || ' ' || n, ', ' order by n desc) from (select reason, count(*) n from gold.identity_review_queue group by 1)"
-    how: "Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and the LLM second opinion has not been run (no credentials); with an LLM, only the pairs it disagrees with stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth."
+    how: "Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and no model second opinion was run (it is off by default and on hold). Most such pairs were decided by hand instead: 3,342 manual verdicts were applied (`docs/identity.md` §4.6), which took the count from 1,013,152 to 1,011,960 people, so only pairs still undecided or answered 'no' stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth."
   - id: I4
     area: identity
     title: "More people than the bank's stated 1,000,000 customers"
@@ -651,7 +651,7 @@ checks:
     status: documented
     sql: "select greatest(count(*) - 1000000, 0), count(*) from gold.c360_customer"
     evidence: "select count(*) filter (where source_systems not like '%crm%') || ' people have no CRM record (' || count(*) filter (where source_systems = 'bureau') || ' of them bureau only); ' || count(*) filter (where source_systems like '%crm%') || ' people have one' from gold.c360_customer"
-    how: "The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as review decisions and the LLM second opinion link them."
+    how: "The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as further review decisions link them."
   - id: I5
     area: identity
     title: "Collections case names a different customer than the holder of the accounts it lists"
@@ -685,6 +685,24 @@ checks:
     status: flagged
     sql: "select count(*) filter (where golden_customer_id is null), count(*) from gold.promises_enriched"
     how: "Its case could not be tied to a person (I7) and its CRM ID does not exist. Kept in `gold.promises_enriched` with a NULL `golden_customer_id`; training and features should leave it out."
+  - id: I9
+    area: identity
+    title: "Person with no date of birth on file"
+    tables: [c360_customer]
+    severity: medium
+    status: documented
+    sql: "select count(*) filter (where date_of_birth is null), count(*) from gold.c360_customer"
+    evidence: "select count(*) filter (where source_systems = 'bureau') || ' are bureau only (no linked bank record); none has an impossible age (' || count(*) filter (where date_of_birth is not null and date_diff('year', date_of_birth, DATE '2026-09-28') not between 18 and 110) || ' under 18 or over 110)' from gold.c360_customer where date_of_birth is null or date_diff('year', date_of_birth, DATE '2026-09-28') not between 18 and 110"
+    how: "Contract warning Q6 (`contracts/c360_customer.yaml`, known_exceptions). Almost all are people known only from the bureau file, which carries a date for very few of them; the rest have a blank source field. Left NULL, with `date_of_birth_source` NULL as well; nothing is imputed, and age logic must treat NULL as unknown. Checks C2 to C5 and C21 in section 14 test the source records and found nothing, so a missing date is the only date-of-birth problem in the golden record."
+  - id: I10
+    area: identity
+    title: "Customer with a negative total balance (credit-card account in credit)"
+    tables: [c360_customer, c360_account]
+    severity: low
+    status: documented
+    sql: "select count(*) filter (where total_balance < 0), count(*) from gold.c360_customer"
+    evidence: "select min(total_balance) || ' to ' || max(total_balance) || ' CAD; the customer total equals the sum of the accounts for every one' from gold.c360_customer where total_balance < 0"
+    how: "Contract warning Q7. The customer overpaid a card, so the balance is a credit. Kept as recorded; the 'not negative' half of the rule is stricter than the data warrants, and the totals still reconcile to the accounts."
 
   # ------------------------------------------------------------------ H. unusual days (anomaly detection)
   # Read curated._anomaly_episodes, written by `python -m trustissues.factory.quality.anomaly` (config/anomaly.yaml).

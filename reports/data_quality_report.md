@@ -4,10 +4,10 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 
 ## 1. Summary
 
-- **71 issues found** across the 31 tables, plus 4 context events from the operations log that are not data defects.
+- **73 issues found** across the 31 tables, plus 4 context events from the operations log that are not data defects.
 - **37 further checks found nothing** (section 14), so the coverage is visible.
 - **No exact duplicate rows exist anywhere.** The duplicates in this data are the same *person* stored under different IDs (section 5), not copied rows.
-- How each issue was handled: **documented** 27, **flagged** 21, **standardised** 12, **fixed** 5, **resolved by identity matching** 3, **sent to human review** 2, **excluded from current view** 1.
+- How each issue was handled: **documented** 29, **flagged** 21, **standardised** 12, **fixed** 5, **resolved by identity matching** 3, **sent to human review** 2, **excluded from current view** 1.
 - **Schema drift:** the loader recorded 0 event(s), 0 blocking. The one rename in this release (K1, `channel` to `channel_v2`) was already registered in the release's schema, so it appears as a data issue, not as drift.
 - **Nothing was deleted or overwritten.** Original columns stay as received in `raw.*` and in the same columns of `curated.*`. Fixes are new columns, new flags, or recovered values with the original text kept.
 
@@ -63,6 +63,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | T4 | Every promise for 90% to 99.9% of the overdue amount was broken, while promises for the full amount almost never are | 11,277 | 5.52% | medium | Documented |
 | I6 | Collections case whose CRM ID does not exist, tied to a person through its accounts | 11,126 | 3.03% | medium | Resolved by identity matching |
 | K4 | Bureau file converted with a shifted column for some rows: inquiry counts impossible (3 months above 6 months, or 6 above 12) | 9,918 | 0.99% | medium | Flagged |
+| I9 | Person with no date of birth on file | 9,027 | 0.89% | medium | Documented |
 | F18 | Deposit balances in two currencies (7,780 USD accounts among CAD) with no exchange-rate field in the data | 7,780 | 1.00% | medium | Flagged |
 | T3 | Outcomes are recorded late: case cures stop before the snapshot date, and some promises stay open after their grace period | 5,286 | 16.0% | medium | Documented |
 | L3 | Case bucket disagrees with current days past due (one band higher than dpd implies) | 3,807 | 1.04% | medium | Flagged |
@@ -92,6 +93,7 @@ Maple Bank collections data, snapshot **2026-09-28**. Generated from the warehou
 | R11 | CRM record marked deleted (change-data operation D) | 2,115 | 0.21% | low | Excluded from current view |
 | F11 | CRM postal code typed with the letter O where the digit 0 belongs (`VOC2S8`, `L6X OZ4`) | 1,887 | 0.18% | low | Fixed |
 | L10 | Card utilisation outside 0 to 1.5 | 33 | 0.01% | low | Documented |
+| I10 | Customer with a negative total balance (credit-card account in credit) | 18 | 0.00% | low | Documented |
 | L9 | Bureau: file-since date is after the pull date | 17 | 0.00% | low | Documented |
 | I8 | Promise to pay with no owner | 17 | 0.01% | low | Flagged |
 | I7 | Collections case that could not be tied to any person | 11 | 0.00% | low | Flagged |
@@ -548,7 +550,7 @@ What remains after identity matching joins the five customer keys into one perso
 
 *Evidence:* llm_disagrees 1853, ambiguous 638, splink_ambiguous 180, blocked_conflict 3, cluster_conflict 2, grey_zone_no_llm 1.
 
-**Handling (sent to human review).** Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and the LLM second opinion has not been run (no credentials); with an LLM, only the pairs it disagrees with stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth.
+**Handling (sent to human review).** Total is all pairs proposed (accepted links plus queued pairs). `grey_zone_no_llm`: Splink scored 0.80-0.95, or above 0.95 but failed the family guard, and no model second opinion was run (it is off by default and on hold). Most such pairs were decided by hand instead: 3,342 manual verdicts were applied (`docs/identity.md` §4.6), which took the count from 1,013,152 to 1,011,960 people, so only pairs still undecided or answered 'no' stay here. `ambiguous` and `splink_ambiguous`: one record fits two different people. `cluster_conflict` and `blocked_conflict`: the link would join two national IDs or clearly different dates of birth.
 
 ### I4. More people than the bank's stated 1,000,000 customers
 
@@ -556,7 +558,7 @@ What remains after identity matching joins the five customer keys into one perso
 
 *Evidence:* 13998 people have no CRM record (10172 of them bureau only); 997962 people have one.
 
-**Handling (documented).** The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as review decisions and the LLM second opinion link them.
+**Handling (documented).** The release states 1,000,000 customers. The excess is people built from records that matched no CRM record (I1, I2), mostly bureau files. It shrinks as further review decisions link them.
 
 ### I5. Collections case names a different customer than the holder of the accounts it lists
 
@@ -584,6 +586,22 @@ What remains after identity matching joins the five customer keys into one perso
 
 **Handling (flagged).** Its case could not be tied to a person (I7) and its CRM ID does not exist. Kept in `gold.promises_enriched` with a NULL `golden_customer_id`; training and features should leave it out.
 
+### I9. Person with no date of birth on file
+
+**Affected:** 9,027 of 1,011,960 (0.89%) · **Tables:** `c360_customer` · **Severity:** medium
+
+*Evidence:* 8784 are bureau only (no linked bank record); none has an impossible age (0 under 18 or over 110).
+
+**Handling (documented).** Contract warning Q6 (`contracts/c360_customer.yaml`, known_exceptions). Almost all are people known only from the bureau file, which carries a date for very few of them; the rest have a blank source field. Left NULL, with `date_of_birth_source` NULL as well; nothing is imputed, and age logic must treat NULL as unknown. Checks C2 to C5 and C21 in section 14 test the source records and found nothing, so a missing date is the only date-of-birth problem in the golden record.
+
+### I10. Customer with a negative total balance (credit-card account in credit)
+
+**Affected:** 18 of 1,011,960 (0.00%) · **Tables:** `c360_customer`, `c360_account` · **Severity:** low
+
+*Evidence:* -145.11 to -2.37 CAD; the customer total equals the sum of the accounts for every one.
+
+**Handling (documented).** Contract warning Q7. The customer overpaid a card, so the balance is a credit. Kept as recorded; the 'not negative' half of the rule is stricter than the data warrants, and the totals still reconcile to the accounts.
+
 ## 10. Unusual days found by anomaly detection
 
 Every day of the last year, per series (contacts by channel, cases by product, payments, notes, bureau files...), was compared with its own normal: row counts against the same weekday of the previous weeks, every column's null rate likewise. Days far from normal are matched to the operations log and the calendar. Settings: `config/anomaly.yaml`; full list: `reports/anomaly_report.md`.
@@ -600,7 +618,7 @@ Every day of the last year, per series (contacts by channel, cases by product, p
 
 **Affected:** 58 of 516 (11.2%) · **Tables:** `contact_history`, `collections_cases`, `external` · **Severity:** info
 
-*Evidence:* ECO-0715, REL-0926, INC-0914, INC-0923.
+*Evidence:* REL-0926, INC-0914, INC-0923, ECO-0715.
 
 **Handling (context, not a defect).** Detected automatically and matched to the operations log: the event lists the table and its dates overlap the episode (one day of lag allowed). Long events (layoffs, a policy) explain volume changes only. Section A checks each logged event directly.
 
