@@ -111,6 +111,52 @@ def case_samples(warehouse):
 
 
 @pytest.fixture(scope="session")
+def lead_team_samples(warehouse):
+    """Registered in/out-of-team leads, excluding independent queue/work grants."""
+    case = warehouse.execute("""
+        WITH active AS (
+          SELECT case_id,agent_id FROM curated.case_assignment_history
+          WHERE assigned_ts < TIMESTAMP '2026-09-29'
+            AND (unassigned_ts IS NULL OR unassigned_ts >= TIMESTAMP '2026-09-29')
+          QUALIFY row_number() OVER (PARTITION BY case_id ORDER BY assigned_ts DESC,assignment_id)=1
+        )
+        SELECT c.case_id,c.golden_customer_id,g.team_lead_id
+        FROM gold.case_customer c JOIN active a USING (case_id)
+        JOIN curated.agents g ON g.agent_id=a.agent_id
+        WHERE c.golden_customer_id IS NOT NULL AND g.team_lead_id IS NOT NULL
+          AND EXISTS (SELECT 1 FROM gold.customer_timeline t WHERE t.case_id=c.case_id
+                      AND t.golden_customer_id=c.golden_customer_id AND t.event_type='transcript'
+                      AND t.text IS NOT NULL AND t.event_ts < TIMESTAMP '2026-09-29')
+          AND NOT EXISTS (
+            SELECT 1 FROM curated.collections_cases k JOIN gold.case_customer cc USING (case_id)
+            WHERE cc.golden_customer_id=c.golden_customer_id AND k.case_open_date < DATE '2026-09-29'
+              AND (k.case_status='open' OR k.case_status_date >= DATE '2026-09-29')
+              AND NOT EXISTS (SELECT 1 FROM curated.case_assignment_history h WHERE h.case_id=k.case_id
+                              AND h.assigned_ts < TIMESTAMP '2026-09-29'
+                              AND (h.unassigned_ts IS NULL OR h.unassigned_ts >= TIMESTAMP '2026-09-29')))
+        ORDER BY c.case_id LIMIT 1
+    """).fetchone()
+    assert case is not None, "Assigned lead-case fixture count=0 after excluding unassigned-work grants"
+    outside = warehouse.execute("""
+        SELECT DISTINCT g.team_lead_id FROM curated.agents g
+        WHERE g.team_lead_id IS NOT NULL AND g.team_lead_id <> ?
+          AND NOT EXISTS (
+            SELECT 1 FROM curated.case_assignment_history a JOIN gold.case_customer c USING (case_id)
+            JOIN curated.agents own ON own.agent_id=a.agent_id
+            WHERE c.golden_customer_id=? AND own.team_lead_id=g.team_lead_id
+              AND a.assigned_ts < TIMESTAMP '2026-09-29'
+              AND (a.unassigned_ts IS NULL OR a.unassigned_ts >= TIMESTAMP '2026-09-29'))
+          AND NOT EXISTS (
+            SELECT 1 FROM gold.nba_decisions n JOIN curated.agents own ON own.agent_id=n.agent_id
+            WHERE n.golden_customer_id=? AND n.as_of_date=DATE '2026-09-28'
+              AND own.team_lead_id=g.team_lead_id)
+        ORDER BY g.team_lead_id LIMIT 1
+    """, [case[2], case[1], case[1]]).fetchone()
+    assert outside is not None, "Registered out-of-team lead fixture count=0"
+    return dict(case_id=case[0], in_team=case[2], out_of_team=outside[0])
+
+
+@pytest.fixture(scope="session")
 def real_llm(tmp_path_factory):
     from trustissues.common.config import settings
     from trustissues.common.llm import LLM, ResponseCache, _load_dotenv

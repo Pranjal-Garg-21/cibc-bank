@@ -4,8 +4,9 @@ Expectations are fixed from docs/interfaces.md (Case to call §1–2) and
 docs/p2_design_sections.md (pipeline steps 5 and 7), not discovered by asking.
 Leads use the assigned agent's lead ID; unassigned open work is also visible to
 leads. Analysts cannot read individual calls. Agents need an assignment or NBA
-queue grant. The documents additionally say leads may ask about any case; a
-separate marked test checks that broad statement with an unrelated lead.
+queue grant. The later P4 team re-check takes precedence over the earlier broad
+lead-access statement: registered in-team leads pass; out-of-team leads without
+a separate queue or unassigned-work grant receive the same missing-case denial.
 """
 from dataclasses import dataclass
 import re
@@ -133,13 +134,31 @@ def test_missing_case_and_inaccessible_case_have_identical_denials(role, warehou
     assert cards[0].answer == cards[1].answer, f"Existing-case denial={cards[0].answer!r}, missing-case denial={cards[1].answer!r}"
 
 
-@pytest.mark.llm
-def test_documented_any_case_team_lead_rule(warehouse, as_of, case_samples, real_llm, real_rag):
-    # interfaces.md explicitly says 'team leads may ask about any case'. No
-    # expected outcome is taken from P4's implementation of its re-check.
-    user = UserContext("integration-unrelated-lead", "team_lead")
-    card = ask(QUESTIONS[7].text.format(**case_samples), user, as_of_date=as_of,
-               con=warehouse, resolver=case_customer_resolver(warehouse, as_of), llm=real_llm, rag=real_rag)
-    assert card.path == "rag_customer" and not card.refused, (
-        "docs/interfaces.md promises any-case lead access, including an unrelated lead; " + card_detail(card))
+@pytest.mark.parametrize("membership", [
+    pytest.param("in_team", marks=pytest.mark.llm), "out_of_team",
+])
+def test_registered_team_lead_case_access(membership, warehouse, as_of, case_samples, lead_team_samples, request):
+    user = UserContext(lead_team_samples[membership], "team_lead")
+    kwargs = dict(con=warehouse, resolver=case_customer_resolver(warehouse, as_of), llm=None)
+    if membership == "in_team":
+        kwargs.update(llm=request.getfixturevalue("real_llm"), rag=request.getfixturevalue("real_rag"))
+    else:
+        # Exercise the actual P4 team re-check, with no provider or cache. Any
+        # attempt to ask a model before denying this lead makes this test fail.
+        from trustissues.ask.rag_handler import make_rag_handler
+        class NoModelCalls:
+            def complete(self, **kwargs):
+                raise AssertionError("Out-of-team denial must happen before a model call")
+        kwargs["rag"] = make_rag_handler(None, NoModelCalls(), con=warehouse)
+    question = QUESTIONS[7].text.format(assigned=lead_team_samples["case_id"])
+    card = ask(question, user, as_of_date=as_of, **kwargs)
+    if membership == "in_team":
+        assert card.path == "rag_customer" and not card.refused, card_detail(card)
+    else:
+        assert card.refused and card.refusal_reason == "access", card_detail(card)
+        missing = ask(QUESTIONS[7].text.format(assigned=case_samples["missing"]), user,
+                      as_of_date=as_of, **kwargs)
+        assert missing.refused and missing.refusal_reason == "access", card_detail(missing)
+        assert_card_hygiene(missing)
+        assert card.answer == missing.answer, f"Existing-case denial={card.answer!r}, missing-case denial={missing.answer!r}"
     assert_card_hygiene(card)

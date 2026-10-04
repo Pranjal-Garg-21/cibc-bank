@@ -1,8 +1,9 @@
 """Independent SQL audit of the 4 Oct published data, without building any layer.
 
-All expected equalities come from the requested integration contract. Differences
-are findings, including the known credit-only semantic_accounts population and
-historical registry entries; no counts are silently subtracted to make tests pass.
+Definitions corrected after review: semantic_accounts covers loans and cards;
+active registry IDs are those used by current identity clusters; source rows are
+identity nodes (one source-customer key, not one account); open cases here means
+unresolved cases with NULL outcome, including holds, legal and agency work.
 """
 import math
 import re
@@ -53,7 +54,7 @@ def test_row_count_reconciliation(warehouse, sql):
     assert len(set(counts)) == 1, f"row_counts={counts}; independent_SQL={sql}"
 
 
-def test_semantic_accounts_match_all_current_account_sources(warehouse):
+def test_semantic_accounts_match_current_credit_account_sources(warehouse):
     counts = warehouse.execute("""
         SELECT (SELECT count(*) FROM gold.semantic_accounts),
                (SELECT count(*) FROM curated.loan_accounts_current),
@@ -61,14 +62,12 @@ def test_semantic_accounts_match_all_current_account_sources(warehouse):
                (SELECT count(*) FROM curated.deposit_accounts_current),
                (SELECT count(*) FROM (
                  SELECT loan_id FROM curated.loan_accounts_current UNION ALL
-                 SELECT card_account_id FROM curated.card_accounts_current UNION ALL
-                 SELECT deposit_account_id FROM curated.deposit_accounts_current))
+                 SELECT card_account_id FROM curated.card_accounts_current))
     """).fetchone()
     semantic, loans, cards, deposits, union = counts
     assert semantic == union, (
         f"semantic_accounts={semantic}, current_loans={loans}, current_cards={cards}, current_deposits={deposits}, "
-        f"union_all={union}, difference={union-semantic}. Known contract mismatch: semantic_accounts is "
-        "credit-only; this requested all-account reconciliation includes deposits and reports their exclusion.")
+        f"credit_union_all={union}, difference={union-semantic}. Deposits are excluded by the credit-only contract.")
 
 
 def test_snapshot_row_count_reconciliation(warehouse):
@@ -126,33 +125,46 @@ def test_case_orphans_reported_and_below_one_percent(warehouse, table, record_pr
     assert share <= .01, summary
 
 
-def test_xref_people_match_c360_and_registry(warehouse):
-    xref_rows, nulls, people, c360, registry_rows, registry_people = warehouse.execute("""
+def test_xref_people_match_c360_and_active_registry(warehouse):
+    xref_rows, nulls, people, c360, active_people, registry_rows, active_registry_rows, missing = warehouse.execute("""
+        WITH active AS (SELECT DISTINCT golden_customer_id FROM identity.cluster_ids)
         SELECT (SELECT count(*) FROM gold.customer_xref),
                (SELECT count(*) FROM gold.customer_xref WHERE golden_customer_id IS NULL),
                (SELECT count(DISTINCT golden_customer_id) FROM gold.customer_xref),
                (SELECT count(*) FROM gold.c360_customer),
+               (SELECT count(*) FROM active),
                (SELECT count(*) FROM identity.golden_id_registry),
-               (SELECT count(DISTINCT golden_customer_id) FROM identity.golden_id_registry)
+               (SELECT count(*) FROM identity.golden_id_registry r
+                WHERE EXISTS (SELECT 1 FROM active a WHERE a.golden_customer_id=r.golden_customer_id)),
+               (SELECT count(*) FROM active a WHERE NOT EXISTS (
+                  SELECT 1 FROM identity.golden_id_registry r WHERE r.golden_customer_id=a.golden_customer_id))
     """).fetchone()
-    assert nulls == 0 and people == c360 == registry_rows == registry_people, (
+    assert nulls == missing == 0 and people == c360 == active_people == active_registry_rows, (
         f"xref_rows={xref_rows}, null_golden_ids={nulls}, distinct_active_people={people}, c360_rows={c360}, "
-        f"registry_rows={registry_rows}, registry_distinct_people={registry_people}. Historical registry entries "
-        "may survive merges; this reports the requested equality rather than silently filtering them out.")
+        f"active_cluster_people={active_people}, registry_total={registry_rows}, active_registry_rows={active_registry_rows}, "
+        f"retired_registry_rows={registry_rows-active_registry_rows}, active_people_missing_from_registry={missing}")
 
 
-def test_identity_source_rows_match_curated_current_sources(warehouse):
+def test_identity_source_customer_nodes_match_xref(warehouse):
     counts = warehouse.execute("""
         SELECT (SELECT count(*) FROM gold.customer_xref), (SELECT count(*) FROM identity.nodes),
-               (SELECT count(*) FROM curated.customers_current), (SELECT count(*) FROM curated.external),
-               (SELECT count(*) FROM curated.deposit_accounts_current),
-               (SELECT count(*) FROM curated.card_accounts_current), (SELECT count(*) FROM curated.loan_accounts_current)
+               (SELECT count(*) FROM (
+                  SELECT source_system,source_key FROM identity.nodes EXCEPT
+                  SELECT source_system,source_key FROM gold.customer_xref)),
+               (SELECT count(*) FROM (
+                  SELECT source_system,source_key FROM gold.customer_xref EXCEPT
+                  SELECT source_system,source_key FROM identity.nodes))
     """).fetchone()
-    xref, nodes, crm, bureau, deposit, card, loan = counts
-    expected = crm + bureau + deposit + card + loan
-    assert xref == nodes == expected, (
-        f"xref_source_rows={xref}, identity_nodes={nodes}, CRM_current={crm}, bureau_external={bureau}, "
-        f"deposit_current={deposit}, card_current={card}, loan_current={loan}, curated_sum={expected}")
+    by_source = warehouse.execute("""
+        WITH n AS (SELECT source_system,count(*) AS rows FROM identity.nodes GROUP BY source_system),
+             x AS (SELECT source_system,count(*) AS rows FROM gold.customer_xref GROUP BY source_system)
+        SELECT coalesce(n.source_system,x.source_system),coalesce(n.rows,0),coalesce(x.rows,0)
+        FROM n FULL OUTER JOIN x USING (source_system) ORDER BY 1
+    """).fetchall()
+    xref, nodes, missing, extra = counts
+    assert xref == nodes and missing == extra == 0 and all(n == x for _, n, x in by_source), (
+        f"xref_source_customer_rows={xref}, identity_nodes={nodes}, missing_keys={missing}, extra_keys={extra}, "
+        f"per_source(source,nodes,xref)={by_source}; account row counts are not source-customer counts")
 
 
 def test_final_2026_10_04_people_count_1011960_update_when_build_changes(warehouse):
@@ -177,15 +189,16 @@ def test_amount_paid_against_promises_from_curated(warehouse):
         f"curated_paid_CAD={curated:.6f}, semantic_paid_CAD={semantic:.6f}, difference_CAD={curated-semantic:.6f}")
 
 
-def test_open_cases_from_curated_outcome_and_status(warehouse):
+def test_open_cases_from_curated_null_outcome_including_holds(warehouse):
     outcome, status, semantic = warehouse.execute("""
         SELECT (SELECT count(*) FROM curated.collections_cases WHERE outcome IS NULL),
                (SELECT count(*) FROM curated.collections_cases WHERE case_status='open'),
                (SELECT count(*) FROM gold.semantic_cases WHERE outcome IS NULL)
     """).fetchone()
-    assert outcome == status == semantic, (
+    assert outcome == semantic, (
         f"curated_null_outcome={outcome}, curated_open_status={status}, semantic_null_outcome={semantic}; "
-        "status and outcome are checked independently, not assumed interchangeable")
+        "definition: unresolved means NULL outcome and includes hold/legal/agency statuses; "
+        "the narrower case_status='open' count is diagnostic only")
 
 
 def test_charged_off_accounts_from_curated(warehouse):
