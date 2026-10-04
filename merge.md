@@ -67,9 +67,9 @@ Both are known to be changed on the P4 branch as well as on `main`.
 
 On `main`, P1's tables are built into the `gold_stage` schema, and `gold/publish.py` copies them into `gold` only if every blocking rule in `contracts/c360_customer.yaml` passes.
 
-- [ ] Tables owned by others (`gold.text_features`, `gold.nba_decisions`, `gold.nba_overrides`, `gold.audit_log`) are **not** touched by publish: they keep being written straight to `gold`. Check nobody writes P1's tables (`customer_xref`, `c360_*`, `case_customer`, the five views) directly.
-- [ ] Code that reads P1's tables should read `gold.*`, never `gold_stage.*`.
-- [ ] After merging, run `python -m trustissues.factory.pipeline --from text_controls` once and check `gold._publish_log` shows `published = true`.
+- [x] Tables owned by others (`gold.text_features`, `gold.nba_decisions`, `gold.nba_overrides`, `gold.audit_log`) are **not** touched by publish: they keep being written straight to `gold`. Check nobody writes P1's tables (`customer_xref`, `c360_*`, `case_customer`, the five views) directly. Checked 4 Oct (after the P2 merge): no code outside `factory/gold/` writes any of them or `semantic_*`.
+- [x] Code that reads P1's tables should read `gold.*`, never `gold_stage.*`. Checked 4 Oct: only the builders (`factory/identity`, `factory/gold`, `factory/quality`) touch `gold_stage`.
+- [x] After merging, run `python -m trustissues.factory.pipeline --from text_controls` once and check `gold._publish_log` shows `published = true`. Done for the P4 merge; after the P2 merge the semantic build was published the same way (4 Oct, `published = true`, 17 tables, 18 s).
 
 ---
 
