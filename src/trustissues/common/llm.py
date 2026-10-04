@@ -162,10 +162,12 @@ def parse_json(text: str):
         try:
             return json.loads(t)
         except json.JSONDecodeError as e:
-            try:
-                return json.loads(_repair(t))
-            except json.JSONDecodeError:
-                raise LLMOutputError(f"reply is not valid JSON: {e}") from e
+            for fix in (_repair, _repair_bare_value):
+                try:
+                    return json.loads(fix(t))
+                except json.JSONDecodeError:
+                    pass
+            raise LLMOutputError(f"reply is not valid JSON: {e}") from e
 
 
 # a string value whose opening quote is missing: {"answer": Non, la liste ..."}  (seen from Nemotron on 2026-10-03)
@@ -176,6 +178,15 @@ def _repair(t: str) -> str:
     """Fix the one malformation seen in practice: a string value missing its opening quote.
     Only right after a "key": so a colon inside a quoted value is never touched."""
     return _UNQUOTED.sub(r'\1"', t)
+
+
+# a string value with no quotes at all, sometimes closed by a stray brace: {"answer": Yes, do it.}, "evidence": [...]
+# (seen from Nemotron on 2026-10-04). The value runs to the next `, "key":`; the answer is still checked against its quotes.
+_BARE_VALUE = re.compile(r'("\w+"\s*:\s*)(?!["\[{\-\d]|true\b|false\b|null\b)(.+?)\}?(?=,\s*"\w+"\s*:)', re.DOTALL)
+
+
+def _repair_bare_value(t: str) -> str:
+    return _BARE_VALUE.sub(lambda m: m.group(1) + json.dumps(m.group(2).strip()), t, count=1)
 
 
 class LLM:
