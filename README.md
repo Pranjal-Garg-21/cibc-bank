@@ -1,14 +1,70 @@
-# TrustIssues: Collections 360 and Next Best Action
+#CIBC: Collections 360 and Next Best Action
 
-CIBC collections hackathon entry by Anushka Sinha, Aman Jayesh, Pranjal Garg and Shreyas Ramasubramanian.
+This project is a local data and decisioning platform for collections operations. It turns 31 fragmented source tables
+into one governed customer 360 record, lets staff ask controlled business questions in plain English, and recommends
+the next best treatment, channel and timing for every open collections case.
 
-The system turns 31 fragmented source tables into one trusted record per customer, lets staff question it in plain
-English with answers that show their SQL or sources, and recommends the treatment, channel and timing for every open
-collections case, with the reasons and a person approving what matters. As of 28 September 2026 it holds
-1,011,960 people built from 3,487,885 source customer records.
+The system combines a reproducible data pipeline, identity resolution, data-quality gates, point-in-time-safe features,
+machine-learning risk models and a role-aware web console. Answers expose their SQL or policy sources, customer-facing
+actions show their reasons and safeguards, and decisions that need judgement remain with a person. As of 28 September
+2026, the built warehouse contains 1,011,960 people from 3,487,885 source customer records.
 
-This file covers what the hackathon asks for: **how to run it** (section 1), **what changed from our design**
-(section 2) and **which AI tools we used and for what** (section 3). Section 4 lists where the other deliverables are.
+## What we built
+
+### Governed customer 360
+
+The Layer 1 factory ingests CSV, Parquet and JSON transcript data into DuckDB, creates typed and deduplicated
+`curated.*` tables, runs YAML-driven quality and anomaly checks, applies text controls, resolves identities with
+deterministic rules and Splink, and publishes contract-checked `gold.*` customer and case views. It produces data
+quality, anomaly, identity and publish reports under `reports/`.
+
+### Controlled insight service
+
+The Ask service supports certified portfolio metrics, metric drivers, fixed single-case facts, policy questions,
+customer-history questions and validated read-only SQL for questions without a certified path. Certified answers expose
+their definitions and SQL. Policy answers cite their sources. Generated SQL is labelled uncertified, restricted to
+approved read-only queries and subject to row and time limits. Refusals, disclosure controls and access checks run
+before an answer is returned.
+
+### Next-best-action decisioning
+
+Layer 3 creates point-in-time-safe structured and text features, with the same SQL definitions used for training and
+scoring. Layer 4 uses LightGBM case-cure and promise-break models, SHAP explanations, action values, capacity limits
+and channel constraints to create a queue. Hard stops, hardship and vulnerability rules are applied before an action
+is recommended. Decision cards show evidence, blocked actions and required approvals.
+
+### Role-aware web console
+
+The FastAPI server serves a React and TypeScript console with Ask, work queue, decision card, team and approvals,
+hardship, identity review, data status, audit and authorised table-browsing workflows. Server-side role checks are
+deny-by-default; the browser does not choose its own role. Passwords, MFA, session controls, PII masking, rate limits
+and audit logging are included.
+
+## Technology stack
+
+| Area | Technology | Use in the system |
+|---|---|---|
+| Language | Python 3.10+ | Data processing, services, modelling and automation |
+| Analytical database | DuckDB | Local warehouse across `raw`, `curated`, `gold` and feature layers |
+| Data formats | CSV, Parquet, JSON and YAML | Source data, intermediate data, configuration and contracts |
+| Data processing | Python, SQL, OpenPyXL, PyArrow, NetworkX | Ingestion, standardisation, relationships and file interchange |
+| Data quality | Custom YAML-driven checks | Schema validation, anomaly detection and publish gates |
+| Identity resolution | Splink, deterministic rules and SciPy | Customer linkage and golden-record construction |
+| Feature store | Feast offline store | Point-in-time-safe feature definitions and registry |
+| Machine learning | LightGBM, scikit-learn, SHAP and pandas | Risk models, calibration, evaluation and explanations |
+| Question answering | SQL templates, sqlglot, BM25 and FastEmbed | Certified metrics, safe SQL validation, routing and policy retrieval |
+| Language models | OpenAI-compatible API through OpenRouter; optional Anthropic support | Optional model fallback, policy answers, summaries and generated SQL |
+| Backend | FastAPI and Uvicorn | API, authentication, sessions, RBAC and serving |
+| Frontend | React 19, TypeScript 5.9, Vite 8 and Tailwind CSS 4 | Web console |
+| UI and data access | Radix UI, Lucide React, TanStack Query and React Router | Accessible controls, icons, API state and navigation |
+| Testing | Pytest, Vitest and TypeScript compiler | Unit, integration, security, API and frontend checks |
+| Operations | Make, `scripts/nightly.py` and local filesystem | Repeatable builds, training, queue generation and monitoring |
+
+This implementation intentionally uses a local DuckDB and file-based workflow. Redis, Spark, Chroma, Great
+Expectations and an orchestration service are not required to run it.
+
+This README covers **how to run the system** (section 1), **what is implemented** (section 2), **which AI tools are
+used and where** (section 3), and **where the supporting deliverables live** (section 4).
 
 ---
 
@@ -147,10 +203,11 @@ numbers match exactly.
 
 ---
 
-## 2. What changed from our design
+## 2. Implementation details and design decisions
 
-Our design document described four layers and a governance spine. This is what we built differently, and why. Anything
-the design promised that is not built is listed too.
+The sections below record important implementation choices, differences from the original design and current limits.
+The opening sections describe the product at a high level; this section preserves the detail needed to understand the
+trade-offs behind the build.
 
 ### Layer 1: data product factory
 
